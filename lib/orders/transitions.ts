@@ -6,6 +6,7 @@ import { eq, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { orders, type OrderStatus } from "@/lib/db/schema";
+import { isDemoMode } from "@/lib/demo/config";
 import { squareClient } from "@/lib/square/client";
 import { STAFF_TRANSITIONS } from "@/lib/orders/status";
 import { notifyOrder } from "@/lib/notifications/dispatch";
@@ -100,6 +101,7 @@ async function mirrorToSquare(
 ): Promise<string | undefined> {
   const state = SQUARE_STATE[status];
   if (!state) return undefined;
+  if (isDemoMode()) return undefined;
 
   try {
     const client = squareClient();

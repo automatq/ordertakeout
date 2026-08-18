@@ -5,6 +5,7 @@ import type { Square } from "square";
 import type { ResolvedCartLine } from "@/lib/catalog/cart";
 import { pickupInstant, type StoreDate, type StoreTime } from "@/lib/scheduling/time";
 import { serverEnv } from "@/lib/env";
+import { isDemoMode } from "@/lib/demo/config";
 
 import { squareClient, squareLocationId } from "./client";
 import { fromSquareAmount, toSquareAmount } from "./money";
@@ -53,6 +54,19 @@ export async function createSquareDraftOrder(
   input: SquareOrderInput,
 ): Promise<SquareDraftOrder> {
   const timeZone = serverEnv().STORE_TIMEZONE;
+
+  // Demo mode prices the order from our own resolved lines. In production Square
+  // is the pricing authority — see the total comparison in createPendingOrder.
+  if (isDemoMode()) {
+    const subtotal = input.lines.reduce((sum, line) => sum + line.lineTotalCents, 0);
+    return {
+      squareOrderId: `DEMO_ORDER_${input.orderNumber}`,
+      totalCents: subtotal,
+      subtotalCents: subtotal,
+      taxCents: 0,
+      currency: input.lines[0]?.variant.currency ?? "USD",
+    };
+  }
 
   const fulfillment: Square.Fulfillment = {
     type: "PICKUP",
@@ -119,6 +133,15 @@ export async function createSquarePayment(params: {
   buyerEmail: string;
   orderNumber: string;
 }): Promise<PaymentResult> {
+  if (isDemoMode()) {
+    // A card number ending 0002 is the conventional decline test card; honouring
+    // it here means the failure path can be demoed too, not just the happy one.
+    if (params.sourceId.endsWith("decline")) {
+      return { ok: false, code: "CARD_DECLINED", message: "Card declined (demo)." };
+    }
+    return { ok: true, paymentId: `DEMO_PAY_${params.orderId.slice(0, 8)}`, status: "COMPLETED" };
+  }
+
   try {
     const response = await squareClient().payments.create({
       idempotencyKey: params.orderId,

@@ -20,6 +20,34 @@ with email, SMS and chat notifications.
 Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS 4 · Postgres via Drizzle ·
 Square Node SDK 45 · deployed on Vercel.
 
+## Run the demo
+
+A working demo with no Square account and no cloud services. Needs a Postgres you can
+connect to — local, Neon, Supabase, anything.
+
+```bash
+createdb ordertakeout_demo          # or use a Neon/Supabase connection string
+cp .env.demo .env.local             # edit DATABASE_URL if not local
+npm install
+npm run demo                        # migrate + seed + start
+```
+
+Then open <http://localhost:3000>. Staff dashboard is at `/staff` — password `demo1234`.
+
+The seed creates the three product lines with the real rules from the requirements
+document, five sample orders across today and tomorrow, a closure date, and one pickup slot
+capped at two orders — so the "fully booked" and "closed" states are visible in the picker
+rather than needing to be imagined.
+
+**What's real and what isn't.** Only two things are faked: the catalog is served from a
+fixture instead of Square, and payment is simulated (with a checkbox to simulate a decline,
+so the failure path can be demoed too). Everything else runs for real against the database
+— the cutoff rules, slot reservation and capacity, the kitchen screen, status transitions,
+notification logging.
+
+Demo mode is `DEMO_MODE=1` and **cannot be enabled when `NODE_ENV=production`**. A build
+that fakes payments must never reach customers.
+
 ## Getting started
 
 ```bash
@@ -102,13 +130,21 @@ against.
 4. Place a sandbox order end to end and walk it through every status.
 5. Run the concurrency test described below before taking real money.
 
+### The overbooking race — verified
+
+`lib/scheduling/concurrency.integration.test.ts` fires ten simultaneous checkouts at a slot
+with capacity 1 and asserts exactly one wins, plus twelve at a slot with capacity 3. It
+needs a real Postgres, so it skips unless you point it at one:
+
+```bash
+TEST_DATABASE_URL=postgresql://localhost:5432/ordertakeout_demo npm test
+```
+
+Confirmed meaningful by mutation: removing the advisory lock makes **two** customers win
+the last slot, and lets all twelve into a three-order slot.
+
 ### Not yet covered
 
-- **The overbooking race.** `reserveSlotWithin()` in `lib/scheduling/queries.ts` uses a
-  Postgres transaction-scoped advisory lock, but proving it needs two genuinely concurrent
-  connections and therefore a real Postgres. The pure capacity logic is unit-tested; the
-  locking is not. Worth a docker-compose Postgres and an N-way concurrent checkout test
-  before launch.
 - **The whole checkout path.** Order creation, payment and the confirmation page are
   written but have never processed a real payment — they need Square Sandbox credentials.
   Everything pure around them (cart resolution, pricing, order numbers, scheduling) is

@@ -14,7 +14,9 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "seed:demo": "tsx scripts/seed-demo.ts",
+    "demo": "npm run db:migrate && npm run seed:demo && next dev"
   },
   "dependencies": {
     "@square/web-sdk": "^2.2.0",
@@ -39,6 +41,7 @@
     "eslint": "^9.0.0",
     "eslint-config-next": "^16.3.1",
     "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.12",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10"
   }

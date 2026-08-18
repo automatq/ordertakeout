@@ -9,9 +9,11 @@ import { useCart } from "@/lib/cart/store";
 import { resolveCart } from "@/lib/catalog/cart";
 import type { CatalogProduct } from "@/lib/catalog/types";
 import type { DayAvailability } from "@/lib/scheduling/availability";
+import { isDemoModeClient } from "@/lib/demo/config";
 import { formatMoney } from "@/lib/square/money";
 
 import { PickupPicker, type PickupSelection } from "./pickup-picker";
+import { DemoPaymentForm } from "./demo-payment-form";
 import { PaymentForm } from "./payment-form";
 
 /**
@@ -237,12 +239,19 @@ export function CheckoutFlow({
               {error}
             </p>
           ) : null}
-          <PaymentForm
-            applicationId={squareApplicationId}
-            locationId={squareLocationId}
-            amountLabel={formatMoney(reserved.totalCents, currency)}
-            onToken={handleToken}
-          />
+          {isDemoModeClient() ? (
+            <DemoPaymentForm
+              amountLabel={formatMoney(reserved.totalCents, currency)}
+              onToken={handleToken}
+            />
+          ) : (
+            <PaymentForm
+              applicationId={squareApplicationId}
+              locationId={squareLocationId}
+              amountLabel={formatMoney(reserved.totalCents, currency)}
+              onToken={handleToken}
+            />
+          )}
         </section>
       )}
     </div>

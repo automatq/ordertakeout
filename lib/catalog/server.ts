@@ -6,6 +6,8 @@ import type { CatalogObject } from "square";
 import { db } from "@/lib/db";
 import { productsConfig } from "@/lib/db/schema";
 import { normalizeTime } from "@/lib/scheduling/time";
+import { DEMO_PRODUCTS } from "@/lib/demo/catalog";
+import { isDemoMode } from "@/lib/demo/config";
 import { squareClient } from "@/lib/square/client";
 
 import { mapCatalogItems } from "./map";
@@ -46,6 +48,12 @@ async function fetchSquareCatalog(): Promise<CatalogLoad> {
   "use cache";
   cacheLife("hours");
   cacheTag(CATALOG_TAG);
+
+  // Demo mode: same shape mapCatalogItems would return, so every downstream
+  // path behaves identically to the Square-backed one.
+  if (isDemoMode()) {
+    return { products: DEMO_PRODUCTS, skipped: [] };
+  }
 
   try {
     const client = squareClient();
