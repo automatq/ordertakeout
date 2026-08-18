@@ -16,7 +16,7 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "seed:demo": "tsx scripts/seed-demo.ts",
-    "demo": "npm run db:migrate && npm run seed:demo && next dev"
+    "demo": "node scripts/demo.mjs"
   },
   "dependencies": {
     "@square/web-sdk": "^2.2.0",

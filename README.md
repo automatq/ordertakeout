@@ -33,6 +33,7 @@ npm run demo                        # migrate + seed + start
 ```
 
 Then open <http://localhost:3000>. Staff dashboard is at `/staff` — password `demo1234`.
+If port 3000 is taken, `PORT=3100 npm run demo`.
 
 The seed creates the three product lines with the real rules from the requirements
 document, five sample orders across today and tomorrow, a closure date, and one pickup slot
