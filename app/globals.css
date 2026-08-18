@@ -1,0 +1,141 @@
+@import "tailwindcss";
+
+/* ============================================================================
+   DESIGN TOKENS — the entire visual identity of this site lives in this block.
+   ============================================================================
+
+   Every colour, font, radius and shadow used anywhere in the app resolves back
+   to a token defined here. No component hardcodes a hex value. That means when
+   the bakery's real branding arrives, rebranding the whole site is editing this
+   one block — not touching components.
+
+   The values below are a deliberately NEUTRAL PLACEHOLDER. They are meant to
+   look clean and finished, not to look like the final brand.
+
+   Two rules keep this cheap to swap. Please don't break them:
+
+     1. Token names are SEMANTIC (what it's for), never literal (what it looks
+        like). `--color-surface`, not `--color-white`. `--color-status-ready`,
+        not `--color-green`. A literal name becomes a lie the moment the brand
+        changes, and then nobody dares touch it.
+
+     2. Components use token utilities only — `bg-surface`, `text-ink`,
+        `border-border`. Never `bg-[#8B5CF6]`, never `text-purple-600`. Tailwind's
+        stock palette (`slate-*`, `purple-*`, …) is off-limits in components for
+        the same reason: it isn't swappable.
+
+   See docs/THEMING.md for the branding-handoff checklist.
+   ========================================================================= */
+
+@theme {
+  /* --- Typography -----------------------------------------------------------
+     Swap point for brand fonts. Today these are system stacks so the app has
+     zero network font dependency; at branding handoff, replace with next/font
+     and point these variables at the generated CSS variables. */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-display: var(--font-sans);
+
+  /* --- Neutrals -------------------------------------------------------------
+     Warm-tinted rather than pure grey — reads as "bakery" instead of "SaaS"
+     without committing to a brand hue. */
+  --color-canvas: #faf8f5; /* page background */
+  --color-surface: #ffffff; /* cards, panels, sheets */
+  --color-surface-sunken: #f2eee8; /* insets, table headers, empty states */
+  --color-border: #e4ddd3; /* default hairline */
+  --color-border-strong: #cfc5b7; /* emphasised divider, input outline */
+
+  /* --- Text -----------------------------------------------------------------
+     All three clear AA (4.5:1) on --color-canvas. If you retint the neutrals,
+     re-check these; ink-subtle has the least headroom. */
+  --color-ink: #1f1b16; /* body + headings */
+  --color-ink-muted: #5c544a; /* secondary text, labels */
+  --color-ink-subtle: #756b60; /* captions, timestamps, help text */
+
+  /* --- Brand ----------------------------------------------------------------
+     PLACEHOLDER: a muted violet that nods at ube without pretending to be the
+     real brand. Expect this to be replaced wholesale. */
+  --color-brand: #6d4aa8; /* primary buttons, links, focus */
+  --color-brand-hover: #5a3b8f;
+  --color-brand-soft: #f1ebfa; /* tinted backgrounds, selected states */
+  --color-brand-ink: #ffffff; /* text/icons placed ON --color-brand */
+
+  /* --- Accent ---------------------------------------------------------------
+     PLACEHOLDER: warm pastry gold. Fills and borders only — too light for text.
+     Use --color-accent-ink when accent-coloured text is needed. */
+  --color-accent: #c8873a;
+  --color-accent-soft: #fbf1e2;
+  --color-accent-ink: #8a5a22;
+
+  /* --- Order status ---------------------------------------------------------
+     One pair per status in the order lifecycle (see docs/SCOPE.md). These are
+     semantic, so they survive a rebrand mostly untouched — but they must stay
+     distinguishable from each other, including for colour-blind staff, which is
+     why the UI always pairs the colour with a text label and never relies on
+     hue alone. */
+  --color-status-new: #2563eb;
+  --color-status-new-soft: #e8f0fe;
+  --color-status-preparing: #9a6520;
+  --color-status-preparing-soft: #fbf1e2;
+  --color-status-ready: #15803d;
+  --color-status-ready-soft: #e6f4ea;
+  --color-status-completed: #5c544a;
+  --color-status-completed-soft: #f2eee8;
+  --color-status-canceled: #b42318;
+  --color-status-canceled-soft: #fdecea;
+
+  /* --- Feedback ------------------------------------------------------------- */
+  --color-success: #15803d;
+  --color-warning: #b45309;
+  --color-danger: #b42318;
+  --color-danger-soft: #fdecea;
+
+  /* --- Shape ---------------------------------------------------------------- */
+  --radius-control: 0.5rem; /* buttons, inputs, slot chips */
+  --radius-card: 0.875rem; /* product cards, order cards, panels */
+
+  /* --- Elevation ------------------------------------------------------------ */
+  --shadow-card: 0 1px 2px rgb(31 27 22 / 0.05), 0 1px 3px rgb(31 27 22 / 0.06);
+  --shadow-raised: 0 4px 12px rgb(31 27 22 / 0.08);
+}
+
+/* ============================================================================
+   BASE LAYER
+   Structural only — anything decorative belongs in a component, not here.
+   ========================================================================= */
+
+@layer base {
+  html {
+    /* The staff dashboard is used on a kitchen tablet with wet/floury hands;
+       generous tap targets and no accidental text selection on controls. */
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* A single visible focus treatment everywhere, so keyboard users get a
+     consistent target and we never have to remember to add it per-component. */
+  :focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  /* Respect users who ask for reduced motion — the dashboard has a pulsing
+     new-order highlight that would otherwise be hostile. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
