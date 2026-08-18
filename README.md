@@ -142,7 +142,13 @@ TEST_DATABASE_URL=postgresql://localhost:5432/ordertakeout_demo npm test
 ```
 
 Confirmed meaningful by mutation: removing the advisory lock makes **two** customers win
-the last slot, and lets all twelve into a three-order slot.
+the last slot locally, and lets all twelve into a three-order slot.
+
+**Verified through Neon's connection pooler**, which is the topology that matters — a
+transaction pooler is exactly where transaction-scoped advisory locks could silently stop
+working. They don't. Notably the same mutation lets **six** customers win the last slot on
+Neon versus two locally: the extra network latency widens the race window, so this bug
+would be worse in production than it looks on a developer's machine.
 
 ### Not yet covered
 
