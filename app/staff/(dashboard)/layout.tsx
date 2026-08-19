@@ -34,6 +34,18 @@ export default async function StaffLayout({ children }: { children: React.ReactN
               Orders
             </Link>
             <Link
+              href="/staff/timeline"
+              className="text-ink-muted hover:text-brand text-sm transition-colors"
+            >
+              Timeline
+            </Link>
+            <Link
+              href="/staff/analytics"
+              className="text-ink-muted hover:text-brand text-sm transition-colors"
+            >
+              Sales
+            </Link>
+            <Link
               href="/staff/closed"
               className="text-ink-muted hover:text-brand text-sm transition-colors"
             >

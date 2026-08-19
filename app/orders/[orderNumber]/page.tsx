@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
+import { OrderProgress } from "@/components/orders/order-progress";
 import { getOrderByNumber } from "@/lib/orders/lookup";
 import { formatPickupTime, formatStoreDate } from "@/lib/scheduling/time";
 import { formatMoney } from "@/lib/square/money";
@@ -60,6 +61,8 @@ async function OrderDetail({ params }: PageProps) {
           Collect in store. We&rsquo;re open {STORE_HOURS.opens}&ndash;{STORE_HOURS.closes} daily.
         </p>
       </section>
+
+      <OrderProgress status={order.status} />
 
       <section aria-label="Items" className="flex flex-col gap-3">
         <h2 className="text-ink-subtle text-sm font-semibold tracking-wide uppercase">
