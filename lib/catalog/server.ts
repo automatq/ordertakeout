@@ -1,0 +1,192 @@
+import "server-only";
+
+import { cacheLife, cacheTag } from "next/cache";
+import type { CatalogObject } from "square";
+
+import { db } from "@/lib/db";
+import { productsConfig } from "@/lib/db/schema";
+import { normalizeTime } from "@/lib/scheduling/time";
+import { DEMO_PRODUCTS } from "@/lib/demo/catalog";
+import { isDemoMode } from "@/lib/demo/config";
+import { squareClient } from "@/lib/square/client";
+
+import { mapCatalogItems } from "./map";
+import type { CatalogProduct, SkippedCatalogObject, StoreProduct } from "./types";
+
+/**
+ * Reading the catalog: Square for items and prices, our database for the
+ * ordering rules Square has no concept of.
+ *
+ * Square is the source of truth for what's sold and what it costs, so the store
+ * keeps editing prices in the Square Dashboard exactly as they do today and the
+ * website follows. Nothing about the menu is hardcoded here.
+ */
+
+export const CATALOG_TAG = "square-catalog";
+export const PRODUCT_CONFIG_TAG = "product-config";
+
+export interface CatalogLoad {
+  products: CatalogProduct[];
+  skipped: SkippedCatalogObject[];
+  /**
+   * Set when Square could not be reached. The storefront renders an explicit
+   * "temporarily unavailable" state for this rather than an empty menu — an
+   * empty shop looks like the bakery sells nothing, which is worse than saying
+   * so plainly.
+   */
+  error?: string;
+}
+
+/**
+ * Fetch every catalog item from Square, following pagination.
+ *
+ * Cached for hours because item names and prices change rarely, and a page view
+ * should not cost a Square API call. Staff can force a refresh from the admin
+ * screen, which invalidates CATALOG_TAG.
+ */
+async function fetchSquareCatalog(): Promise<CatalogLoad> {
+  "use cache";
+  cacheLife("hours");
+  cacheTag(CATALOG_TAG);
+
+  // Demo mode: same shape mapCatalogItems would return, so every downstream
+  // path behaves identically to the Square-backed one.
+  if (isDemoMode()) {
+    return { products: DEMO_PRODUCTS, skipped: [] };
+  }
+
+  try {
+    const client = squareClient();
+    const objects: CatalogObject[] = [];
+    let cursor: string | undefined;
+
+    do {
+      const response = await client.catalog.searchItems({ limit: 100, cursor });
+      objects.push(...(response.items ?? []));
+      cursor = response.cursor;
+    } while (cursor);
+
+    return mapCatalogItems(objects);
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    console.error("[catalog] Square catalog fetch failed:", message);
+    return { products: [], skipped: [], error: message };
+  }
+}
+
+interface ProductConfigRow {
+  productId: string;
+  slug: string;
+  leadTimeDays: number;
+  orderCutoffTime: string;
+  allowedPickupTimes: string[];
+  maxUnitsPerDay: number | null;
+  isOrderable: boolean;
+  sortOrder: number;
+  heroImageUrl: string | null;
+  descriptionMd: string | null;
+}
+
+/**
+ * Ordering rules and presentation overrides, keyed by Square ITEM id.
+ *
+ * Failure is caught for the same reason as the Square fetch: if the database is
+ * unreachable we cannot know any product's cutoff, so the honest outcome is an
+ * explicit "unavailable" storefront, not a menu rendered without its rules.
+ */
+async function fetchProductConfig(): Promise<{ rows: ProductConfigRow[]; error?: string }> {
+  "use cache";
+  cacheLife("hours");
+  cacheTag(PRODUCT_CONFIG_TAG);
+
+  try {
+    const rows = await db().select().from(productsConfig);
+    return {
+      rows: rows.map((row) => ({
+        productId: row.squareCatalogObjectId,
+        slug: row.slug,
+        leadTimeDays: row.leadTimeDays,
+        orderCutoffTime: normalizeTime(row.orderCutoffTime),
+        allowedPickupTimes: row.allowedPickupTimes.map(normalizeTime),
+        maxUnitsPerDay: row.maxUnitsPerDay,
+        isOrderable: row.isOrderable,
+        sortOrder: row.sortOrder,
+        heroImageUrl: row.heroImageUrl,
+        descriptionMd: row.descriptionMd,
+      })),
+    };
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    console.error("[catalog] product config fetch failed:", message);
+    return { rows: [], error: message };
+  }
+}
+
+export interface StoreCatalog {
+  products: StoreProduct[];
+  /** In Square, but with no ordering rules configured — see below. */
+  unconfigured: CatalogProduct[];
+  skipped: SkippedCatalogObject[];
+  error?: string;
+}
+
+/**
+ * The storefront menu: Square catalog joined to ordering rules.
+ *
+ * A product with no `products_config` row is deliberately NOT sellable. Without
+ * a configured lead time and cutoff we don't know when it could be collected, and
+ * guessing would mean promising a pickup the kitchen never agreed to. Those items
+ * are returned separately so the admin screen can prompt staff to configure them
+ * instead of them vanishing without explanation.
+ */
+export async function getStoreCatalog(): Promise<StoreCatalog> {
+  const [catalog, config] = await Promise.all([fetchSquareCatalog(), fetchProductConfig()]);
+
+  const configById = new Map(config.rows.map((c) => [c.productId, c]));
+  const products: StoreProduct[] = [];
+  const unconfigured: CatalogProduct[] = [];
+
+  for (const product of catalog.products) {
+    const rules = configById.get(product.id);
+    if (!rules) {
+      unconfigured.push(product);
+      continue;
+    }
+
+    products.push({
+      ...product,
+      slug: rules.slug,
+      heroImageUrl: rules.heroImageUrl,
+      descriptionMd: rules.descriptionMd,
+      sortOrder: rules.sortOrder,
+      rule: {
+        productId: product.id,
+        leadTimeDays: rules.leadTimeDays,
+        orderCutoffTime: rules.orderCutoffTime,
+        allowedPickupTimes: rules.allowedPickupTimes,
+        maxUnitsPerDay: rules.maxUnitsPerDay,
+        isOrderable: rules.isOrderable,
+      },
+    });
+  }
+
+  products.sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+
+  return {
+    products,
+    unconfigured,
+    skipped: catalog.skipped,
+    error: catalog.error ?? config.error,
+  };
+}
+
+/** Products a customer can actually order right now. */
+export async function getOrderableProducts(): Promise<StoreCatalog> {
+  const catalog = await getStoreCatalog();
+  return { ...catalog, products: catalog.products.filter((p) => p.rule.isOrderable) };
+}
+
+export async function getProductBySlug(slug: string): Promise<StoreProduct | null> {
+  const { products } = await getOrderableProducts();
+  return products.find((p) => p.slug === slug) ?? null;
+}
