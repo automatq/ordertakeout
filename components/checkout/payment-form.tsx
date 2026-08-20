@@ -114,11 +114,11 @@ export function PaymentForm({
               setStatus("loading");
               setAttempt((current) => current + 1);
             }}
-            className="btn btn-primary btn-sm"
+            className="btn btn-primary btn-sm rounded-full"
           >
             Try again
           </button>
-          <a href={STORE_INFO.phoneHref} className="btn btn-secondary btn-sm">
+          <a href={STORE_INFO.phoneHref} className="btn btn-secondary btn-sm rounded-full">
             Call {STORE_INFO.phone}
           </a>
         </div>
@@ -158,7 +158,7 @@ export function PaymentForm({
         type="button"
         onClick={handleSubmit}
         disabled={disabled || submitting || status !== "ready"}
-        className="btn btn-primary btn-block"
+        className="btn btn-primary btn-block rounded-full px-8"
       >
         {submitting ? (
           <>

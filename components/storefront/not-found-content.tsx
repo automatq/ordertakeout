@@ -13,7 +13,8 @@ import { STORE_INFO } from "@/lib/store";
  */
 export function NotFoundContent() {
   return (
-    <main className="shell flex flex-col items-center gap-6 py-section text-center">
+    <main className="bg-brand px-6 py-section">
+      <div className="bg-surface shadow-raised mx-auto flex max-w-2xl flex-col items-center gap-6 rounded-[2.5rem] p-8 text-center sm:p-12">
       <span
         aria-hidden
         className="bg-brand-soft text-brand flex h-20 w-20 items-center justify-center rounded-full"
@@ -22,7 +23,7 @@ export function NotFoundContent() {
       </span>
 
       <p className="eyebrow">404</p>
-      <h1 className="font-display text-ink text-display-lg font-normal uppercase">
+      <h1 className="font-display text-brand text-display-lg font-normal uppercase">
         We couldn&rsquo;t find that page
       </h1>
       <p className="text-ink-muted max-w-md text-lg text-pretty">
@@ -37,6 +38,7 @@ export function NotFoundContent() {
         <a href={STORE_INFO.phoneHref} className="btn btn-secondary">
           Call {STORE_INFO.phone}
         </a>
+      </div>
       </div>
     </main>
   );

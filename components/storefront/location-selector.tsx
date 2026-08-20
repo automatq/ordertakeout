@@ -110,7 +110,10 @@ export function LocationSelector({
         <span className="location-strip-kicker block text-[0.6875rem] font-semibold tracking-[0.12em] uppercase">
           Picking up at
         </span>
-        <strong className="location-strip-name block truncate text-sm font-semibold sm:text-base">
+        <strong className="location-strip-name block truncate text-sm font-semibold sm:hidden">
+          {selected ? shortLocationName(selected.name) : "Choose a bakery"}
+        </strong>
+        <strong className="location-strip-name hidden truncate text-base font-semibold sm:block">
           {selected?.name ?? "Choose a bakery"}
         </strong>
         {selected ? (
@@ -130,7 +133,7 @@ export function LocationSelector({
         >
           <option value="">Choose a store</option>
           {locations.map((location) => (
-            <option key={location.id} value={location.id}>{location.name}</option>
+            <option key={location.id} value={location.id}>{shortLocationName(location.name)}</option>
           ))}
         </select>
       </label>
@@ -220,6 +223,11 @@ export function LocationSelector({
   );
 }
 
+function shortLocationName(name: string): string {
+  const pieces = name.split(/\s+[—–-]\s+/);
+  return pieces.at(-1)?.trim() || name;
+}
+
 function LocationDialog({
   labelledBy,
   onDismiss,
@@ -232,6 +240,11 @@ function LocationDialog({
   children: ReactNode;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
+  const onDismissRef = useRef(onDismiss);
+
+  useEffect(() => {
+    onDismissRef.current = onDismiss;
+  }, [onDismiss]);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -245,9 +258,9 @@ function LocationDialog({
     dialog.querySelector<HTMLElement>("[data-autofocus], button, select")?.focus();
 
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && onDismiss) {
+      if (event.key === "Escape" && onDismissRef.current) {
         event.preventDefault();
-        onDismiss();
+        onDismissRef.current();
         return;
       }
       if (event.key !== "Tab") return;
@@ -272,7 +285,7 @@ function LocationDialog({
       document.body.style.overflow = previousOverflow;
       previouslyFocused?.focus();
     };
-  }, [onDismiss]);
+  }, []);
 
   return (
     <div className="location-dialog-backdrop" role="presentation">

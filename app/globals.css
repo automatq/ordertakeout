@@ -1281,7 +1281,7 @@
     position: fixed;
     z-index: 100;
     inset-inline: var(--spacing-gutter);
-    bottom: calc(7rem + env(safe-area-inset-bottom));
+    bottom: calc(1rem + env(safe-area-inset-bottom));
     display: flex;
     flex-direction: column;
     gap: 0.5rem;

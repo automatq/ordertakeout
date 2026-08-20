@@ -45,11 +45,11 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
  */
 export default function ProductPage({ params }: PageProps) {
   return (
-    <main className="shell flex flex-col gap-10 py-10 sm:py-14">
+    <main className="shell flex flex-col gap-12 py-8 sm:py-12 lg:gap-16 lg:py-16">
       <nav aria-label="Breadcrumb">
         <Link
           href="/#trays"
-          className="text-ink-muted hover:text-brand inline-flex items-center gap-2 text-sm transition-colors"
+          className="border-brand/25 bg-surface text-brand hover:bg-brand hover:text-brand-ink inline-flex min-h-11 items-center gap-2 rounded-full border-2 px-4 text-sm font-medium transition-colors"
         >
           <ArrowLeftIcon className="h-4 w-4" />
           All party trays
@@ -72,15 +72,23 @@ async function ProductDetail({ params }: PageProps) {
 
   return (
     <>
-      <div className="grid gap-10 lg:grid-cols-[1.1fr_1fr] lg:items-start">
+      <section
+        aria-labelledby="product-heading"
+        className="grid gap-8 lg:grid-cols-[1.08fr_0.92fr] lg:items-start lg:gap-12"
+      >
         <Gallery product={product} />
 
-        <div className="flex flex-col gap-6 lg:sticky lg:top-24">
-          <header className="flex flex-col gap-3">
-            <h1 className="font-display text-ink text-display-lg font-normal uppercase">
+        <div className="flex flex-col gap-5 lg:sticky lg:top-40">
+          <header className="storefront-hero shadow-raised relative isolate flex flex-col gap-5 overflow-hidden rounded-[2.25rem] p-6 sm:p-8">
+            <div aria-hidden className="storefront-hero-texture absolute inset-0 -z-10" />
+            <span className="hero-badge text-brand-ink w-fit">Handcrafted for sharing</span>
+            <h1
+              id="product-heading"
+              className="font-display text-brand-ink text-display-xl max-w-[12ch] font-normal uppercase"
+            >
               {product.name}
             </h1>
-            <ProductDescription product={product} />
+            <ProductDescription product={product} inverted />
           </header>
 
           {/* Above the size picker, not below it. The lead time is the single
@@ -95,7 +103,7 @@ async function ProductDetail({ params }: PageProps) {
             orderCutoffTime={product.rule.orderCutoffTime}
           />
         </div>
-      </div>
+      </section>
 
       <Suspense fallback={null}>
         <RelatedTrays currentId={product.id} />
@@ -105,14 +113,26 @@ async function ProductDetail({ params }: PageProps) {
 }
 
 /** Staff copy overrides Square copy; paragraphs stay plain text and XSS-safe. */
-function ProductDescription({ product }: { product: StoreProduct }) {
+function ProductDescription({
+  product,
+  inverted = false,
+}: {
+  product: StoreProduct;
+  inverted?: boolean;
+}) {
   const description = product.descriptionMd?.trim() || product.description?.trim();
   if (!description) return null;
 
   return (
-    <div className="text-ink-muted flex flex-col gap-3 text-lg text-pretty">
+    <div
+      className={`flex max-w-[42rem] flex-col gap-3 text-lg leading-relaxed text-pretty ${
+        inverted ? "text-brand-ink/85" : "text-ink-muted"
+      }`}
+    >
       {description.split(/\n\s*\n/).map((paragraph) => (
-        <p key={paragraph} className="whitespace-pre-line">{paragraph}</p>
+        <p key={paragraph} className="whitespace-pre-line">
+          {paragraph}
+        </p>
       ))}
     </div>
   );
@@ -125,7 +145,7 @@ function Gallery({ product }: { product: StoreProduct }) {
     return (
       <div
         aria-hidden
-        className="rounded-card text-brand/25 flex aspect-[4/3] w-full items-center justify-center"
+        className="storefront-hero-frame text-brand/25 shadow-raised flex aspect-[4/3] w-full items-center justify-center overflow-hidden"
         style={{
           background:
             "linear-gradient(140deg, var(--color-brand-tint) 0%, var(--color-surface-sunken) 100%)",
@@ -139,8 +159,8 @@ function Gallery({ product }: { product: StoreProduct }) {
   const [hero, ...rest] = images;
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="rounded-card bg-surface-sunken shadow-card relative aspect-[4/3] w-full overflow-hidden">
+    <div className="flex flex-col gap-4">
+      <div className="storefront-hero-frame bg-surface-sunken shadow-raised relative aspect-[4/3] w-full overflow-hidden">
         <Image
           src={sizedImage(hero!, 1280)}
           alt={product.name}
@@ -158,7 +178,7 @@ function Gallery({ product }: { product: StoreProduct }) {
           {rest.slice(0, 4).map((image, index) => (
             <li
               key={image}
-              className="rounded-control bg-surface-sunken relative aspect-square overflow-hidden"
+              className="border-surface bg-surface-sunken shadow-card relative aspect-square overflow-hidden rounded-[1.5rem] border-4"
             >
               <Image
                 src={sizedImage(image, 240)}
@@ -180,14 +200,22 @@ function OrderingRules({ product }: { product: StoreProduct }) {
   const pickupTimes = rule.allowedPickupTimes;
 
   return (
-    <section aria-labelledby="rules-heading" className="panel flex flex-col gap-3 p-5">
-      <h2 id="rules-heading" className="text-ink font-semibold">
+    <section
+      aria-labelledby="rules-heading"
+      className="border-secondary/20 bg-secondary-soft flex flex-col gap-4 rounded-[2rem] border-2 p-5 sm:p-6"
+    >
+      <h2
+        id="rules-heading"
+        className="font-display text-secondary text-3xl font-normal uppercase"
+      >
         How ordering works
       </h2>
 
-      <ul className="text-ink-muted flex flex-col gap-3 text-sm">
+      <ul className="text-ink-muted flex flex-col gap-4 text-sm leading-relaxed">
         <li className="flex items-start gap-3">
-          <ClockIcon className="text-brand mt-0.5 h-4 w-4 shrink-0" />
+          <span className="bg-accent text-ink flex h-8 w-8 shrink-0 items-center justify-center rounded-full">
+            <ClockIcon className="h-4 w-4" />
+          </span>
           <span>
             Order at least{" "}
             <strong className="text-ink font-medium">
@@ -203,7 +231,9 @@ function OrderingRules({ product }: { product: StoreProduct }) {
 
         {pickupTimes.length > 0 ? (
           <li className="flex items-start gap-3">
-            <ClockIcon className="text-brand mt-0.5 h-4 w-4 shrink-0" />
+            <span className="bg-accent text-ink flex h-8 w-8 shrink-0 items-center justify-center rounded-full">
+              <ClockIcon className="h-4 w-4" />
+            </span>
             <span>
               Collect between{" "}
               <strong className="text-ink font-medium">
@@ -219,7 +249,9 @@ function OrderingRules({ product }: { product: StoreProduct }) {
         ) : null}
 
         <li className="flex items-start gap-3">
-          <MapPinIcon className="text-brand mt-0.5 h-4 w-4 shrink-0" />
+          <span className="bg-accent text-ink flex h-8 w-8 shrink-0 items-center justify-center rounded-full">
+            <MapPinIcon className="h-4 w-4" />
+          </span>
           <span>Pay online now; collect from your selected pickup location.</span>
         </li>
       </ul>
@@ -242,13 +274,19 @@ async function RelatedTrays({ currentId }: { currentId: string }) {
   if (others.length === 0) return null;
 
   return (
-    <section aria-labelledby="related-heading" className="border-border flex flex-col gap-6 border-t pt-10">
-      <h2
-        id="related-heading"
-        className="font-display text-ink text-display-md font-normal uppercase"
-      >
-        Other party trays
-      </h2>
+    <section
+      aria-labelledby="related-heading"
+      className="border-brand/15 flex flex-col gap-8 border-t-2 pt-10 sm:pt-14"
+    >
+      <header className="flex flex-col gap-2">
+        <p className="eyebrow text-secondary">Keep the table full</p>
+        <h2
+          id="related-heading"
+          className="font-display text-brand text-display-md font-normal uppercase"
+        >
+          Other party trays
+        </h2>
+      </header>
       <ProductGrid products={others} />
     </section>
   );
@@ -258,17 +296,20 @@ function ProductSkeleton() {
   return (
     <LoadingRegion
       label="Loading party tray"
-      className="grid gap-10 lg:grid-cols-[1.1fr_1fr] lg:items-start"
+      className="grid gap-8 lg:grid-cols-[1.08fr_0.92fr] lg:items-start lg:gap-12"
     >
-      <Skeleton className="aspect-[4/3] w-full" />
+      <div className="border-surface shadow-raised overflow-hidden rounded-[2.5rem] border-8">
+        <Skeleton className="aspect-[4/3] w-full rounded-none" />
+      </div>
       <div className="flex flex-col gap-6">
-        <div className="flex flex-col gap-3">
-          <Skeleton className="h-10 w-3/4" />
+        <div className="bg-brand flex flex-col gap-4 rounded-[2.25rem] p-6 sm:p-8">
+          <Skeleton className="h-8 w-1/3" />
+          <Skeleton className="h-16 w-3/4" />
           <Skeleton className="h-5 w-full" />
           <Skeleton className="h-5 w-2/3" />
         </div>
-        <Skeleton className="h-36 w-full" />
-        <Skeleton className="h-64 w-full" />
+        <Skeleton className="h-44 w-full rounded-[2rem]" />
+        <Skeleton className="h-72 w-full rounded-[2rem]" />
       </div>
     </LoadingRegion>
   );

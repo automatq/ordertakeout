@@ -26,7 +26,19 @@ export function OrderLookupForm() {
   }, [state, router]);
 
   return (
-    <form action={formAction} className="card flex flex-col gap-4 p-6">
+    <form
+      action={formAction}
+      className="card shadow-raised flex flex-col gap-5 rounded-[2rem] border-0 p-6 sm:p-8"
+    >
+      <div>
+        <p className="text-secondary text-xs font-semibold tracking-[0.14em] uppercase">
+          Your confirmation details
+        </p>
+        <h2 className="font-display text-ink mt-1 text-3xl font-normal uppercase">
+          Find your pickup
+        </h2>
+      </div>
+
       <div className="flex flex-col gap-1.5">
         <label htmlFor="lookup-number" className="text-ink-subtle text-sm font-medium">
           Order number
@@ -69,7 +81,11 @@ export function OrderLookupForm() {
         </p>
       ) : null}
 
-      <button type="submit" disabled={pending} className="btn btn-primary btn-block sm:w-auto">
+      <button
+        type="submit"
+        disabled={pending}
+        className="btn btn-primary btn-block rounded-full px-8 sm:w-auto sm:self-start"
+      >
         {pending ? (
           <>
             <span className="spinner" aria-hidden />

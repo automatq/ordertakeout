@@ -27,15 +27,16 @@ export default function StorefrontError({
   }, [error]);
 
   return (
-    <main className="shell flex flex-col items-center gap-6 py-section text-center">
+    <main className="bg-brand px-6 py-section">
+      <div className="bg-surface shadow-raised mx-auto flex max-w-2xl flex-col items-center gap-6 rounded-[2.5rem] p-8 text-center sm:p-12">
       <span
         aria-hidden
-        className="bg-danger-soft text-danger flex h-20 w-20 items-center justify-center rounded-full"
+        className="bg-accent-soft text-brand flex h-20 w-20 items-center justify-center rounded-full"
       >
         <AlertIcon className="h-10 w-10" />
       </span>
 
-      <h1 className="font-display text-ink text-display-lg font-normal uppercase">
+      <h1 className="font-display text-brand text-display-lg font-normal uppercase">
         Something went wrong
       </h1>
       <p className="text-ink-muted max-w-md text-lg text-pretty">
@@ -57,6 +58,7 @@ export default function StorefrontError({
       {error.digest ? (
         <p className="text-ink-subtle text-xs">Reference: {error.digest}</p>
       ) : null}
+      </div>
     </main>
   );
 }

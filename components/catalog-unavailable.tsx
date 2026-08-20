@@ -10,7 +10,7 @@ import { STORE_HOURS, STORE_INFO } from "@/lib/store";
  */
 export function CatalogUnavailable() {
   return (
-    <section role="status" className="panel flex flex-col items-center gap-3 p-10 text-center">
+    <section role="status" className="panel flex flex-col items-center gap-3 rounded-[2rem] p-10 text-center">
       <span
         aria-hidden
         className="bg-surface text-warning border-border flex h-12 w-12 items-center justify-center rounded-full border"
@@ -18,7 +18,7 @@ export function CatalogUnavailable() {
         <AlertIcon className="h-6 w-6" />
       </span>
 
-      <h2 className="text-ink font-display text-display-sm font-normal uppercase">
+      <h2 className="text-brand font-display text-display-md font-normal uppercase">
         Online ordering is temporarily down
       </h2>
       <p className="text-ink-muted max-w-md text-sm text-pretty">

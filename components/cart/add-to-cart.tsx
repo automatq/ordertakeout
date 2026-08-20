@@ -80,19 +80,37 @@ export function AddToCart({
   const totalCents = selected.priceCents * quantity;
 
   return (
-    <div className="card flex flex-col gap-5 p-6">
-      <fieldset className="flex flex-col gap-3">
-        <legend className="text-ink-subtle text-sm font-semibold tracking-wide uppercase">
+    <div className="bg-surface shadow-raised flex flex-col gap-6 rounded-[2rem] p-5 sm:p-7">
+      <div className="flex items-center justify-between gap-4">
+        <p className="eyebrow text-secondary">Build your tray</p>
+        <span className="tag tag-accent">
+          {variants.length} size{variants.length === 1 ? "" : "s"}
+        </span>
+      </div>
+
+      <fieldset className="flex flex-col gap-4">
+        <legend className="font-display text-ink text-3xl font-normal uppercase">
           Choose a size
         </legend>
 
-        <div className="flex flex-col gap-2 pt-1">
+        <div className="flex flex-col gap-3 pt-1">
           {variants.map((variant) => {
             const perPiece = pricePerPiece(variant);
             const stock = availability?.[variant.id];
+            const isSelected = variant.id === variantId;
+            const isSoldOut = stock === 0;
 
             return (
-              <label key={variant.id} className={`radio-card ${stock === 0 ? "opacity-50" : ""}`}>
+              <label
+                key={variant.id}
+                className={`relative flex min-h-20 items-center justify-between gap-4 rounded-[1.5rem] border-2 px-4 py-3 transition-[border-color,background-color,box-shadow,transform] focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-brand sm:px-5 ${
+                  isSoldOut
+                    ? "border-border bg-surface-sunken cursor-not-allowed"
+                    : isSelected
+                      ? "border-secondary bg-secondary-soft shadow-card"
+                      : "border-border bg-canvas hover:border-accent hover:bg-accent-soft cursor-pointer hover:-translate-y-0.5"
+                }`}
+              >
                 <span className="flex items-center gap-3">
                   {/* Visually hidden rather than removed: the native control is
                       what makes this a real radio group for keyboard and
@@ -109,21 +127,31 @@ export function AddToCart({
                   <span
                     aria-hidden
                     className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
-                      variant.id === variantId
-                        ? "border-brand bg-brand"
+                      isSelected
+                        ? "border-secondary bg-secondary"
                         : "border-border-strong"
                     }`}
                   >
-                    {variant.id === variantId ? (
-                      <span className="bg-brand-ink h-1.5 w-1.5 rounded-full" />
+                    {isSelected ? (
+                      <span className="bg-accent h-1.5 w-1.5 rounded-full" />
                     ) : null}
                   </span>
-                  <span className="text-ink font-medium">{variant.name}</span>
-                  {stock === 0 ? <span className="text-danger text-xs">Sold out here</span> : null}
+                  <span>
+                    <span className="text-ink block font-medium">{variant.name}</span>
+                    {isSoldOut ? (
+                      <span className="text-danger block pt-0.5 text-xs font-medium">
+                        Sold out here
+                      </span>
+                    ) : null}
+                  </span>
                 </span>
 
-                <span className="text-right">
-                  <span className="text-ink font-display block text-xl font-normal">
+                <span
+                  className={`shrink-0 rounded-full px-3 py-2 text-right ${
+                    isSelected ? "bg-surface" : "bg-surface/75"
+                  }`}
+                >
+                  <span className="text-brand font-display block text-2xl leading-none font-normal">
                     {formatMoney(variant.priceCents, variant.currency)}
                   </span>
                   {/* The whole point of a bigger tray is that it's better value;
@@ -140,7 +168,7 @@ export function AddToCart({
         </div>
       </fieldset>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+      <div className="flex flex-col gap-4">
         <QuantityStepper
           label={`Quantity of ${selected.name}`}
           value={quantity}
@@ -167,7 +195,7 @@ export function AddToCart({
             });
           }}
           disabled={!locationId || inventoryError || selectedStock == null || selectedStock < quantity}
-          className="btn btn-primary flex-1"
+          className="btn btn-primary btn-block min-h-14 rounded-full text-base sm:text-lg"
         >
           {!locationId
             ? "Choose a pickup location"
@@ -183,7 +211,7 @@ export function AddToCart({
         </button>
       </div>
 
-      <p className="text-ink-subtle text-xs">
+      <p className="bg-accent-soft text-accent-ink rounded-[1.25rem] px-4 py-3 text-xs leading-relaxed">
         {leadTimeDays > 0
           ? `Order at least ${leadTimeDays} day${leadTimeDays === 1 ? "" : "s"} ahead`
           : "Same-day ordering is available"}
@@ -191,7 +219,10 @@ export function AddToCart({
       </p>
 
       {inventoryError ? (
-        <p role="alert" className="field-error flex flex-wrap items-center gap-2">
+        <p
+          role="alert"
+          className="border-danger/20 bg-danger-soft text-danger flex flex-wrap items-center gap-2 rounded-[1.25rem] border px-4 py-3 text-sm"
+        >
           We couldn&rsquo;t check this store&rsquo;s stock.
           <button
             type="button"

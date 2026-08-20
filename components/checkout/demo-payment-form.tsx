@@ -60,7 +60,7 @@ export function DemoPaymentForm({
         type="button"
         onClick={handlePay}
         disabled={submitting}
-        className="btn btn-primary btn-block"
+        className="btn btn-primary btn-block rounded-full px-8"
       >
         {submitting ? (
           <>

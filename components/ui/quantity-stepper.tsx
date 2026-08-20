@@ -62,7 +62,7 @@ export function QuantityStepper({
         {size === "sm" ? <span className="sr-only">{label}</span> : label}
       </label>
 
-      <div className={`stepper ${size === "sm" ? "scale-90 origin-left" : ""}`}>
+      <div className="stepper">
         <button
           type="button"
           className="stepper-btn"

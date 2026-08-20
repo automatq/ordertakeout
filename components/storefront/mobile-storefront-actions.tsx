@@ -52,10 +52,9 @@ export function MobileStorefrontActions({ locations }: { locations: StoreLocatio
 
   return (
     <div
-      className="bg-canvas/95 border-border shadow-raised fixed right-3 bottom-3 left-3 z-40 rounded-pill border backdrop-blur-xl lg:hidden"
-      style={{ marginBottom: "env(safe-area-inset-bottom)" }}
+      className="bg-canvas border-border relative z-30 border-b lg:hidden"
     >
-      <nav aria-label="Quick actions" className="grid grid-cols-3 gap-2 p-2">
+      <nav aria-label="Quick actions" className="shell grid grid-cols-3 gap-2 py-2">
         <DirectionsAction
           key={`${pathname}:${locationId ?? "none"}`}
           directions={directions}

@@ -64,7 +64,7 @@ export function OrderRefresher({ live }: { live: boolean }) {
   if (!live) return null;
 
   return (
-    <div className="text-ink-subtle flex flex-wrap items-center gap-3 text-xs">
+    <div className="text-ink-subtle flex flex-wrap items-center gap-1 text-xs">
       <span aria-live="polite">
         {isPending
           ? "Checking for updates…"
@@ -76,7 +76,7 @@ export function OrderRefresher({ live }: { live: boolean }) {
       <button
         type="button"
         onClick={refresh}
-        className="text-ink-muted hover:text-brand inline-flex items-center gap-1.5 underline underline-offset-2 transition-colors"
+        className="text-ink-muted hover:text-brand inline-flex min-h-11 items-center gap-1.5 rounded-full px-3 underline underline-offset-2 transition-colors"
       >
         <RefreshIcon className="h-3.5 w-3.5" />
         Refresh now

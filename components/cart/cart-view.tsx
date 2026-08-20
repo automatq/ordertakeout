@@ -86,7 +86,14 @@ export function CartView({ products }: { products: CatalogProduct[] }) {
   }
 
   if (!locationId) {
-    return <div role="alert" className="panel p-5 text-sm text-ink-muted">Choose a pickup location above before continuing with your order.</div>;
+    return (
+      <div
+        role="alert"
+        className="border-border bg-canvas text-ink-muted rounded-[1.75rem] border p-5 text-sm sm:p-6"
+      >
+        Choose a pickup location above before continuing with your order.
+      </div>
+    );
   }
 
   const resolved = resolveCart(items, products);
@@ -94,9 +101,12 @@ export function CartView({ products }: { products: CatalogProduct[] }) {
   const inventoryError = inventoryErrorLocation === locationId;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-7">
       {!resolved.ok ? (
-        <div role="alert" className="panel border-danger/30 flex flex-col gap-3 p-5">
+        <div
+          role="alert"
+          className="bg-canvas border-danger/30 flex flex-col gap-3 rounded-[1.75rem] border p-5 sm:p-6"
+        >
           <p className="text-ink text-sm">
             {resolved.unknownVariantIds.length === 1 ? "An item" : "Some items"} in your
             order {resolved.unknownVariantIds.length === 1 ? "is" : "are"} no longer
@@ -112,14 +122,17 @@ export function CartView({ products }: { products: CatalogProduct[] }) {
         </div>
       ) : null}
 
-      <ul className="flex flex-col gap-3">
+      <ul className="flex flex-col gap-4">
         {resolved.lines.map((line) => {
           const image = primaryImage(line.product);
           const available = inventory?.[line.variant.id];
 
           return (
-            <li key={line.variant.id} className="card flex gap-4 p-4">
-              <div className="bg-surface-sunken rounded-control text-brand/30 relative h-20 w-20 shrink-0 overflow-hidden">
+            <li
+              key={line.variant.id}
+              className="border-border bg-canvas flex gap-4 rounded-[1.75rem] border p-4 sm:gap-5 sm:p-5"
+            >
+              <div className="bg-surface text-brand/30 relative h-20 w-20 shrink-0 overflow-hidden rounded-[1.25rem] sm:h-24 sm:w-24">
                 {image ? (
                   <Image
                     src={sizedImage(image, 160)}
@@ -136,20 +149,22 @@ export function CartView({ products }: { products: CatalogProduct[] }) {
               </div>
 
               <div className="flex min-w-0 flex-1 flex-col gap-3">
-                <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
                   <div className="min-w-0">
-                    <p className="text-ink font-medium">{line.product.name}</p>
+                    <p className="text-ink font-display text-2xl leading-none font-normal uppercase">
+                      {line.product.name}
+                    </p>
                     <p className="text-ink-muted text-sm">{line.variant.name}</p>
                     <p className="text-ink-subtle text-sm">
                       {formatMoney(line.variant.priceCents, line.variant.currency)} each
                     </p>
                   </div>
-                  <span className="text-ink font-display shrink-0 text-xl font-normal">
+                  <span className="bg-surface text-brand font-display shrink-0 rounded-full px-3 py-2 text-2xl leading-none font-normal">
                     {formatMoney(line.lineTotalCents, line.variant.currency)}
                   </span>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <div className="flex flex-wrap items-end gap-x-3 gap-y-3">
                   <QuantityStepper
                     size="sm"
                     label={`Quantity of ${line.product.name}, ${line.variant.name}`}
@@ -179,7 +194,7 @@ export function CartView({ products }: { products: CatalogProduct[] }) {
                     /* The accessible name used to be the bare word "Remove",
                        repeated once per row. */
                     aria-label={`Remove ${line.product.name}, ${line.variant.name}, from your order`}
-                    className="text-ink-subtle hover:text-danger text-sm underline underline-offset-2 transition-colors"
+                    className="text-ink-subtle hover:text-danger focus-visible:ring-brand inline-flex min-h-11 items-center justify-center rounded-full px-4 text-sm font-medium underline underline-offset-2 transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
                   >
                     Remove
                   </button>
@@ -190,7 +205,7 @@ export function CartView({ products }: { products: CatalogProduct[] }) {
         })}
       </ul>
 
-      <div className="card flex flex-col gap-3 p-5">
+      <div className="border-border bg-canvas flex flex-col gap-3 rounded-[1.75rem] border p-5 sm:p-6">
         <div className="text-ink-muted flex items-baseline justify-between text-sm">
           <span>Subtotal</span>
           <span className="tabular-nums">
@@ -204,9 +219,9 @@ export function CartView({ products }: { products: CatalogProduct[] }) {
               beats a "Total" that quietly changes on the payment screen. */}
           <span>Calculated at payment</span>
         </div>
-        <div className="border-border text-ink flex items-baseline justify-between border-t pt-3 text-lg font-semibold">
+        <div className="border-border text-ink flex flex-wrap items-baseline justify-between gap-2 border-t pt-4 text-lg font-semibold">
           <span>Estimated total before tax</span>
-          <span className="font-display text-2xl font-normal">
+          <span className="text-brand font-display text-3xl leading-none font-normal sm:text-4xl">
             {formatMoney(resolved.subtotalCents, resolved.currency)}
           </span>
         </div>
@@ -227,7 +242,10 @@ export function CartView({ products }: { products: CatalogProduct[] }) {
           Adjust or remove the items above before choosing a pickup time.
         </p>
       ) : (
-        <Link href="/checkout" className="btn btn-primary btn-block sm:w-auto sm:self-start">
+        <Link
+          href="/checkout"
+          className="btn btn-primary btn-block min-h-14 rounded-full text-lg sm:min-h-16"
+        >
           Choose pickup time
           <ArrowRightIcon className="h-4 w-4" />
         </Link>

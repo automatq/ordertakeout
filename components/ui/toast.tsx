@@ -85,7 +85,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                   toast.action?.onClick();
                   dismiss(toast.id);
                 }}
-                className="text-brand hover:text-brand-hover shrink-0 text-sm font-medium underline underline-offset-2 transition-colors"
+                className="text-brand hover:text-brand-hover inline-flex min-h-11 shrink-0 items-center px-2 text-sm font-medium underline underline-offset-2 transition-colors"
               >
                 {toast.action.label}
               </button>
@@ -95,7 +95,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               type="button"
               onClick={() => dismiss(toast.id)}
               aria-label="Dismiss notification"
-              className="text-ink-subtle hover:text-ink -mt-1 -mr-1 shrink-0 rounded-full p-1 text-lg leading-none transition-colors"
+              className="text-ink-subtle hover:text-ink -my-2 -mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-xl leading-none transition-colors"
             >
               &times;
             </button>

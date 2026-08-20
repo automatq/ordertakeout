@@ -33,7 +33,7 @@ export function EmptyState({
   return (
     <div
       role="status"
-      className={`panel flex flex-col items-center text-center ${
+      className={`panel flex flex-col items-center rounded-[2rem] text-center ${
         compact ? "gap-2 p-6" : "gap-3 p-10"
       }`}
     >

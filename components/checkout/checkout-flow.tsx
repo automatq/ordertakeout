@@ -298,27 +298,60 @@ export function CheckoutFlow({
       <Steps current={step} />
 
       {!resolved.ok ? (
-        <div role="alert" className="panel border-danger/30 flex flex-wrap items-center justify-between gap-3 p-4">
+        <div
+          role="alert"
+          className="panel border-danger/30 flex flex-wrap items-center justify-between gap-3 rounded-[1.5rem] p-4 sm:px-6"
+        >
           <p className="text-ink text-sm">
             {resolved.unknownVariantIds.length === 1 ? "One item is" : "Some items are"} no longer available.
           </p>
-          <Link href="/cart" className="btn btn-secondary btn-sm">Review your order</Link>
+          <Link href="/cart" className="btn btn-secondary btn-sm rounded-full">
+            Review your order
+          </Link>
         </div>
       ) : null}
 
-      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
+      <div className="grid gap-8 lg:grid-cols-[22rem_minmax(0,1fr)] lg:items-start">
         {/* min-w-0: a grid item defaults to `min-width: auto`, so the pickup
             date rail's 21 chips would size this column to their full width and
             push the whole page into a horizontal scroll instead of scrolling
             inside the rail. */}
-        <div className="flex min-w-0 flex-col gap-8">
+        <div className="flex min-w-0 flex-col gap-8 lg:order-2">
           {!reserved ? (
             <>
-              <section aria-labelledby="pickup-heading" className="card flex flex-col gap-4 p-6">
-                <h2 id="pickup-heading" className="text-ink text-lg font-semibold">
-                  When would you like to collect?
-                </h2>
-                {location ? <p className="panel text-ink-muted p-3 text-sm">Pickup from <strong className="text-ink">{location.name}</strong><br />{location.address}{location.city ? `, ${location.city}` : ""}</p> : null}
+              <section
+                aria-labelledby="pickup-heading"
+                className="card shadow-raised flex flex-col gap-5 rounded-[2rem] border-0 p-6 sm:p-8"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="bg-secondary text-secondary-ink flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold">
+                    1
+                  </span>
+                  <div>
+                    <p className="text-secondary text-xs font-semibold tracking-[0.14em] uppercase">
+                      Pickup
+                    </p>
+                    <h2
+                      id="pickup-heading"
+                      className="font-display text-ink text-3xl font-normal uppercase"
+                    >
+                      When would you like to collect?
+                    </h2>
+                  </div>
+                </div>
+                {location ? (
+                  <p className="border-secondary/20 bg-secondary-soft text-ink-muted flex items-start gap-3 rounded-[1.25rem] border p-4 text-sm">
+                    <span className="bg-secondary text-secondary-ink flex size-9 shrink-0 items-center justify-center rounded-full">
+                      <MapPinIcon className="h-4 w-4" />
+                    </span>
+                    <span>
+                      Pickup from <strong className="text-ink">{location.name}</strong>
+                      <br />
+                      {location.address}
+                      {location.city ? `, ${location.city}` : ""}
+                    </span>
+                  </p>
+                ) : null}
 
                 {pickupProblem ? (
                   <p role="alert" className="field-error">
@@ -365,10 +398,26 @@ export function CheckoutFlow({
                 ) : null}
               </section>
 
-              <section aria-labelledby="details-heading" className="card flex flex-col gap-4 p-6">
-                <h2 id="details-heading" className="text-ink text-lg font-semibold">
-                  Your details
-                </h2>
+              <section
+                aria-labelledby="details-heading"
+                className="card shadow-raised flex flex-col gap-5 rounded-[2rem] border-0 p-6 sm:p-8"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="bg-accent text-ink flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold">
+                    2
+                  </span>
+                  <div>
+                    <p className="text-accent-ink text-xs font-semibold tracking-[0.14em] uppercase">
+                      Contact
+                    </p>
+                    <h2
+                      id="details-heading"
+                      className="font-display text-ink text-3xl font-normal uppercase"
+                    >
+                      Your details
+                    </h2>
+                  </div>
+                </div>
 
                 {FIELDS.map((field) => (
                   <Field
@@ -427,7 +476,7 @@ export function CheckoutFlow({
                   type="button"
                   onClick={handleReserve}
                   disabled={isPending || !locationId || !resolved.ok}
-                  className="btn btn-primary btn-block sm:w-auto sm:self-start"
+                  className="btn btn-primary btn-block min-h-14 rounded-full px-8 text-base"
                 >
                   {isPending ? (
                     <>
@@ -445,11 +494,27 @@ export function CheckoutFlow({
               </div>
             </>
           ) : (
-            <section aria-labelledby="payment-heading" className="card flex flex-col gap-4 p-6">
+            <section
+              aria-labelledby="payment-heading"
+              className="card shadow-raised flex flex-col gap-5 rounded-[2rem] border-0 p-6 sm:p-8"
+            >
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 id="payment-heading" className="text-ink text-lg font-semibold">
-                  Payment
-                </h2>
+                <div className="flex items-center gap-3">
+                  <span className="bg-brand text-brand-ink flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold">
+                    3
+                  </span>
+                  <div>
+                    <p className="text-brand text-xs font-semibold tracking-[0.14em] uppercase">
+                      Secure checkout
+                    </p>
+                    <h2
+                      id="payment-heading"
+                      className="font-display text-ink text-3xl font-normal uppercase"
+                    >
+                      Payment
+                    </h2>
+                  </div>
+                </div>
                 <HoldCountdown
                   expiresAt={reserved.expiresAt}
                   onExpire={() => {
@@ -460,7 +525,7 @@ export function CheckoutFlow({
               </div>
 
               {pickup ? (
-                <div className="panel flex flex-wrap items-center justify-between gap-3 p-4">
+                <div className="border-secondary/20 bg-secondary-soft flex flex-wrap items-center justify-between gap-3 rounded-[1.25rem] border p-4">
                   <p className="text-ink text-sm">
                     <span className="text-ink-subtle">Collecting</span>{" "}
                     {formatStoreDate(pickup.date, "long")} at {formatPickupTime(pickup.time)}
@@ -475,7 +540,7 @@ export function CheckoutFlow({
                       setReserved(null);
                       setError(null);
                     }}
-                    className="btn btn-ghost btn-sm"
+                    className="btn btn-ghost btn-sm rounded-full"
                   >
                     Edit order details
                   </button>
@@ -523,7 +588,10 @@ function Steps({ current }: { current: 1 | 2 | 3 }) {
   const labels = ["Pickup", "Your details", "Payment"] as const;
 
   return (
-    <ol className="steps overflow-x-auto">
+    <ol
+      aria-label="Checkout progress"
+      className="steps bg-surface shadow-card overflow-x-auto rounded-[1.5rem] border border-border px-4 py-3 sm:px-6"
+    >
       {labels.map((label, index) => {
         const position = index + 1;
         const state = position === current ? "current" : position < current ? "done" : "todo";
@@ -536,7 +604,12 @@ function Steps({ current }: { current: 1 | 2 | 3 }) {
           >
             {label}
             {position < labels.length ? (
-              <span aria-hidden className="bg-border-strong ml-1 h-px w-4 sm:w-8" />
+              <span
+                aria-hidden
+                className={`ml-1 h-0.5 w-4 sm:w-8 ${
+                  position < current ? "bg-secondary" : "bg-border-strong"
+                }`}
+              />
             ) : null}
           </li>
         );
@@ -626,71 +699,84 @@ function OrderSummary({
   return (
     <aside
       aria-labelledby="summary-heading"
-      className="card flex flex-col gap-4 p-6 lg:sticky lg:top-24"
+      className="card shadow-raised overflow-hidden rounded-[2rem] border-0 p-0 lg:order-1 lg:sticky lg:top-24"
     >
-      <h2 id="summary-heading" className="text-ink text-lg font-semibold">
-        Your order
-      </h2>
-
-      <ul className="flex flex-col gap-3">
-        {lines.map((line) => {
-          const image = primaryImage(line.product);
-          return (
-            <li key={line.variant.id} className="flex items-start gap-3">
-              {image ? (
-                <Image
-                  src={sizedImage(image, 96)}
-                  alt=""
-                  width={48}
-                  height={48}
-                  className="rounded-control bg-surface-sunken h-12 w-12 shrink-0 object-cover"
-                />
-              ) : null}
-              <div className="min-w-0 flex-1">
-                <p className="text-ink text-sm">{line.product.name}</p>
-                <p className="text-ink-subtle text-xs">
-                  {line.variant.name} &times; {line.quantity}
-                </p>
-              </div>
-              <span className="text-ink shrink-0 text-sm font-medium tabular-nums">
-                {formatMoney(line.lineTotalCents, line.variant.currency)}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-
-      <div className="border-border flex flex-col gap-2 border-t pt-4">
-        <div className="text-ink-muted flex items-baseline justify-between text-sm">
-          <span>Subtotal</span>
-          <span className="tabular-nums">{formatMoney(subtotalCents, currency)}</span>
-        </div>
-        <div className="text-ink-muted flex items-baseline justify-between text-sm">
-          <span>Taxes</span>
-          <span className="tabular-nums">
-            {taxCents === null ? "Calculated at payment" : formatMoney(taxCents, currency)}
-          </span>
-        </div>
-        <div className="border-border text-ink flex items-baseline justify-between border-t pt-3 font-semibold">
-          <span>Total</span>
-          <span className="font-display text-2xl font-normal">
-            {formatMoney(totalCents, currency)}
-          </span>
-        </div>
+      <div className="bg-secondary text-secondary-ink px-6 py-5">
+        <p className="text-accent text-xs font-semibold tracking-[0.14em] uppercase">
+          Your pickup feast
+        </p>
+        <h2
+          id="summary-heading"
+          className="font-display mt-1 text-3xl font-normal uppercase"
+        >
+          Order summary
+        </h2>
       </div>
 
-      {pickup ? (
-        <p className="panel text-ink-muted flex items-start gap-2 p-3 text-sm">
-          <ClockIcon className="text-brand mt-0.5 h-4 w-4 shrink-0" />
-          {formatStoreDate(pickup.date, "long")} at {formatPickupTime(pickup.time)}
-        </p>
-      ) : null}
+      <div className="flex flex-col gap-5 p-6">
+        <ul className="flex flex-col gap-3">
+          {lines.map((line) => {
+            const image = primaryImage(line.product);
+            return (
+              <li
+                key={line.variant.id}
+                className="bg-canvas flex items-start gap-3 rounded-[1.25rem] p-3"
+              >
+                {image ? (
+                  <Image
+                    src={sizedImage(image, 112)}
+                    alt=""
+                    width={56}
+                    height={56}
+                    className="rounded-control bg-surface-sunken h-14 w-14 shrink-0 object-cover"
+                  />
+                ) : null}
+                <div className="min-w-0 flex-1">
+                  <p className="text-ink text-sm font-medium">{line.product.name}</p>
+                  <p className="text-ink-subtle text-xs">
+                    {line.variant.name} &times; {line.quantity}
+                  </p>
+                </div>
+                <span className="text-ink shrink-0 text-sm font-semibold tabular-nums">
+                  {formatMoney(line.lineTotalCents, line.variant.currency)}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
 
-      <p className="text-ink-subtle flex items-start gap-2 text-xs">
-        <MapPinIcon className="mt-0.5 h-4 w-4 shrink-0" />
-        Collect from {location ? `${location.name}, ${location.address}${location.city ? `, ${location.city}` : ""}` : "your selected pickup location"}. We&rsquo;ll email your
-        confirmation as soon as payment goes through.
-      </p>
+        <div className="flex flex-col gap-2">
+          <div className="text-ink-muted flex items-baseline justify-between text-sm">
+            <span>Subtotal</span>
+            <span className="tabular-nums">{formatMoney(subtotalCents, currency)}</span>
+          </div>
+          <div className="text-ink-muted flex items-baseline justify-between text-sm">
+            <span>Taxes</span>
+            <span className="tabular-nums">
+              {taxCents === null ? "Calculated at payment" : formatMoney(taxCents, currency)}
+            </span>
+          </div>
+          <div className="bg-accent-soft text-ink mt-1 flex items-baseline justify-between rounded-[1.25rem] px-4 py-3 font-semibold">
+            <span>Total</span>
+            <span className="font-display text-3xl font-normal">
+              {formatMoney(totalCents, currency)}
+            </span>
+          </div>
+        </div>
+
+        {pickup ? (
+          <p className="border-secondary/20 bg-secondary-soft text-ink-muted flex items-start gap-2 rounded-[1.25rem] border p-3 text-sm">
+            <ClockIcon className="text-secondary mt-0.5 h-4 w-4 shrink-0" />
+            {formatStoreDate(pickup.date, "long")} at {formatPickupTime(pickup.time)}
+          </p>
+        ) : null}
+
+        <p className="text-ink-subtle flex items-start gap-2 text-xs leading-relaxed">
+          <MapPinIcon className="text-brand mt-0.5 h-4 w-4 shrink-0" />
+          Collect from {location ? `${location.name}, ${location.address}${location.city ? `, ${location.city}` : ""}` : "your selected pickup location"}. We&rsquo;ll email your
+          confirmation as soon as payment goes through.
+        </p>
+      </div>
     </aside>
   );
 }

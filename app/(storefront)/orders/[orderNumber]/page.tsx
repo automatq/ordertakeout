@@ -32,7 +32,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default function OrderPage({ params, searchParams }: PageProps) {
   return (
-    <main className="shell-narrow flex flex-col gap-8 py-12 sm:py-16">
+    <main className="shell-tight flex flex-col gap-8 py-8 sm:py-12 lg:py-16">
       <Suspense fallback={<OrderSkeleton />}>
         <OrderDetail params={params} searchParams={searchParams} />
       </Suspense>
@@ -70,22 +70,34 @@ async function OrderDetail({ params, searchParams }: PageProps) {
 
   return (
     <>
-      <header className="flex flex-col gap-3">
-        {paid ? <p className="eyebrow text-success">Order confirmed</p> : null}
+      <header className="bg-brand text-brand-ink shadow-raised relative isolate flex flex-col gap-4 overflow-hidden rounded-[2rem] px-6 py-8 sm:rounded-[2.5rem] sm:px-10 sm:py-10">
+        <span
+          aria-hidden
+          className="bg-accent/30 absolute -top-16 -right-10 -z-10 size-56 rounded-full blur-2xl"
+        />
+        <span
+          aria-hidden
+          className="bg-brand-hover/60 absolute -bottom-24 left-1/3 -z-10 size-64 rounded-full blur-3xl"
+        />
+        <p className="bg-accent text-ink inline-flex self-start rounded-full px-4 py-2 text-xs font-semibold tracking-[0.14em] uppercase">
+          {paid ? "Order confirmed" : canceled ? "Order update" : "Awaiting payment"}
+        </p>
 
-        <h1 className="font-display text-ink text-display-lg font-normal uppercase">
+        <h1 className="font-display text-display-lg font-normal uppercase">
           {canceled ? "Order cancelled" : "Thanks for your order"}
         </h1>
 
         {/* The order number is the thing the customer reads out at the counter,
             so it gets its own block rather than being buried in a sentence. */}
-        <div className="panel flex flex-wrap items-center justify-between gap-3 p-4">
+        <div className="bg-surface text-ink flex flex-wrap items-center justify-between gap-4 rounded-[1.5rem] p-5">
           <div>
-            <p className="text-ink-subtle text-xs tracking-wide uppercase">Order number</p>
-            <p className="text-ink font-display text-2xl font-normal">{order.orderNumber}</p>
+            <p className="text-brand text-xs font-semibold tracking-[0.14em] uppercase">
+              Order number
+            </p>
+            <p className="font-display text-3xl font-normal">{order.orderNumber}</p>
           </div>
           {paid ? (
-            <p className="text-ink-muted max-w-xs text-sm text-pretty">
+            <p className="text-ink-muted max-w-sm text-sm text-pretty">
               We&rsquo;ve emailed your confirmation to {order.customerEmail}.
             </p>
           ) : null}
@@ -98,13 +110,20 @@ async function OrderDetail({ params, searchParams }: PageProps) {
            nothing explained what had happened or what to do next. */
         <section
           role="status"
-          className="panel border-danger/30 flex flex-col gap-3 p-5"
+          className="card shadow-raised border-danger/20 flex flex-col gap-4 rounded-[2rem] p-6 sm:p-8"
           aria-labelledby="cancel-heading"
         >
-          <h2 id="cancel-heading" className="text-ink flex items-center gap-2 font-semibold">
-            <AlertIcon className="text-danger h-5 w-5" />
-            This order was cancelled
-          </h2>
+          <div className="flex items-center gap-3">
+            <span className="bg-danger-soft text-danger flex size-11 items-center justify-center rounded-full">
+              <AlertIcon className="h-5 w-5" />
+            </span>
+            <h2
+              id="cancel-heading"
+              className="font-display text-ink text-3xl font-normal uppercase"
+            >
+              This order was cancelled
+            </h2>
+          </div>
           <p className="text-ink-muted text-sm text-pretty">
             {order.refundStatus === "completed"
               ? "Your full refund was accepted by Square and is being returned to the card you used. It can take a few working days to appear."
@@ -112,59 +131,76 @@ async function OrderDetail({ params, searchParams }: PageProps) {
             If you weren&rsquo;t expecting this, call us and we&rsquo;ll sort it out.
           </p>
           <div className="flex flex-wrap gap-3">
-            <a href={pickupPhoneHref} className="btn btn-secondary btn-sm">
+            <a href={pickupPhoneHref} className="btn btn-secondary btn-sm rounded-full">
               <PhoneIcon className="h-4 w-4" />
               {pickupPhone}
             </a>
-            <Link href="/#trays" className="btn btn-outline btn-sm">
+            <Link href="/#trays" className="btn btn-outline btn-sm rounded-full">
               Order again
             </Link>
           </div>
         </section>
       ) : (
         <>
-          <section aria-labelledby="pickup-heading" className="card flex flex-col gap-4 p-6">
-            <h2
-              id="pickup-heading"
-              className="text-ink-subtle text-sm font-semibold tracking-wide uppercase"
-            >
-              Pickup
-            </h2>
-
-            <p className="text-ink font-display text-3xl font-normal">
-              {formatStoreDate(order.pickupDate)} at {formatPickupTime(order.pickupTime)}
-            </p>
-            {order.pickupLocationName ? <p className="text-ink font-semibold">{order.pickupLocationName}</p> : null}
-
-            <dl className="text-ink-muted flex flex-col gap-2 text-sm">
-              <div className="flex items-start gap-3">
-                <MapPinIcon className="text-brand mt-0.5 h-4 w-4 shrink-0" />
-                <div>
-                  <dt className="sr-only">Address</dt>
-                  <dd>
-                    <address className="not-italic">
-                      {pickupAddress}, {pickupCity}
-                    </address>
-                  </dd>
-                </div>
+          <section
+            aria-labelledby="pickup-heading"
+            className="card shadow-raised overflow-hidden rounded-[2rem] border-0"
+          >
+            <div className="bg-secondary text-secondary-ink flex items-center gap-3 px-6 py-5 sm:px-8">
+              <span className="bg-accent text-ink flex size-10 shrink-0 items-center justify-center rounded-full">
+                <MapPinIcon className="h-5 w-5" />
+              </span>
+              <div>
+                <p className="text-accent text-xs font-semibold tracking-[0.14em] uppercase">
+                  Your bakery
+                </p>
+                <h2
+                  id="pickup-heading"
+                  className="font-display text-3xl font-normal uppercase"
+                >
+                  Pickup details
+                </h2>
               </div>
-              <div className="flex items-start gap-3">
-                <ClockIcon className="text-brand mt-0.5 h-4 w-4 shrink-0" />
-                <div>
-                  <dt className="sr-only">Opening hours</dt>
-                  <dd>
-                    {pickupHours ?? `Open ${STORE_HOURS.opens}–${STORE_HOURS.closes}`}
-                  </dd>
-                </div>
-              </div>
-            </dl>
+            </div>
 
-            <div className="flex flex-wrap gap-3 pt-1">
+            <div className="flex flex-col gap-4 p-6 sm:p-8">
+
+              <p className="text-ink font-display text-4xl font-normal">
+                {formatStoreDate(order.pickupDate)} at {formatPickupTime(order.pickupTime)}
+              </p>
+              {order.pickupLocationName ? (
+                <p className="text-ink text-lg font-semibold">{order.pickupLocationName}</p>
+              ) : null}
+
+              <dl className="text-ink-muted bg-canvas flex flex-col gap-3 rounded-[1.25rem] p-4 text-sm">
+                <div className="flex items-start gap-3">
+                  <MapPinIcon className="text-brand mt-0.5 h-4 w-4 shrink-0" />
+                  <div>
+                    <dt className="sr-only">Address</dt>
+                    <dd>
+                      <address className="not-italic">
+                        {pickupAddress}, {pickupCity}
+                      </address>
+                    </dd>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <ClockIcon className="text-brand mt-0.5 h-4 w-4 shrink-0" />
+                  <div>
+                    <dt className="sr-only">Opening hours</dt>
+                    <dd>
+                      {pickupHours ?? `Open ${STORE_HOURS.opens}–${STORE_HOURS.closes}`}
+                    </dd>
+                  </div>
+                </div>
+              </dl>
+
+              <div className="flex flex-wrap gap-3 pt-1">
               <a
                 href={`https://www.google.com/maps/search/?api=1&query=${mapsQuery}`}
                 target="_blank"
                 rel="noreferrer"
-                className="btn btn-secondary btn-sm"
+                className="btn btn-secondary btn-sm rounded-full"
               >
                 <MapPinIcon className="h-4 w-4" />
                 Directions
@@ -173,39 +209,60 @@ async function OrderDetail({ params, searchParams }: PageProps) {
                 href={calendarLink(order.pickupDate, order.pickupTime, order.orderNumber, order.pickupLocationName ?? STORE_INFO.name, pickupAddress, pickupCity, pickupPhone)}
                 target="_blank"
                 rel="noreferrer"
-                className="btn btn-secondary btn-sm"
+                className="btn btn-secondary btn-sm rounded-full"
               >
                 <CalendarIcon className="h-4 w-4" />
                 Add to calendar
               </a>
-              <a href={pickupPhoneHref} className="btn btn-ghost btn-sm">
+              <a href={pickupPhoneHref} className="btn btn-ghost btn-sm rounded-full">
                 <PhoneIcon className="h-4 w-4" />
                 Call about this order
               </a>
+              </div>
             </div>
           </section>
 
           <OrderProgress status={order.status} />
           <OrderRefresher live={live} />
           {cancellation?.allowed && key ? (
-            <section className="flex flex-col gap-2 border-t border-border pt-5">
-              <h2 className="text-ink font-semibold">Need to cancel?</h2>
-              <p className="text-ink-muted text-sm">You can cancel online before production begins. A successful cancellation refunds the original card in full.</p>
-              <CancelOrder orderNumber={order.orderNumber} accessToken={key} totalCents={order.totalCents} currency={order.currency} />
+            <section className="card flex flex-col gap-3 rounded-[1.5rem] p-5 sm:p-6">
+              <h2 className="font-display text-ink text-2xl font-normal uppercase">
+                Need to cancel?
+              </h2>
+              <p className="text-ink-muted text-sm">
+                You can cancel online before production begins. A successful cancellation
+                refunds the original card in full.
+              </p>
+              <CancelOrder
+                orderNumber={order.orderNumber}
+                accessToken={key}
+                totalCents={order.totalCents}
+                currency={order.currency}
+              />
             </section>
           ) : cancellation && !cancellation.allowed && order.status !== "ready" && order.status !== "completed" ? (
-            <p className="panel p-4 text-sm text-ink-muted">{cancellation.reason}</p>
+            <p className="panel rounded-[1.5rem] p-4 text-sm text-ink-muted">
+              {cancellation.reason}
+            </p>
           ) : null}
         </>
       )}
 
-      <section aria-labelledby="items-heading" className="flex flex-col gap-3">
-        <h2
-          id="items-heading"
-          className="text-ink-subtle text-sm font-semibold tracking-wide uppercase"
-        >
-          Items
-        </h2>
+      <section
+        aria-labelledby="items-heading"
+        className="card flex flex-col gap-5 rounded-[2rem] p-6 sm:p-8"
+      >
+        <div>
+          <p className="text-brand text-xs font-semibold tracking-[0.14em] uppercase">
+            Your feast
+          </p>
+          <h2
+            id="items-heading"
+            className="font-display text-ink mt-1 text-3xl font-normal uppercase"
+          >
+            Order items
+          </h2>
+        </div>
 
         <ul className="flex flex-col gap-2">
           {order.items.map((item) => {
@@ -214,7 +271,7 @@ async function OrderDetail({ params, searchParams }: PageProps) {
             return (
               <li
                 key={item.id}
-                className="rounded-control border-border bg-surface flex items-center gap-3 border px-4 py-3"
+                className="bg-canvas flex items-center gap-3 rounded-[1.25rem] px-4 py-3"
               >
                 <span className="bg-surface-sunken text-brand/30 relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-control">
                   {image ? (
@@ -226,15 +283,15 @@ async function OrderDetail({ params, searchParams }: PageProps) {
                 <span className="text-ink min-w-0 flex-1">
                   {item.quantity} &times; {item.nameSnapshot}
                 </span>
-              <span className="text-ink shrink-0 font-semibold tabular-nums">
-                {formatMoney(item.totalPriceCents, order.currency)}
-              </span>
+                <span className="text-ink shrink-0 font-semibold tabular-nums">
+                  {formatMoney(item.totalPriceCents, order.currency)}
+                </span>
               </li>
             );
           })}
         </ul>
 
-        <dl className="border-border flex flex-col gap-2 border-t pt-3">
+        <dl className="flex flex-col gap-2">
           <div className="text-ink-muted flex items-baseline justify-between text-sm">
             <dt>Subtotal</dt>
             <dd className="tabular-nums">{formatMoney(order.subtotalCents, order.currency)}</dd>
@@ -243,7 +300,7 @@ async function OrderDetail({ params, searchParams }: PageProps) {
             <dt>Taxes</dt>
             <dd className="tabular-nums">{formatMoney(order.taxCents, order.currency)}</dd>
           </div>
-          <div className="text-ink flex items-baseline justify-between text-lg font-semibold">
+          <div className="bg-accent-soft text-ink mt-2 flex items-baseline justify-between rounded-[1.25rem] px-4 py-3 text-lg font-semibold">
             <dt>{paid ? "Paid" : "Total"}</dt>
             <dd className="font-display text-2xl font-normal">
               {formatMoney(order.totalCents, order.currency)}
@@ -252,11 +309,11 @@ async function OrderDetail({ params, searchParams }: PageProps) {
         </dl>
       </section>
 
-      <div className="border-border flex flex-wrap gap-3 border-t pt-6">
-        <Link href="/#trays" className="btn btn-outline btn-sm">
+      <div className="flex flex-wrap gap-3">
+        <Link href="/#trays" className="btn btn-outline btn-sm rounded-full">
           Order something else
         </Link>
-        <Link href="/orders" className="btn btn-ghost btn-sm">
+        <Link href="/orders" className="btn btn-ghost btn-sm rounded-full">
           Look up another order
         </Link>
       </div>

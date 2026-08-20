@@ -41,7 +41,11 @@ export default function StorefrontLayout({
         <LocationBar />
       </Suspense>
 
-      <div className="flex flex-1 flex-col pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-0">
+      <Suspense fallback={null}>
+        <LiveMobileStorefrontActions />
+      </Suspense>
+
+      <div className="flex flex-1 flex-col">
         <div id="main" className="flex-1">
           {children}
         </div>
@@ -51,9 +55,6 @@ export default function StorefrontLayout({
         </Suspense>
       </div>
 
-      <Suspense fallback={null}>
-        <LiveMobileStorefrontActions />
-      </Suspense>
     </>
   );
 }
