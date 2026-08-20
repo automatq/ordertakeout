@@ -682,6 +682,121 @@
     background: var(--color-brand);
     color: var(--color-brand-ink);
   }
+  .location-strip,
+  .location-picker {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .location-strip {
+    color: var(--color-secondary-ink);
+  }
+  .location-picker {
+    border-radius: 1.5rem;
+    background: var(--color-canvas);
+    padding: 1rem;
+  }
+  .location-strip-icon {
+    display: inline-flex;
+    width: 2.5rem;
+    height: 2.5rem;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-pill);
+    background: var(--color-accent);
+    color: var(--color-ink);
+  }
+  .location-strip-kicker {
+    color: var(--color-accent);
+  }
+  .location-strip-name {
+    color: var(--color-secondary-ink);
+  }
+  .location-strip-address {
+    color: color-mix(in srgb, var(--color-secondary-ink) 78%, transparent);
+  }
+  .location-strip-select {
+    min-height: 2.75rem;
+    max-width: 12rem;
+    border: 1px solid color-mix(in srgb, var(--color-secondary-ink) 40%, transparent);
+    border-radius: var(--radius-pill);
+    background: var(--color-surface);
+    color: var(--color-secondary);
+    padding: 0.55rem 2rem 0.55rem 0.9rem;
+    font: inherit;
+    font-size: 0.8125rem;
+    font-weight: 600;
+  }
+  .location-strip .btn-ghost {
+    border-color: color-mix(in srgb, var(--color-secondary-ink) 40%, transparent);
+    color: var(--color-secondary-ink);
+  }
+  .location-strip .btn-ghost:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--color-secondary-ink) 12%, transparent);
+  }
+  .location-dialog-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow-y: auto;
+    background: color-mix(in srgb, var(--color-ink) 64%, transparent);
+    padding: 1rem;
+    backdrop-filter: blur(4px);
+  }
+  .location-dialog-sheet {
+    display: flex;
+    width: 100%;
+    max-height: min(44rem, calc(100dvh - 2rem));
+    flex-direction: column;
+    gap: 1rem;
+    overflow-y: auto;
+    border: 0.35rem solid var(--color-surface);
+    border-radius: 2.25rem;
+    background: var(--color-surface);
+    padding: 1.5rem;
+    box-shadow: var(--shadow-raised);
+  }
+  .location-choice {
+    display: flex;
+    min-height: 4.75rem;
+    width: 100%;
+    align-items: center;
+    gap: 1rem;
+    border: 2px solid var(--color-border);
+    border-radius: 1.25rem;
+    background: var(--color-canvas);
+    padding: 0.9rem 1rem;
+    transition:
+      border-color var(--dur) var(--ease),
+      background var(--dur) var(--ease),
+      transform var(--dur) var(--ease);
+  }
+  .location-choice:hover:not(:disabled) {
+    border-color: var(--color-brand);
+    background: var(--color-brand-tint);
+    transform: translateY(-2px);
+  }
+  .location-choice-icon {
+    display: inline-flex;
+    width: 2.75rem;
+    height: 2.75rem;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-pill);
+    background: var(--color-secondary-soft);
+    color: var(--color-secondary);
+  }
+  @media (width >= 40rem) {
+    .location-dialog-sheet {
+      padding: 2rem;
+    }
+  }
 
   /* Buttons ---------------------------------------------------------------
      Light weight and tightly tracked, on a 1rem round. The primary lifts on
@@ -1166,7 +1281,7 @@
     position: fixed;
     z-index: 100;
     inset-inline: var(--spacing-gutter);
-    bottom: 1rem;
+    bottom: calc(7rem + env(safe-area-inset-bottom));
     display: flex;
     flex-direction: column;
     gap: 0.5rem;

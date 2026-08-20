@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 
 import { getPickupLocations, reconcileCartForLocation, type CartReconciliation } from "@/app/actions/locations";
+import { MapPinIcon } from "@/components/ui/icons";
 import type { StoreLocation } from "@/lib/locations/types";
 import { usePickupLocation } from "@/lib/locations/store";
 import { distanceKm, recommendPickupLocation } from "@/lib/locations/distance";
@@ -101,24 +102,52 @@ export function LocationSelector({
     );
   }
   const picker = (
-    <div className={compact ? "text-ink-muted flex flex-wrap items-center gap-2 text-sm" : "card flex flex-col gap-2 p-4"}>
-      <label className="contents">
-      <span className="text-ink text-sm font-semibold">Pickup location</span>
-      <select
-        value={locationId ?? ""}
-        onChange={(event) => requestLocation(event.target.value)}
-        disabled={isPending || locations.length === 0}
-        className="input max-w-md"
-        aria-label="Pickup location"
-      >
-        <option value="">Choose your pickup location</option>
-        {locations.map((location) => <option key={location.id} value={location.id}>{location.name} — {location.address}</option>)}
-      </select>
+    <div className={compact ? "location-strip" : "location-picker"}>
+      <span className="location-strip-icon">
+        <MapPinIcon className="h-5 w-5" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <span className="location-strip-kicker block text-[0.6875rem] font-semibold tracking-[0.12em] uppercase">
+          Picking up at
+        </span>
+        <strong className="location-strip-name block truncate text-sm font-semibold sm:text-base">
+          {selected?.name ?? "Choose a bakery"}
+        </strong>
+        {selected ? (
+          <span className="location-strip-address hidden truncate text-xs sm:block">
+            {selected.address}{selected.city ? `, ${selected.city}` : ""}
+          </span>
+        ) : null}
+      </div>
+      <label className="shrink-0">
+        <span className="sr-only">Change pickup location</span>
+        <select
+          value={locationId ?? ""}
+          onChange={(event) => requestLocation(event.target.value)}
+          disabled={isPending || locations.length === 0}
+          className="location-strip-select"
+          aria-label="Change pickup location"
+        >
+          <option value="">Choose a store</option>
+          {locations.map((location) => (
+            <option key={location.id} value={location.id}>{location.name}</option>
+          ))}
+        </select>
       </label>
-      <button type="button" onClick={recommendFromDevice} disabled={isPending || locations.length === 0 || recommendationMessage === "Finding the closest pickup location…"} className="btn btn-ghost btn-sm">Recommend nearest</button>
-      {recommendation ? <button type="button" onClick={() => requestLocation(recommendation.location.id)} className="text-brand text-sm font-medium underline underline-offset-2">Recommended: {recommendation.location.name} ({recommendation.distance.toFixed(1)} km away)</button> : null}
-      {recommendationMessage ? <span role="status" className="text-ink-subtle text-xs">{recommendationMessage}</span> : null}
-      {!compact && selected ? <span className="text-ink-muted text-sm">Collect from {selected.address}{selected.city ? `, ${selected.city}` : ""}.</span> : null}
+      <button
+        type="button"
+        onClick={recommendFromDevice}
+        disabled={isPending || locations.length === 0 || recommendationMessage === "Finding the closest pickup location…"}
+        className="btn btn-ghost btn-sm hidden sm:inline-flex"
+      >
+        Recommend nearest
+      </button>
+      {recommendation ? (
+        <button type="button" onClick={() => requestLocation(recommendation.location.id)} className="btn btn-secondary btn-sm w-full lg:w-auto">
+          Recommended: {recommendation.location.name} ({recommendation.distance.toFixed(1)} km)
+        </button>
+      ) : null}
+      {recommendationMessage ? <span role="status" className="text-ink-subtle w-full text-xs">{recommendationMessage}</span> : null}
     </div>
   );
 
@@ -126,21 +155,47 @@ export function LocationSelector({
     <>
       {!selectionRequired ? picker : null}
       {selectionRequired ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" role="dialog" aria-modal="true" aria-labelledby="location-required-heading">
-          <div className="card flex w-full max-w-xl flex-col gap-4 p-6 shadow-raised">
-            <div>
-              <h2 id="location-required-heading" className="font-display text-ink text-3xl font-normal uppercase">Where will you pick up?</h2>
-              <p className="text-ink-muted mt-1 text-sm">Choose a store to see the products and pickup times available there.</p>
-            </div>
-            {picker}
+        <LocationDialog labelledBy="location-required-heading">
+          <div className="border-brand/15 bg-brand-tint -m-6 mb-0 rounded-t-[2rem] border-b p-6 sm:-m-8 sm:mb-0 sm:p-8">
+            <span className="text-secondary text-xs font-semibold tracking-[0.14em] uppercase">Pickup only</span>
+            <h2 id="location-required-heading" className="font-display text-brand mt-2 text-4xl font-normal uppercase sm:text-5xl">Where will you pick up?</h2>
+            <p className="text-ink-muted mt-2 text-sm sm:text-base">Choose a bakery first. Its live inventory and pickup times will follow you through checkout.</p>
           </div>
-        </div>
+          <div className="grid gap-3">
+            {locations.map((location, index) => (
+              <button
+                key={location.id}
+                type="button"
+                data-autofocus={index === 0 ? "true" : undefined}
+                onClick={() => requestLocation(location.id)}
+                disabled={isPending}
+                className="location-choice"
+              >
+                <span className="location-choice-icon"><MapPinIcon className="h-5 w-5" /></span>
+                <span className="min-w-0 text-left">
+                  <strong className="font-display text-ink block text-2xl font-normal uppercase">{location.name}</strong>
+                  <span className="text-ink-muted block text-sm">{location.address}{location.city ? `, ${location.city}` : ""}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+          <button type="button" onClick={recommendFromDevice} disabled={isPending || locations.length === 0 || recommendationMessage === "Finding the closest pickup location…"} className="btn btn-secondary btn-block">
+            <MapPinIcon className="h-4 w-4" />
+            Recommend the nearest shop
+          </button>
+          {recommendation ? (
+            <button type="button" onClick={() => requestLocation(recommendation.location.id)} className="btn btn-primary btn-block">
+              Use {recommendation.location.name} — {recommendation.distance.toFixed(1)} km away
+            </button>
+          ) : null}
+          {recommendationMessage ? <p role="status" className="text-ink-muted text-center text-sm">{recommendationMessage}</p> : null}
+        </LocationDialog>
       ) : null}
       {pendingChange ? (
-        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/45 p-4" role="dialog" aria-modal="true" aria-labelledby="location-change-heading">
-          <div className="card flex w-full max-w-lg flex-col gap-4 p-6 shadow-raised">
+        <LocationDialog labelledBy="location-change-heading" onDismiss={() => setPendingChange(null)} compact>
             <div>
-              <h2 id="location-change-heading" className="text-ink text-lg font-semibold">Change pickup location?</h2>
+              <span className="text-secondary text-xs font-semibold tracking-[0.14em] uppercase">Your cart</span>
+              <h2 id="location-change-heading" className="font-display text-brand mt-2 text-4xl font-normal uppercase">Change pickup location?</h2>
               <p className="text-ink-muted mt-1 text-sm">Your order will move to {pendingChange.location.name}.</p>
             </div>
             {pendingChange.reconciliation.removed.length ? (
@@ -156,12 +211,80 @@ export function LocationSelector({
               <p className="panel p-4 text-sm text-ink-muted">Everything in your order is stocked at this location.</p>
             )}
             <div className="flex flex-wrap justify-end gap-3">
-              <button type="button" onClick={() => setPendingChange(null)} className="btn btn-secondary btn-sm">Keep current location</button>
+              <button type="button" data-autofocus onClick={() => setPendingChange(null)} className="btn btn-secondary btn-sm">Keep current location</button>
               <button type="button" onClick={confirmLocationChange} className="btn btn-primary btn-sm">Change location</button>
             </div>
-          </div>
-        </div>
+        </LocationDialog>
       ) : null}
     </>
+  );
+}
+
+function LocationDialog({
+  labelledBy,
+  onDismiss,
+  compact = false,
+  children,
+}: {
+  labelledBy: string;
+  onDismiss?: () => void;
+  compact?: boolean;
+  children: ReactNode;
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+
+    const previouslyFocused = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    dialog.querySelector<HTMLElement>("[data-autofocus], button, select")?.focus();
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && onDismiss) {
+        event.preventDefault();
+        onDismiss();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = dialog?.querySelectorAll<HTMLElement>(
+        'button:not(:disabled), select:not(:disabled), a[href], input:not(:disabled), [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusable?.length) return;
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+      previouslyFocused?.focus();
+    };
+  }, [onDismiss]);
+
+  return (
+    <div className="location-dialog-backdrop" role="presentation">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={labelledBy}
+        className={`location-dialog-sheet ${compact ? "max-w-lg" : "max-w-2xl"}`}
+      >
+        {children}
+      </div>
+    </div>
   );
 }

@@ -52,10 +52,10 @@ export function MobileStorefrontActions({ locations }: { locations: StoreLocatio
 
   return (
     <div
-      className="bg-canvas/95 border-border shadow-sticky fixed inset-x-0 bottom-0 z-40 border-t backdrop-blur-xl lg:hidden"
-      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      className="bg-canvas/95 border-border shadow-raised fixed right-3 bottom-3 left-3 z-40 rounded-pill border backdrop-blur-xl lg:hidden"
+      style={{ marginBottom: "env(safe-area-inset-bottom)" }}
     >
-      <nav aria-label="Quick actions" className="shell grid grid-cols-3 gap-2 py-2">
+      <nav aria-label="Quick actions" className="grid grid-cols-3 gap-2 p-2">
         <DirectionsAction
           key={`${pathname}:${locationId ?? "none"}`}
           directions={directions}
@@ -147,7 +147,6 @@ function DirectionsAction({
       {gpsOpen && directions ? (
         <div
           id="pickup-directions"
-          role="menu"
           aria-label={`Directions to ${locationName}`}
           className="bg-surface border-border shadow-raised absolute bottom-[calc(100%+0.5rem)] left-0 z-10 grid min-w-44 gap-1 rounded-card border p-1.5"
         >
@@ -166,7 +165,6 @@ function DirectionsLink({ href, children }: { href: string; children: React.Reac
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      role="menuitem"
       className="text-ink hover:bg-surface-sunken flex min-h-11 items-center rounded-control px-3 text-sm transition-colors"
     >
       {children}

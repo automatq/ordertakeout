@@ -16,78 +16,81 @@ import type { StoreLocation } from "@/lib/locations/types";
  */
 export function SiteFooter({ locations = [] }: { locations?: StoreLocation[] }) {
   return (
-    <footer className="bg-surface border-border border-t print:hidden">
+    <footer className="bg-ink text-canvas border-ink border-t print:hidden">
       <h2 className="sr-only">Site information</h2>
 
-      <div className="shell flex flex-col gap-8 py-12">
-        <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="flex flex-col gap-3">
+      <div className="shell flex flex-col gap-10 py-14 sm:py-18">
+        <div className="flex flex-col items-center text-center">
+          <div className="bg-canvas/5 border-canvas/10 flex h-24 w-24 items-center justify-center rounded-full border">
             <Image
-              src="/harina/logo.png"
+              src="/harina/badge.png"
               alt=""
               aria-hidden
-              width={230}
-              height={167}
-              className="h-16 w-auto object-contain"
+              width={96}
+              height={96}
+              className="h-20 w-20 object-contain"
             />
-            <p className="text-ink-muted text-sm text-pretty">{STORE_INFO.tagline}</p>
           </div>
+          <p className="font-display mt-5 text-5xl font-normal uppercase sm:text-6xl">{STORE_INFO.name}</p>
+          <p className="text-accent mt-2 text-sm font-medium tracking-[0.16em] uppercase">{STORE_INFO.tagline}</p>
+        </div>
 
-          <div className="flex flex-col gap-2">
-            <h3 className="font-display text-ink text-xl font-normal uppercase">Visit us</h3>
-            <ul className="text-ink-muted flex flex-col gap-2 text-sm">
+        <div className="border-canvas/15 grid gap-4 border-y py-8 md:grid-cols-3">
+          <div className="bg-canvas/5 border-canvas/10 flex flex-col gap-3 rounded-[1.5rem] border p-5">
+            <h3 className="font-display text-accent text-2xl font-normal uppercase">Visit us</h3>
+            <ul className="text-canvas/75 flex flex-col gap-4 text-sm">
               {locations.map((location) => (
                 <li key={location.id}>
-                  <strong className="text-ink block font-medium">{location.name}</strong>
-                  <address className="not-italic">{location.address}{location.city ? `, ${location.city}` : ""}</address>
+                  <strong className="text-canvas block font-medium">{location.name}</strong>
+                  <address className="mt-0.5 not-italic">{location.address}{location.city ? `, ${location.city}` : ""}</address>
                 </li>
               ))}
             </ul>
           </div>
 
-          <div className="flex flex-col gap-2">
-            <h3 className="font-display text-ink text-xl font-normal uppercase">
+          <div className="bg-canvas/5 border-canvas/10 flex flex-col gap-2 rounded-[1.5rem] border p-5">
+            <h3 className="font-display text-accent text-2xl font-normal uppercase">
               Get in touch
             </h3>
             <a
               href={STORE_INFO.phoneHref}
-              className="text-ink-muted hover:text-brand text-sm transition-colors"
+              className="text-canvas/75 hover:text-accent flex min-h-11 items-center text-sm transition-colors"
             >
               {STORE_INFO.phone}
             </a>
             <a
               href={`mailto:${STORE_INFO.email}`}
-              className="text-ink-muted hover:text-brand text-sm transition-colors"
+              className="text-canvas/75 hover:text-accent flex min-h-11 items-center text-sm transition-colors"
             >
               {STORE_INFO.email}
             </a>
           </div>
 
-          <div className="flex flex-col gap-2">
-            <h3 className="font-display text-ink text-xl font-normal uppercase">Orders</h3>
+          <div className="bg-canvas/5 border-canvas/10 flex flex-col gap-2 rounded-[1.5rem] border p-5">
+            <h3 className="font-display text-accent text-2xl font-normal uppercase">Orders</h3>
             <Link
               href="/#trays"
-              className="text-ink-muted hover:text-brand text-sm transition-colors"
+              className="text-canvas/75 hover:text-accent flex min-h-11 items-center text-sm transition-colors"
             >
               Party trays
             </Link>
             <Link
               href="/orders"
-              className="text-ink-muted hover:text-brand text-sm transition-colors"
+              className="text-canvas/75 hover:text-accent flex min-h-11 items-center text-sm transition-colors"
             >
               Track your order
             </Link>
             <Link
               href="/cart"
-              className="text-ink-muted hover:text-brand text-sm transition-colors"
+              className="text-canvas/75 hover:text-accent flex min-h-11 items-center text-sm transition-colors"
             >
               Your order
             </Link>
           </div>
         </div>
 
-        <p className="border-border text-ink-subtle border-t pt-6 text-xs">
-          &copy; {STORE_INFO.name}.
+        <p className="text-canvas/55 text-center text-xs">
+          &copy; {STORE_INFO.name}. Baked with care in Ontario.
         </p>
       </div>
     </footer>

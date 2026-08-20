@@ -23,15 +23,15 @@ export function CartLink() {
   return (
     <Link
       href="/cart"
-      className="text-ink hover:text-brand hover:border-brand border-border-strong bg-surface rounded-pill flex items-center gap-2 border px-3 py-2 text-sm transition-colors"
+      aria-label={count === 0 ? "Your order is empty" : `Your order, ${count} item${count === 1 ? "" : "s"}`}
+      className="text-ink hover:text-brand hover:border-brand border-border-strong bg-surface relative flex h-12 w-12 items-center justify-center rounded-full border shadow-card transition-colors"
     >
-      <BagIcon className="h-[1.15em] w-[1.15em]" />
-      <span className="hidden sm:inline">Your order</span>
+      <BagIcon className="h-5 w-5" />
 
       {count > 0 ? (
         <span
           aria-hidden
-          className="bg-brand text-brand-ink inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-semibold tabular-nums"
+          className="bg-brand text-brand-ink absolute -top-1 -right-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[0.6875rem] font-semibold tabular-nums shadow-card"
         >
           {count}
         </span>

@@ -89,7 +89,7 @@ export function SiteHeader() {
       className="bg-canvas/90 border-border shadow-sticky sticky top-0 z-50 border-b backdrop-blur-xl"
       onMouseLeave={scheduleClose}
     >
-      <div className="shell flex items-center justify-between gap-4 py-3">
+      <div className="shell flex min-h-[4.5rem] items-center justify-between gap-4 py-2 lg:min-h-24">
         <Link
           href="/"
           aria-current={pathname === "/" ? "page" : undefined}
@@ -102,12 +102,12 @@ export function SiteHeader() {
             width={230}
             height={167}
             priority
-            className="h-12 w-auto object-contain sm:h-16"
+            className="h-12 w-auto object-contain sm:h-14 lg:h-20"
           />
         </Link>
 
         {/* Desktop nav */}
-        <nav aria-label="Main" className="hidden items-center gap-8 lg:flex">
+        <nav aria-label="Main" className="hidden items-center gap-5 lg:flex xl:gap-8">
           {megaMenus.map((menu) => {
             const active = openMenu === menu.id;
             return (
@@ -118,7 +118,7 @@ export function SiteHeader() {
                 onMouseEnter={() => scheduleOpen(menu.id)}
                 aria-expanded={active}
                 aria-haspopup="true"
-                className={`flex items-center gap-1.5 text-sm transition-colors ${
+                className={`flex min-h-11 items-center gap-1.5 text-base transition-colors xl:text-lg ${
                   active ? "text-brand" : "text-ink-muted hover:text-brand"
                 }`}
               >
@@ -135,7 +135,7 @@ export function SiteHeader() {
               href={link.href}
               aria-current={pathname === link.href ? "page" : undefined}
               onMouseEnter={cancelTimers}
-              className={`text-sm transition-colors ${
+              className={`flex min-h-11 items-center text-base transition-colors xl:text-lg ${
                 pathname === link.href
                   ? "text-brand underline decoration-2 underline-offset-8"
                   : "text-ink-muted hover:text-brand"
@@ -150,7 +150,7 @@ export function SiteHeader() {
           <a
             href={STORE_INFO.phoneHref}
             onMouseEnter={cancelTimers}
-            className="text-ink-muted hover:text-brand hidden items-center gap-2 text-sm transition-colors sm:inline-flex"
+            className="text-ink-muted hover:text-brand hidden min-h-11 items-center gap-2 text-sm transition-colors xl:inline-flex xl:text-base"
           >
             <PhoneIcon />
             {STORE_INFO.phone}

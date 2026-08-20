@@ -41,7 +41,7 @@ export default function StorefrontLayout({
         <LocationBar />
       </Suspense>
 
-      <div className="flex flex-1 flex-col pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0">
+      <div className="flex flex-1 flex-col pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-0">
         <div id="main" className="flex-1">
           {children}
         </div>
@@ -64,7 +64,7 @@ async function LocationBar() {
   const locations = await getStoreLocationsSafe();
 
   return (
-    <div className="bg-surface border-border border-b">
+    <div className="bg-secondary border-secondary border-b">
       <div className="shell py-2">
         <LocationSelector compact initialLocations={locations} />
       </div>
@@ -84,7 +84,7 @@ async function LiveMobileStorefrontActions() {
 
 function LocationBarFallback() {
   return (
-    <div className="bg-surface border-border border-b" role="status" aria-busy>
+    <div className="bg-secondary border-secondary border-b" role="status" aria-busy>
       <span className="sr-only">Loading pickup locations</span>
       <div className="shell py-2">
         <Skeleton className="h-9 w-full max-w-sm" />
