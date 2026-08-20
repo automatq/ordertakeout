@@ -5,7 +5,6 @@ import { connection } from "next/server";
 
 import { CatalogUnavailable } from "@/components/catalog-unavailable";
 import { ProductGrid } from "@/components/product-grid";
-import { IntroCurtain } from "@/components/storefront/intro/intro-curtain";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
   ArrowRightIcon,
@@ -87,7 +86,6 @@ const REVIEWS = [
 export default function HomePage() {
   return (
     <main className="flex flex-col">
-      <IntroCurtain />
       <Suspense fallback={null}><StructuredData /></Suspense>
       <Hero />
       <PartyTraysSection />

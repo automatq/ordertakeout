@@ -3,7 +3,6 @@ import type { Metadata, Viewport } from "next";
 import { Bebas_Neue, Poppins } from "next/font/google";
 
 import { ToastProvider } from "@/components/ui/toast";
-import { introBootScript } from "@/lib/intro/session";
 import { STORE_INFO } from "@/lib/store";
 
 import "./globals.css";
@@ -70,21 +69,7 @@ export default function RootLayout({
       lang="en"
       data-scroll-behavior="smooth"
       className={`${poppins.variable} ${bebasNeue.variable}`}
-      /* The boot script below writes `data-intro` here during parse, so the
-         client's first render disagrees with the server's markup. This keeps
-         what is already in the DOM: without it React recovers from the mismatch
-         by re-rendering from the nearest boundary, which throws the script's
-         work away and reintroduces the flash it exists to prevent. */
-      suppressHydrationWarning
     >
-      <head>
-        {/* Parser-blocking on purpose. The homepage is prerendered into a
-            CDN-shared shell, so the intro curtain ships to every visitor and
-            only a decision made before first paint can suppress it for those
-            who have already seen it. Guarded to `/` and wrapped in try/catch —
-            see lib/intro/session.ts. */}
-        <script dangerouslySetInnerHTML={{ __html: introBootScript() }} />
-      </head>
       <body className="flex min-h-dvh flex-col">
         <ToastProvider>{children}</ToastProvider>
       </body>
