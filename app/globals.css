@@ -110,6 +110,13 @@
   --color-accent-soft: #fff3d4;
   --color-accent-ink: #805718;
 
+  /* Supporting storefront green from the original bakery theme. It is kept
+     separate from order-status green so decoration never changes semantics. */
+  --color-secondary: #1c7755;
+  --color-secondary-hover: #155e44;
+  --color-secondary-soft: #e3f2eb;
+  --color-secondary-ink: #ffffff;
+
   /* --- Order status ---------------------------------------------------------
      One pair per status in the order lifecycle (see docs/SCOPE.md). Semantic,
      so they survive a rebrand mostly untouched — but they must stay
@@ -474,7 +481,8 @@
        enough — they have to be switched off outright. */
     .skeleton,
     .is-new,
-    .spinner {
+    .spinner,
+    .theme-marquee-track {
       animation: none !important;
     }
     .skeleton {
@@ -493,6 +501,120 @@
    ========================================================================= */
 
 @layer components {
+  /* Storefront poster language ------------------------------------------- */
+  .storefront-hero {
+    background:
+      radial-gradient(circle at 26% 42%, var(--color-brand-hover) 0%, var(--color-brand) 58%, var(--color-brand-deep) 100%);
+  }
+  .storefront-hero-texture {
+    opacity: 0.2;
+    background-image:
+      radial-gradient(circle at 18% 24%, rgb(255 255 255 / 0.2) 0 1px, transparent 1.5px),
+      radial-gradient(circle at 72% 68%, rgb(26 26 26 / 0.18) 0 1px, transparent 1.5px),
+      linear-gradient(118deg, transparent 20%, rgb(255 255 255 / 0.08) 50%, transparent 78%);
+    background-size: 19px 19px, 23px 23px, 100% 100%;
+    mix-blend-mode: soft-light;
+  }
+  .storefront-hero-title {
+    font-size: clamp(3.3rem, 1.8rem + 7vw, 6rem);
+    line-height: 0.88;
+    letter-spacing: 0.006em;
+  }
+  .hero-badge {
+    display: inline-flex;
+    min-height: 2.25rem;
+    align-items: center;
+    border: 1px solid color-mix(in srgb, var(--color-brand-ink) 42%, transparent);
+    border-radius: var(--radius-pill);
+    background: color-mix(in srgb, var(--color-brand-deep) 24%, transparent);
+    padding: 0.45rem 0.9rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .hero-button-primary {
+    background: var(--color-surface);
+    border-color: var(--color-surface);
+    color: var(--color-brand-deep);
+    box-shadow: var(--shadow-raised);
+  }
+  .hero-button-primary:hover:not(:disabled) {
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+    color: var(--color-ink);
+    transform: translateY(-2px);
+  }
+  .hero-button-secondary {
+    background: transparent;
+    border-color: color-mix(in srgb, var(--color-brand-ink) 72%, transparent);
+    color: var(--color-brand-ink);
+  }
+  .hero-button-secondary:hover:not(:disabled) {
+    background: var(--color-surface);
+    border-color: var(--color-surface);
+    color: var(--color-brand-deep);
+    transform: translateY(-2px);
+  }
+  .storefront-hero-frame {
+    border: 0.5rem solid var(--color-surface);
+    border-radius: 2.5rem;
+    background: var(--color-surface);
+  }
+  .storefront-hero-pickup {
+    min-height: 5rem;
+    border-radius: 1.5rem;
+    background: var(--color-surface);
+    color: var(--color-ink);
+    padding: 1rem 1.1rem;
+  }
+  .storefront-hero-pickup-icon {
+    display: inline-flex;
+    width: 2.75rem;
+    height: 2.75rem;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-pill);
+    background: var(--color-secondary-soft);
+    color: var(--color-secondary);
+  }
+  .theme-marquee {
+    overflow: hidden;
+    border-block: 1px solid color-mix(in srgb, var(--color-brand-ink) 24%, transparent);
+    background: var(--color-brand);
+    color: var(--color-brand-ink);
+    padding-block: 1rem;
+  }
+  .theme-marquee-track {
+    display: flex;
+    width: max-content;
+    animation: theme-marquee-scroll 26s linear infinite;
+  }
+  .theme-marquee-copy {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 1.5rem;
+    padding-right: 1.5rem;
+    font-family: var(--font-display);
+    font-size: clamp(1.75rem, 1.35rem + 1.6vw, 2.5rem);
+    font-weight: 400;
+    letter-spacing: 0.035em;
+    line-height: 1;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .theme-marquee-copy i {
+    color: var(--color-accent);
+    font-style: normal;
+  }
+  @keyframes theme-marquee-scroll {
+    to {
+      transform: translateX(-50%);
+    }
+  }
+
   /* Buttons ---------------------------------------------------------------
      Light weight and tightly tracked, on a 1rem round. The primary lifts on
      hover and brightens rather than darkens — see --color-brand-hover. */

@@ -88,6 +88,7 @@ export default function HomePage() {
     <main className="flex flex-col">
       <Suspense fallback={null}><StructuredData /></Suspense>
       <Hero />
+      <Marquee />
       <PartyTraysSection />
       <PickedForYou />
       <FreshlyBaked />
@@ -151,73 +152,39 @@ async function StructuredData() {
 
 function Hero() {
   return (
-    <section
-      id="hero"
-      className="text-brand-ink relative overflow-hidden"
-      /* Radial brand wash, straight from the tokens — no hardcoded colour. */
-      style={{
-        background:
-          "radial-gradient(circle at 30% 50%, var(--color-brand-hover) 0%, var(--color-brand) 100%)",
-      }}
-    >
-      {/* A soft vignette so the copy on the left keeps its contrast against the
-          brightest part of the wash, and the section reads as lit rather than
-          flat. Purely decorative. */}
-      <div
-        aria-hidden
-        className="absolute inset-0"
-        style={{
-          background:
-            "radial-gradient(120% 90% at 20% 0%, transparent 40%, rgb(0 0 0 / 0.22) 100%)",
-        }}
-      />
+    <section id="hero" className="storefront-hero text-brand-ink relative overflow-hidden">
+      <div aria-hidden className="storefront-hero-texture absolute inset-0" />
 
-      {/* `hero-reveal` + `data-reveal` are the receiving half of the intro
-          handoff: when the curtain starts to lift it sets `data-hero-reveal` on
-          <html> and these stagger in behind it, so the two read as one shot.
-          The steps are out of source order on purpose — the curtain lifts
-          upward, so the bottom of the viewport is uncovered first and the photo
-          has to be early or it sits visibly blank. Nothing here is required for
-          the hero to be correct: with no attribute there is no animation, which
-          is the no-JS and crawler path. See app/globals.css. */}
-      <div className="hero-reveal shell relative grid items-center gap-12 py-section lg:grid-cols-2">
+      <div className="shell relative grid items-center gap-12 py-14 sm:py-18 lg:grid-cols-[0.92fr_1.08fr] lg:gap-16 lg:py-20">
         <div className="flex flex-col items-start gap-6">
-          <span
-            data-reveal
-            className="border-brand-ink/30 rounded-pill border px-4 py-1.5 text-xs tracking-widest uppercase"
-          >
-            Filipino bakery in Toronto &amp; London
-          </span>
+          <div className="flex flex-wrap gap-2">
+            <span className="hero-badge">Freshly baked daily</span>
+            <span className="hero-badge">Toronto &amp; London</span>
+          </div>
 
-          <h1
-            data-reveal
-            className="font-display text-display-xl font-normal uppercase [--reveal-step:1]"
-          >
-            {STORE_INFO.tagline}
+          <h1 className="font-display storefront-hero-title font-normal uppercase">
+            <span className="block">Bringing the taste of</span>
+            <span className="text-accent block">Filipino breads</span>
+            <span className="block">to Canada</span>
           </h1>
 
-          <p data-reveal className="max-w-xl text-lg text-pretty opacity-90 [--reveal-step:3]">
+          <p className="max-w-xl text-lg leading-relaxed text-pretty sm:text-xl lg:text-2xl">
             Discover the best in Filipino baked goods with a bakery dedicated to tradition
             and quality.
           </p>
 
-          <div data-reveal className="flex flex-wrap gap-3 pt-2 [--reveal-step:4]">
-            <Link href="#trays" className="btn btn-accent">
+          <div className="flex w-full flex-col gap-3 pt-2 sm:w-auto sm:flex-row">
+            <Link href="#trays" className="btn hero-button-primary rounded-pill">
               Order party trays
               <ArrowRightIcon className="h-4 w-4" />
             </Link>
-            <a href={STORE_INFO.phoneHref} className="btn btn-outline">
+            <a href={STORE_INFO.phoneHref} className="btn hero-button-secondary rounded-pill">
               <PhoneIcon className="h-4 w-4" />
               {STORE_INFO.phone}
             </a>
           </div>
 
-          {/* The three questions every pre-order customer asks, answered before
-              they have to scroll for them. */}
-          <ul
-            data-reveal
-            className="border-brand-ink/20 flex flex-wrap gap-x-6 gap-y-2 border-t pt-5 text-sm opacity-90 [--reveal-step:5]"
-          >
+          <ul className="border-brand-ink/25 flex flex-wrap gap-x-6 gap-y-2 border-t pt-5 text-sm">
             <li className="flex items-center gap-2">
               <ClockIcon className="h-4 w-4" />
               Pickup times for your selected store
@@ -233,28 +200,24 @@ function Hero() {
           </ul>
         </div>
 
-        <div
-          data-reveal
-          className="shadow-raised rounded-card relative aspect-[4/3] w-full overflow-hidden [--reveal-step:2]"
-        >
-          <Image
-            src={heroImage}
-            alt="Filipino breads and pastries freshly baked at Harina Bakeshoppe in Toronto"
-            fill
-            priority
-            /* The LCP image. `sizes` keeps the phone from downloading the
-               desktop asset; quality trims a 1.2 MB PNG without a visible cost
-               at these dimensions. */
-            sizes="(max-width: 1024px) 100vw, 50vw"
-            quality={80}
-            placeholder="blur"
-            className="object-cover"
-          />
+        <div className="relative pb-12 sm:pb-14 lg:pb-10">
+          <div className="storefront-hero-frame shadow-raised relative aspect-[4/3] w-full overflow-hidden lg:aspect-[6/5]">
+            <Image
+              src={heroImage}
+              alt="Filipino breads and pastries freshly baked at Harina Bakeshoppe in Toronto"
+              fill
+              priority
+              sizes="(max-width: 1024px) 100vw, 55vw"
+              quality={80}
+              placeholder="blur"
+              className="object-cover"
+            />
+          </div>
+          <Suspense fallback={null}>
+            <HeroOrderWindow />
+          </Suspense>
         </div>
       </div>
-      <Suspense fallback={null}>
-        <HeroOrderWindow />
-      </Suspense>
     </section>
   );
 }
@@ -271,13 +234,42 @@ async function HeroOrderWindow() {
   if (!cutoff) return null;
 
   return (
-    <div className="shell relative -mt-8 pb-6">
-      <p className="bg-brand-deep/90 text-brand-ink shadow-raised rounded-card mx-auto flex max-w-2xl items-center justify-center gap-2 px-5 py-3 text-center text-sm backdrop-blur">
-        <ClockIcon className="h-4 w-4 shrink-0" />
-        Order by {formatPickupTime(cutoff)} at least {leadTimeDays} day
-        {leadTimeDays === 1 ? "" : "s"} ahead for your next available pickup.
-      </p>
+    <div className="storefront-hero-pickup shadow-raised absolute right-4 bottom-0 left-4 flex items-center gap-3 sm:right-8 sm:left-8 lg:right-8 lg:left-8">
+      <span className="storefront-hero-pickup-icon">
+        <ClockIcon className="h-5 w-5" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-secondary text-xs font-semibold tracking-[0.12em] uppercase">
+          Pickup pre-orders
+        </p>
+        <p className="text-ink mt-0.5 text-sm leading-snug sm:text-base">
+          Order by {formatPickupTime(cutoff)} at least {leadTimeDays} day
+          {leadTimeDays === 1 ? "" : "s"} ahead.
+        </p>
+      </div>
+      <span className="tag tag-accent hidden sm:inline-flex">3 shops</span>
     </div>
+  );
+}
+
+function Marquee() {
+  const message = "Freshly baked • Filipino favourites • Toronto • London • Pick up in store";
+
+  return (
+    <section className="theme-marquee" aria-label={message}>
+      <span className="sr-only">{message}</span>
+      <div className="theme-marquee-track" aria-hidden>
+        {[0, 1].map((track) => (
+          <div key={track} className="theme-marquee-copy">
+            <span>Freshly baked</span><i>•</i>
+            <span>Filipino favourites</span><i>•</i>
+            <span>Toronto</span><i>•</i>
+            <span>London</span><i>•</i>
+            <span>Pick up in store</span><i>•</i>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
