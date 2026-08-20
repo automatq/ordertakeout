@@ -615,6 +615,74 @@
     }
   }
 
+  [data-menu-section] .eyebrow {
+    color: var(--color-secondary);
+  }
+  [data-menu-section] h2 {
+    color: var(--color-brand);
+  }
+  .product-card-theme {
+    border: 0;
+    border-radius: 2rem;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-card);
+  }
+  .product-card-theme:hover {
+    border-color: transparent;
+  }
+  .product-card-image {
+    transition: filter var(--dur) var(--ease);
+  }
+  .product-card-theme[data-sold-out="true"] .product-card-image {
+    filter: saturate(0.45) contrast(0.92);
+  }
+  .product-price-pill {
+    display: inline-flex;
+    min-height: 2.75rem;
+    align-items: baseline;
+    gap: 0.35rem;
+    border-radius: var(--radius-pill);
+    background: var(--color-surface);
+    padding: 0.55rem 0.9rem;
+    box-shadow: var(--shadow-card);
+  }
+  .product-price-pill small {
+    color: var(--color-ink-subtle);
+    font-size: 0.6875rem;
+    font-weight: 500;
+    text-transform: uppercase;
+  }
+  .product-price-pill strong {
+    color: var(--color-brand);
+    font-family: var(--font-display);
+    font-size: 1.5rem;
+    font-weight: 400;
+    line-height: 1;
+  }
+  .product-card-action {
+    display: flex;
+    min-height: 3rem;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    border: 2px solid color-mix(in srgb, var(--color-brand) 36%, transparent);
+    border-radius: var(--radius-pill);
+    background: var(--color-surface);
+    color: var(--color-brand);
+    padding: 0.7rem 1.1rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition:
+      background var(--dur) var(--ease),
+      border-color var(--dur) var(--ease),
+      color var(--dur) var(--ease);
+  }
+  .product-card-theme:hover .product-card-action {
+    border-color: var(--color-brand);
+    background: var(--color-brand);
+    color: var(--color-brand-ink);
+  }
+
   /* Buttons ---------------------------------------------------------------
      Light weight and tightly tracked, on a 1rem round. The primary lifts on
      hover and brightens rather than darkens — see --color-brand-hover. */

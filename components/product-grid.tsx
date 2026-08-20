@@ -33,7 +33,7 @@ export function ProductGrid({ products }: { products: StoreProduct[] }) {
 
   const availability = state?.locationId === locationId ? state.availability : null;
   return (
-    <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+    <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
       {products.map((product) => {
         const known = availability && product.variants.every((variant) => variant.id in availability);
         const soldOut = known

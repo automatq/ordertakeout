@@ -32,9 +32,10 @@ export function ProductCard({ product, soldOut = false }: { product: StoreProduc
   return (
     <Link
       href={`/products/${product.slug}`}
-      className={`group card card-interactive flex flex-col overflow-hidden ${soldOut ? "opacity-70" : ""}`}
+      data-sold-out={soldOut}
+      className="product-card-theme group card-interactive flex flex-col overflow-hidden"
     >
-      <div className="bg-surface-sunken relative aspect-[4/3] w-full overflow-hidden">
+      <div className="product-card-image bg-surface-sunken relative aspect-[4/3] w-full overflow-hidden">
         {image ? (
           <Image
             src={sizedImage(image, 720)}
@@ -75,15 +76,20 @@ export function ProductCard({ product, soldOut = false }: { product: StoreProduc
         ) : null}
       </div>
 
-      <div className="flex flex-1 flex-col gap-2 p-5">
-        {/* h3, not h2: these sit inside a section that already has an h2, and a
-            grid of h2s flattens the page outline to nothing. */}
-        <h3 className="text-ink group-hover:text-brand text-lg font-semibold transition-colors">
-          {product.name}
-        </h3>
+      <div className="flex flex-1 flex-col gap-4 p-5 sm:p-6">
+        <div className="flex items-start justify-between gap-4">
+          {/* h3, not h2: these sit inside a section that already has an h2. */}
+          <h3 className="font-display text-ink group-hover:text-brand text-3xl font-normal uppercase transition-colors sm:text-4xl">
+            {product.name}
+          </h3>
+          <span className="product-price-pill shrink-0">
+            {product.variants.length > 1 ? <small>From</small> : null}
+            <strong>{formatMoney(from, currency)}</strong>
+          </span>
+        </div>
 
         {product.descriptionMd?.trim() || product.description ? (
-          <p className="text-ink-muted line-clamp-2 text-sm text-pretty">
+          <p className="text-ink-muted line-clamp-2 text-base leading-relaxed text-pretty">
             {product.descriptionMd?.trim() || product.description}
           </p>
         ) : null}
@@ -97,25 +103,15 @@ export function ProductCard({ product, soldOut = false }: { product: StoreProduc
           </p>
         ) : null}
 
-        <div className="border-border mt-auto flex items-center justify-between gap-3 border-t pt-4">
-          <span className="text-ink font-display text-2xl font-normal">
-            {product.variants.length > 1 ? (
-              <span className="font-sans text-ink-subtle align-middle text-xs font-medium">
-                From{" "}
-              </span>
-            ) : null}
-            {formatMoney(from, currency)}
-          </span>
-
-          {/* Not a nested <button> — the whole card is the link. This is the
-              affordance, styled to read as one. */}
-          <span className="text-brand group-hover:text-brand-hover flex items-center gap-1.5 text-sm font-medium transition-colors">
+        {/* Not a nested <button> — the whole card is the link. */}
+        <span className="product-card-action mt-auto">
+          <span>
             {soldOut ? "View other locations" : product.variants.length > 1
               ? `${product.variants.length} sizes`
               : "View tray"}
-            <ArrowRightIcon className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-0.5" />
           </span>
-        </div>
+          <ArrowRightIcon className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
+        </span>
       </div>
     </Link>
   );

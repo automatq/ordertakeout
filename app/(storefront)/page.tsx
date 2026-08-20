@@ -281,13 +281,19 @@ function Marquee() {
  */
 function PartyTraysSection() {
   return (
-    <section id="trays" className="bg-surface border-border scroll-mt-24 border-y">
+    <section id="trays" data-menu-section className="bg-surface border-border scroll-mt-24 border-y">
       <div className="shell py-section">
         <SectionHeading
           eyebrow="Pre-order &amp; pickup"
           title="Party trays, ready when you are"
           lede="Order ahead, choose a location and pickup time, then collect from the store you selected."
         />
+        <div aria-hidden className="mt-6 flex items-center gap-4">
+          <span className="bg-brand text-brand-ink flex h-12 w-12 items-center justify-center rounded-full">
+            <LoafIcon className="h-6 w-6" />
+          </span>
+          <span className="h-1 flex-1 rounded-full bg-[linear-gradient(90deg,var(--color-brand),var(--color-accent),transparent)]" />
+        </div>
 
         <div className="mt-10">
           <Suspense fallback={<ProductGridSkeleton />}>
