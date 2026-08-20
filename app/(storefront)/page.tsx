@@ -554,8 +554,8 @@ async function Visit() {
                     {businessHoursLabel(location.businessHours)}
                   </p>
                   <div className="flex flex-wrap gap-3 text-sm">
-                    <a href={`https://www.google.com/maps/search/?api=1&query=${mapsQuery}`} target="_blank" rel="noreferrer" className="link">Directions</a>
-                    {location.phone ? <a href={`tel:${location.phone.replace(/[^+\d]/g, "")}`} className="link">{location.phone}</a> : null}
+                    <a href={`https://www.google.com/maps/search/?api=1&query=${mapsQuery}`} target="_blank" rel="noreferrer" className="link inline-flex min-h-11 items-center">Directions</a>
+                    {location.phone ? <a href={`tel:${location.phone.replace(/[^+\d]/g, "")}`} className="link inline-flex min-h-11 items-center">{location.phone}</a> : null}
                   </div>
                 </li>
               );
