@@ -6,8 +6,9 @@ import type { CatalogObject } from "square";
 import { db } from "@/lib/db";
 import { productsConfig } from "@/lib/db/schema";
 import { normalizeTime } from "@/lib/scheduling/time";
-import { DEMO_PRODUCTS } from "@/lib/demo/catalog";
+import { DEMO_PRODUCTS, DEMO_PRODUCT_RULES } from "@/lib/demo/catalog";
 import { isDemoMode } from "@/lib/demo/config";
+import { matchProductConfig } from "@/lib/demo/product-config";
 import { serverEnv } from "@/lib/env";
 import { squareClient } from "@/lib/square/client";
 import { getInStockVariationIds } from "@/lib/inventory/server";
@@ -192,11 +193,17 @@ export async function getStoreCatalog(): Promise<StoreCatalog> {
   const [catalog, config] = await Promise.all([fetchSquareCatalog(), fetchProductConfig()]);
 
   const configById = new Map(config.rows.map((c) => [c.productId, c]));
+  const demoMode = isDemoMode();
   const products: StoreProduct[] = [];
   const unconfigured: CatalogProduct[] = [];
 
   for (const product of catalog.products) {
-    const rules = configById.get(product.id);
+    const rules = configById.get(product.id) ?? matchProductConfig(
+      product.id,
+      config.rows,
+      DEMO_PRODUCT_RULES,
+      demoMode,
+    );
     if (!rules) {
       unconfigured.push(product);
       continue;
@@ -204,12 +211,15 @@ export async function getStoreCatalog(): Promise<StoreCatalog> {
 
     products.push({
       ...product,
+      /* Demo fixtures retain fake variation IDs while borrowing the configured
+         Square item ID. This keeps order history/cancellation joins intact. */
+      id: rules.productId,
       slug: rules.slug,
       heroImageUrl: rules.heroImageUrl,
       descriptionMd: rules.descriptionMd,
       sortOrder: rules.sortOrder,
       rule: {
-        productId: product.id,
+        productId: rules.productId,
         leadTimeDays: rules.leadTimeDays,
         orderCutoffTime: rules.orderCutoffTime,
         allowedPickupTimes: rules.allowedPickupTimes,

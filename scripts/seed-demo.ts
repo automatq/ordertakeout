@@ -12,6 +12,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
 import { DEMO_PRODUCTS, DEMO_PRODUCT_RULES } from "../lib/demo/catalog";
+import { planDemoProductConfigs } from "../lib/demo/product-config";
 import * as schema from "../lib/db/schema";
 import { addCalendarDays, storeToday } from "../lib/scheduling/time";
 
@@ -26,6 +27,11 @@ const LOCATIONS = [
 
 if (!DATABASE_URL) {
   console.error("DATABASE_URL is required.");
+  process.exit(1);
+}
+
+if (process.env.DEMO_MODE !== "1" || process.env.NODE_ENV === "production") {
+  console.error("Demo seeding requires DEMO_MODE=1 outside production.");
   process.exit(1);
 }
 
@@ -55,27 +61,44 @@ async function main() {
   console.log(`Seeding demo data (store date ${today}, ${STORE_TIMEZONE})`);
 
   // --- Ordering rules -------------------------------------------------------
-  for (const rule of DEMO_PRODUCT_RULES) {
-    const product = DEMO_PRODUCTS.find((p) => p.id === rule.productId);
-    const values = {
-      squareCatalogObjectId: rule.productId,
-      slug: rule.slug,
-      leadTimeDays: rule.leadTimeDays,
-      orderCutoffTime: rule.orderCutoffTime,
-      allowedPickupTimes: [...rule.allowedPickupTimes],
-      maxUnitsPerDay: rule.maxUnitsPerDay,
-      isOrderable: true,
-      sortOrder: rule.sortOrder,
-      descriptionMd: product?.description ?? null,
-      updatedAt: new Date(),
-    };
+  const resolvedProductIds = new Map<string, string>();
+  const reusedConfigs = await db.transaction(async (tx) => {
+    const existing = await tx
+      .select({
+        productId: schema.productsConfig.squareCatalogObjectId,
+        slug: schema.productsConfig.slug,
+      })
+      .from(schema.productsConfig);
+    const plan = planDemoProductConfigs(existing, DEMO_PRODUCT_RULES);
 
-    await db
-      .insert(schema.productsConfig)
-      .values(values)
-      .onConflictDoUpdate({ target: schema.productsConfig.squareCatalogObjectId, set: values });
-  }
-  console.log(`  ${DEMO_PRODUCT_RULES.length} product rules`);
+    for (const entry of plan) {
+      resolvedProductIds.set(entry.demoProductId, entry.configuredProductId);
+      if (entry.action === "reuse") continue;
+
+      const rule = DEMO_PRODUCT_RULES.find((candidate) => candidate.productId === entry.demoProductId)!;
+      const product = DEMO_PRODUCTS.find((candidate) => candidate.id === entry.demoProductId);
+      const values = {
+        squareCatalogObjectId: rule.productId,
+        slug: rule.slug,
+        leadTimeDays: rule.leadTimeDays,
+        orderCutoffTime: rule.orderCutoffTime,
+        allowedPickupTimes: [...rule.allowedPickupTimes],
+        maxUnitsPerDay: rule.maxUnitsPerDay,
+        isOrderable: true,
+        sortOrder: rule.sortOrder,
+        descriptionMd: product?.description ?? null,
+        updatedAt: new Date(),
+      };
+
+      await tx
+        .insert(schema.productsConfig)
+        .values(values)
+        .onConflictDoUpdate({ target: schema.productsConfig.squareCatalogObjectId, set: values });
+    }
+
+    return plan.filter((entry) => entry.action === "reuse").length;
+  });
+  console.log(`  ${DEMO_PRODUCT_RULES.length} product rules (${reusedConfigs} existing Square configs reused)`);
 
   // --- A closure date, so the picker visibly skips a day --------------------
   const closure = addCalendarDays(today, 3);
@@ -157,7 +180,7 @@ async function main() {
     await db.insert(schema.orderItems).values({
       orderId: order!.id,
       squareCatalogObjectId: entry.variant.id,
-      squareProductId: entry.product.id,
+      squareProductId: resolvedProductIds.get(entry.product.id) ?? entry.product.id,
       nameSnapshot: `${entry.product.name} — ${entry.variant.name}`,
       quantity: sample.qty,
       unitPriceCents: entry.variant.priceCents,
