@@ -44,32 +44,67 @@ const serverSchema = z.object({
     .string()
     .refine(isIanaTimeZone, 'Must be an IANA timezone, e.g. "America/Los_Angeles"'),
 
+  /**
+   * The currency the store's Square location actually bills in. Square rejects
+   * (and this app then silently filters out) any variation priced in a
+   * different currency — see `mapCatalogItems`'s `expectedCurrency`. A store
+   * outside the US almost certainly isn't USD, so this has no default for the
+   * same reason STORE_TIMEZONE doesn't: guessing wrong here doesn't error, it
+   * quietly empties the entire menu.
+   */
+  STORE_CURRENCY: z
+    .string()
+    .regex(/^[A-Z]{3}$/, 'Must be a 3-letter ISO 4217 currency code, e.g. "CAD"'),
+
   SQUARE_ACCESS_TOKEN: z.string().min(1),
   SQUARE_WEBHOOK_SIGNATURE_KEY: z.string().min(1),
   /** Must match the subscription URL in the Square console exactly — it is part of the signed payload. */
   SQUARE_WEBHOOK_NOTIFICATION_URL: z.url(),
+  /** Used only by the one-time migration of pre-multi-location rows. */
+  LEGACY_SQUARE_LOCATION_ID: optional(z.string().min(1)),
 
   STAFF_DASHBOARD_PASSWORD: z.string().min(8),
+  /** Stable HMAC key for customer tracking links. Falls back to staff password. */
+  ORDER_ACCESS_SECRET: optional(z.string().min(32)),
 
   // --- Notification channels. All optional: an unset channel is simply skipped
   // by the dispatcher, so the store can turn one on later without a code change.
   RESEND_API_KEY: optional(z.string()),
+  /** Verified Resend sender, e.g. "Orders <orders@example.com>". */
+  NOTIFY_FROM_EMAIL: optional(z.string().min(3)),
   STORE_NOTIFY_EMAIL: optional(z.email()),
+  /** Optional JSON object mapping Square location ids to staff inboxes. */
+  LOCATION_NOTIFY_EMAILS: optional(z.string()),
   TWILIO_ACCOUNT_SID: optional(z.string()),
   TWILIO_AUTH_TOKEN: optional(z.string()),
   TWILIO_FROM_NUMBER: optional(z.string()),
   STORE_NOTIFY_PHONE: optional(z.string()),
+  /** Optional JSON object mapping Square location ids to staff SMS numbers. */
+  LOCATION_NOTIFY_PHONES: optional(z.string()),
   DISCORD_WEBHOOK_URL: optional(z.url()),
   SLACK_WEBHOOK_URL: optional(z.url()),
   TRELLO_KEY: optional(z.string()),
   TRELLO_TOKEN: optional(z.string()),
   TRELLO_LIST_ID: optional(z.string()),
   CUSTOM_WEBHOOK_URL: optional(z.url()),
+  /** Protects scheduled maintenance routes. */
+  CRON_SECRET: optional(z.string().min(16)),
+  /** Canonical public origin used in customer notification links. */
+  STORE_PUBLIC_URL: optional(z.url()),
+  /** Closed orders are anonymized after this many days. Unset disables it. */
+  CUSTOMER_DATA_RETENTION_DAYS: optional(z.coerce.number().int().min(30).max(3650)),
+}).superRefine((env, context) => {
+  if (env.RESEND_API_KEY && !env.NOTIFY_FROM_EMAIL) {
+    context.addIssue({
+      code: "custom",
+      path: ["NOTIFY_FROM_EMAIL"],
+      message: "NOTIFY_FROM_EMAIL is required when RESEND_API_KEY is configured",
+    });
+  }
 });
 
 const publicSchema = z.object({
   NEXT_PUBLIC_SQUARE_APPLICATION_ID: z.string().min(1),
-  NEXT_PUBLIC_SQUARE_LOCATION_ID: z.string().min(1),
   NEXT_PUBLIC_SQUARE_ENVIRONMENT: z.enum(["sandbox", "production"]),
 });
 
@@ -116,7 +151,6 @@ export function publicEnv(): PublicEnv {
   if (!cachedPublicEnv) {
     const parsed = publicSchema.safeParse({
       NEXT_PUBLIC_SQUARE_APPLICATION_ID: process.env.NEXT_PUBLIC_SQUARE_APPLICATION_ID,
-      NEXT_PUBLIC_SQUARE_LOCATION_ID: process.env.NEXT_PUBLIC_SQUARE_LOCATION_ID,
       NEXT_PUBLIC_SQUARE_ENVIRONMENT: process.env.NEXT_PUBLIC_SQUARE_ENVIRONMENT,
     });
     if (!parsed.success) {

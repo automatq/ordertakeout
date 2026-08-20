@@ -92,9 +92,53 @@ export async function applySquareEvent(event: SquareWebhookEvent): Promise<Event
       return applyPaymentEvent(event);
     case "fulfillment":
       return applyFulfillmentEvent(event);
+    case "refund":
+      return applyRefundEvent(event);
     case "other":
       return { handled: false, detail: `Ignored event type ${event.type}` };
   }
+}
+
+async function applyRefundEvent(
+  event: Extract<SquareWebhookEvent, { kind: "refund" }>,
+): Promise<EventOutcome> {
+  const [order] = await db()
+    .select()
+    .from(orders)
+    .where(eq(orders.squarePaymentId, event.paymentId))
+    .limit(1);
+  if (!order) return { handled: false, detail: `No local order for payment ${event.paymentId}` };
+
+  if (event.status === "COMPLETED") {
+    const now = new Date();
+    await db()
+      .update(orders)
+      .set({
+        status: "canceled",
+        refundStatus: "completed",
+        squareRefundId: event.refundId,
+        refundError: null,
+        canceledAt: order.canceledAt ?? now,
+        updatedAt: now,
+      })
+      .where(eq(orders.id, order.id));
+    await notifyOrder(order.id, "order_canceled");
+    return { handled: true, detail: `Refunded and cancelled ${order.orderNumber}` };
+  }
+
+  if (event.status === "FAILED" || event.status === "REJECTED") {
+    await db()
+      .update(orders)
+      .set({ refundStatus: "failed", refundError: `Square refund ${event.status}`, updatedAt: new Date() })
+      .where(eq(orders.id, order.id));
+    return { handled: true, detail: `Refund failed for ${order.orderNumber}` };
+  }
+
+  await db()
+    .update(orders)
+    .set({ refundStatus: "pending", squareRefundId: event.refundId, updatedAt: new Date() })
+    .where(eq(orders.id, order.id));
+  return { handled: true, detail: `Refund ${event.status ?? "pending"} for ${order.orderNumber}` };
 }
 
 async function applyPaymentEvent(
@@ -170,6 +214,17 @@ async function applyFulfillmentEvent(
     return {
       handled: false,
       detail: `Would move ${order.orderNumber} ${order.status} → ${nextStatus}; ignored`,
+    };
+  }
+
+
+  // Cancelling a paid Square fulfillment does not prove the card payment was
+  // refunded. The refund webhook is the financial source of truth and will
+  // close the local order once Square reports COMPLETED.
+  if (nextStatus === "canceled" && order.squarePaymentId && order.refundStatus !== "completed") {
+    return {
+      handled: false,
+      detail: `Square cancelled ${order.orderNumber}; waiting for a completed refund`,
     };
   }
 

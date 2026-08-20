@@ -3,8 +3,9 @@
 Online pre-ordering and pickup scheduling for a bakery's party trays, integrated with the
 store's existing **Square** POS.
 
-Customers order Ensaymada, Hopia and Ube Bar trays, choose a pickup date and time, and pay
-online. Paid orders land in the store's Square POS *and* in a purpose-built staff dashboard,
+Customers choose one of three Square-managed pickup locations, see that branch's inventory,
+order Ensaymada, Hopia and Ube Bar trays, choose a pickup date and time, and pay online.
+Paid orders land in the selected Square location *and* in a purpose-built staff dashboard,
 with email, SMS and chat notifications.
 
 ## Documentation
@@ -35,10 +36,10 @@ npm run demo                        # migrate + seed + start
 Then open <http://localhost:3000>. Staff dashboard is at `/staff` — password `demo1234`.
 If port 3000 is taken, `PORT=3100 npm run demo`.
 
-The seed creates the three product lines with the real rules from the requirements
-document, five sample orders across today and tomorrow, a closure date, and one pickup slot
-capped at two orders — so the "fully booked" and "closed" states are visible in the picker
-rather than needing to be imagined.
+The seed creates three demo pickup locations, the three product lines with the rules from
+the requirements document, branch-specific inventory, five sample orders across today and
+tomorrow, a location closure, and one pickup slot capped at two orders — so the
+location-aware sold-out, "fully booked", and "closed" states are visible.
 
 **What's real and what isn't.** Only two things are faked: the catalog is served from a
 fixture instead of Square, and payment is simulated (with a checkbox to simulate a decline,
@@ -60,16 +61,18 @@ npm run dev
 
 ### Environment
 
-`.env.example` documents every variable. Three are worth calling out:
+`.env.example` documents every variable. Four are worth calling out:
 
-- **`STORE_TIMEZONE`** has no default and the app will refuse to start without it. Every
-  cutoff and pickup-slot calculation runs in store-local time; a wrong value silently
-  shifts every order deadline.
+- **`STORE_TIMEZONE`** has no default and is the fallback for legacy records. Active Square
+  locations supply their own timezone, so every cutoff and pickup calculation runs in the
+  selected branch's local time.
 - **Square credentials** should be Sandbox for all development. Production credentials go
   in only at launch.
 - **`SQUARE_WEBHOOK_NOTIFICATION_URL`** must match the subscription URL in the Square
   console character for character — it's part of the signed payload, so even a trailing
   slash mismatch will fail verification.
+- **`CRON_SECRET`** protects the five-minute maintenance endpoint that expires holds,
+  retries provider failures, and applies the configured customer-data retention policy.
 
 Notification channels are all optional; an unset channel is skipped by the dispatcher, so
 the store can enable one later without a code change.
@@ -229,7 +232,8 @@ Worth knowing before changing anything in `lib/orders/create.ts`:
 **All build phases are code complete.** What remains before launch is verification against
 a real database and Square Sandbox — see *Not yet covered* below.
 
-168 tests. See the full build phases in [`docs/SCOPE.md`](docs/SCOPE.md).
+182 tests pass, with 5 database integration tests intentionally skipped unless
+`TEST_DATABASE_URL` is set. See the full build phases in [`docs/SCOPE.md`](docs/SCOPE.md).
 
 ## Admin
 
@@ -252,9 +256,10 @@ prices from Square on demand.
 ## Notifications
 
 One event in, every configured channel out. Channels run concurrently and independently —
-Twilio being down must not stop the Discord post, and neither must stop the email. Every
-attempt is written to `notification_log`, so *"the store says they never got the text"* is
-an answerable question rather than a guess.
+Twilio being down must not stop Discord or email. Store and customer emails are separate
+retry units, so a partial Resend failure cannot duplicate the recipient that succeeded.
+Every attempt is written to `notification_log`, so *"the store says they never got the
+text"* is an answerable question rather than a guess.
 
 Fired from three places: checkout (`order_paid`), staff status changes (`order_ready`,
 `order_canceled`), and webhook reconciliation. Delivery runs inside Next's `after()`, so
@@ -264,7 +269,7 @@ can never fail a payment that has already gone through.
 - **Each adapter is a plain `fetch`**, not a vendor SDK. Six SDKs would be six dependency
   trees for what amounts to six POST requests, and going direct means the HTTP request *is*
   the whole contract — so the tests assert on exactly that.
-- **Dispatch de-duplicates per order, event and channel.** Checkout and the
+- **Dispatch atomically de-duplicates per order, event and recipient channel.** Checkout and the
   `payment.updated` webhook can both fire `order_paid` for the same order; without this the
   store gets everything twice.
 - **An unconfigured channel is skipped, not failed**, and is not written to the log — so

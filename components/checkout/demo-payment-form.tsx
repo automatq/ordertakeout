@@ -35,7 +35,10 @@ export function DemoPaymentForm({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="rounded-control border-accent bg-accent-soft border border-dashed p-4">
+      <div
+        role="status"
+        className="rounded-control border-accent bg-accent-soft border border-dashed p-4"
+      >
         <p className="text-accent-ink text-sm font-semibold">Demo mode — no card required</p>
         <p className="text-ink-muted mt-1 text-sm">
           No real payment is taken and nothing is sent to Square. Everything else —
@@ -57,9 +60,16 @@ export function DemoPaymentForm({
         type="button"
         onClick={handlePay}
         disabled={submitting}
-        className="rounded-control bg-brand text-brand-ink hover:bg-brand-hover px-5 py-3 font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+        className="btn btn-primary btn-block"
       >
-        {submitting ? "Processing…" : `Pay ${amountLabel} (demo)`}
+        {submitting ? (
+          <>
+            <span className="spinner" aria-hidden />
+            Processing…
+          </>
+        ) : (
+          `Pay ${amountLabel} (demo)`
+        )}
       </button>
     </div>
   );

@@ -14,13 +14,27 @@ export const STORE_HOURS = {
   closesTime: "21:00",
 } as const;
 
+/**
+ * Public-facing identity and contact details, as published on the storefront
+ * (harinabakeshoppe.com). Used by the marketing homepage and the site footer.
+ */
+export const STORE_INFO = {
+  name: "Harina Bakeshoppe",
+  tagline: "Bringing the Taste of Filipino Breads to Canada",
+  phone: "(647) 368-5000",
+  phoneHref: "tel:+16473685000",
+  email: "harinabakeshoppe@gmail.com",
+  street: "314 Wilson Avenue",
+  city: "North York, ON M3S 1S8",
+} as const;
+
 /** How long a pickup slot is held while the customer completes payment. */
 export const SLOT_HOLD_TTL_MINUTES = 10;
 
 /** Fallback when a slot has no `slot_capacity` override. Confirm with the store. */
 export const DEFAULT_MAX_ORDERS_PER_SLOT = 5;
 
-/** How far ahead customers may book. */
+/** How far ahead customers may book; the UI shows the first 21 available dates. */
 export const MAX_ORDER_HORIZON_DAYS = 60;
 
 const ENSAYMADA_PICKUP_TIMES = ["16:00", "17:00", "18:00", "19:00", "20:00"] as const;

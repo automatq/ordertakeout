@@ -1,0 +1,1 @@
+ALTER TABLE "orders" ADD COLUMN "pickup_location_hours" jsonb;

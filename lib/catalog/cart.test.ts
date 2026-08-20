@@ -8,6 +8,7 @@ const ENSAYMADA: CatalogProduct = {
   name: "Ensaymada Party Tray",
   description: null,
   imageIds: [],
+  imageUrls: [],
   variants: [
     { id: "VAR_25_UBE", name: "25 pcs Ube", priceCents: 2500, currency: "USD", sku: null, ordinal: 0 },
     { id: "VAR_56_CHEESE", name: "56 pcs Cheese", priceCents: 4000, currency: "USD", sku: null, ordinal: 1 },
@@ -19,6 +20,7 @@ const HOPIA: CatalogProduct = {
   name: "Hopia Ube / Hopia Baboy",
   description: null,
   imageIds: [],
+  imageUrls: [],
   variants: [
     { id: "VAR_HOPIA_60", name: "60 pcs", priceCents: 4500, currency: "USD", sku: null, ordinal: 0 },
   ],
@@ -58,7 +60,14 @@ describe("resolveCart", () => {
       ],
       CATALOG,
     );
-    expect(result).toEqual({ ok: false, unknownVariantIds: ["VAR_DELETED"] });
+    expect(result).toMatchObject({
+      ok: false,
+      unknownVariantIds: ["VAR_DELETED"],
+      subtotalCents: 2500,
+      currency: "USD",
+    });
+    expect(result.lines).toHaveLength(1);
+    expect(result.lines[0]?.variant.id).toBe("VAR_25_UBE");
   });
 
   it("resolves an empty cart to a zero subtotal rather than failing", () => {

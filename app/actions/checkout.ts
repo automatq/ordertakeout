@@ -12,6 +12,9 @@ import {
 } from "@/lib/orders/create";
 import { computeAvailability, type AvailabilityResult } from "@/lib/scheduling/availability";
 import { loadAvailabilityInput } from "@/lib/scheduling/queries";
+import { getStoreLocation } from "@/lib/locations/server";
+import { inventoryShortages } from "@/lib/inventory/map";
+import { getInventoryQuantities } from "@/lib/inventory/server";
 
 /**
  * Checkout server actions.
@@ -29,7 +32,21 @@ const cartSchema = z
       quantity: z.number().int().min(1).max(50),
     }),
   )
-  .max(30);
+  .max(30)
+  .superRefine((items, context) => {
+    const totals = new Map<string, number>();
+    for (const item of items) {
+      const quantity = (totals.get(item.variantId) ?? 0) + item.quantity;
+      totals.set(item.variantId, quantity);
+      if (quantity > 50) {
+        context.addIssue({
+          code: "custom",
+          message: "A cart line cannot exceed 50 trays",
+        });
+        return;
+      }
+    }
+  });
 
 const customerSchema = z.object({
   name: z.string().trim().min(1, "Please enter your name").max(120),
@@ -38,6 +55,7 @@ const customerSchema = z.object({
 });
 
 const checkoutSchema = z.object({
+  locationId: z.string().min(1, "Choose a pickup location"),
   cart: cartSchema,
   pickup: z.object({
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Choose a pickup date"),
@@ -58,10 +76,14 @@ export type CheckoutInput = z.infer<typeof checkoutSchema>;
  */
 export async function getCartAvailability(
   cart: unknown,
+  locationId?: unknown,
 ): Promise<AvailabilityResult | { ok: false; problem: { kind: "catalog_unavailable" } }> {
   const parsed = cartSchema.safeParse(cart);
   if (!parsed.success) {
     return { ok: false, problem: { kind: "empty_cart" } };
+  }
+  if (typeof locationId !== "string" || !locationId || !(await getStoreLocation(locationId))) {
+    return { ok: false, problem: { kind: "catalog_unavailable" } };
   }
 
   const catalog = await getOrderableProducts();
@@ -78,12 +100,41 @@ export async function getCartAvailability(
   }
 
   const schedulingCart = toSchedulingCart(resolved.lines);
-  return computeAvailability(await loadAvailabilityInput(schedulingCart));
+  const inventory = await getInventoryQuantities(
+    locationId,
+    resolved.lines.map((line) => line.variant.id),
+  );
+  if (inventoryShortages(
+    resolved.lines.map((line) => ({ variationId: line.variant.id, quantity: line.quantity })),
+    inventory,
+  ).length) {
+    return { ok: false, problem: { kind: "catalog_unavailable" } };
+  }
+  return computeAvailability(await loadAvailabilityInput(schedulingCart, undefined, locationId));
 }
 
 export type StartCheckoutResult =
   | CreateOrderResult
   | { ok: false; failure: { kind: "invalid_input"; fieldErrors: Record<string, string[]> } };
+
+/**
+ * Group validation issues by their full dotted path.
+ *
+ * `z.flattenError` keys only by the FIRST path segment, so every problem inside
+ * `customer` came back under a single `customer` key. The UI was looking for
+ * `customer.name`, so per-field messages silently never rendered and the
+ * customer saw a form that rejected them without saying which field was wrong.
+ */
+function fieldErrorsByPath(error: z.ZodError): Record<string, string[]> {
+  const errors: Record<string, string[]> = {};
+
+  for (const issue of error.issues) {
+    const path = issue.path.join(".") || "form";
+    (errors[path] ??= []).push(issue.message);
+  }
+
+  return errors;
+}
 
 /** Reserve the pickup slot and record the order, unpaid. */
 export async function startCheckout(input: unknown): Promise<StartCheckoutResult> {
@@ -91,14 +142,12 @@ export async function startCheckout(input: unknown): Promise<StartCheckoutResult
   if (!parsed.success) {
     return {
       ok: false,
-      failure: {
-        kind: "invalid_input",
-        fieldErrors: z.flattenError(parsed.error).fieldErrors as Record<string, string[]>,
-      },
+      failure: { kind: "invalid_input", fieldErrors: fieldErrorsByPath(parsed.error) },
     };
   }
 
   return createPendingOrder({
+    locationId: parsed.data.locationId,
     cart: normalizeCart(parsed.data.cart),
     pickup: parsed.data.pickup,
     customer: parsed.data.customer,

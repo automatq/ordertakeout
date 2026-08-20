@@ -13,6 +13,7 @@ import type { NotificationEvent } from "./types";
 const REQUIRED_ENV = {
   DATABASE_URL: "postgresql://localhost:5432/test",
   STORE_TIMEZONE: "America/Los_Angeles",
+  STORE_CURRENCY: "USD",
   SQUARE_ACCESS_TOKEN: "sq-token",
   SQUARE_WEBHOOK_SIGNATURE_KEY: "sq-sig",
   SQUARE_WEBHOOK_NOTIFICATION_URL: "https://example.com/api/webhooks/square",
@@ -21,6 +22,7 @@ const REQUIRED_ENV = {
 
 const CHANNEL_ENV = {
   RESEND_API_KEY: "re_test",
+  NOTIFY_FROM_EMAIL: "Party Tray Orders <orders@bakery.test>",
   STORE_NOTIFY_EMAIL: "orders@bakery.test",
   TWILIO_ACCOUNT_SID: "AC123",
   TWILIO_AUTH_TOKEN: "twilio-token",
@@ -132,11 +134,12 @@ describe("Twilio", () => {
 });
 
 describe("Resend", () => {
-  it("emails the store and the customer separately", async () => {
+  it("emails the store and the customer as independently retryable channels", async () => {
     const calls = stubFetch();
-    const { sendEmail } = await import("./channels");
+    const { sendStoreEmail, sendCustomerEmail } = await import("./channels");
 
-    expect((await sendEmail(EVENT)).ok).toBe(true);
+    expect(await sendStoreEmail(EVENT)).toEqual({ channel: "email_store", ok: true });
+    expect(await sendCustomerEmail(EVENT)).toEqual({ channel: "email_customer", ok: true });
     expect(calls).toHaveLength(2);
 
     const recipients = calls.map((c) => JSON.parse(c.body!).to[0]);
@@ -146,10 +149,13 @@ describe("Resend", () => {
     expect(calls[0]?.headers["Authorization"]).toBe("Bearer re_test");
   });
 
-  it("fails the channel if either email fails", async () => {
+  it("fails each recipient independently", async () => {
     stubFetch(500);
-    const { sendEmail } = await import("./channels");
-    expect((await sendEmail(EVENT)).ok).toBe(false);
+    const { sendStoreEmail, sendCustomerEmail } = await import("./channels");
+    expect((await sendStoreEmail(EVENT)).channel).toBe("email_store");
+    expect((await sendStoreEmail(EVENT)).ok).toBe(false);
+    expect((await sendCustomerEmail(EVENT)).channel).toBe("email_customer");
+    expect((await sendCustomerEmail(EVENT)).ok).toBe(false);
   });
 });
 

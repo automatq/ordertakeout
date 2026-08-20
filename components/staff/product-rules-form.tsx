@@ -1,16 +1,40 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useId, useState, useTransition } from "react";
 
 import { saveProductRulesAction, type AdminResult } from "@/app/actions/admin";
+import { AlertIcon, CheckIcon } from "@/components/ui/icons";
+import { useToast } from "@/components/ui/toast";
 import type { ProductRuleRow } from "@/lib/admin/queries";
+import { formatPickupTime } from "@/lib/scheduling/time";
 
 /**
  * Ordering rules for one product.
  *
  * Used both to edit a configured product and to configure one Square has but we
  * have never seen — the same fields either way, which is why it's an upsert.
+ *
+ * Rendered inside a `<details>` on the settings page: forty Square items used to
+ * mean forty fully-expanded six-field forms stacked in one column.
+ *
+ * Two smaller fixes here:
+ *
+ *  - Pickup times are chips, not free text. A comma-separated string meant one
+ *    typo silently reshaped storefront availability, and the field's format hint
+ *    disappeared exactly when the format was wrong (the hint and error shared a
+ *    slot). The hidden input keeps the server contract unchanged.
+ *  - Saving raises a toast as well as an inline note. With forty forms on a
+ *    page, the "Saved." under the one you edited scrolls away with it.
  */
+
+const DEFAULT_PICKUP_TIMES = ["16:00", "17:00", "18:00", "19:00", "20:00"];
+
+/** Every half hour the shop could plausibly offer, for the chip picker. */
+const SELECTABLE_TIMES = Array.from({ length: 32 }, (_, index) => {
+  const minutes = 6 * 60 + index * 30;
+  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+});
+
 export function ProductRulesForm({
   productId,
   productName,
@@ -24,9 +48,58 @@ export function ProductRulesForm({
 }) {
   const [result, setResult] = useState<AdminResult | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [pickupTimes, setPickupTimes] = useState<string[]>(
+    existing?.allowedPickupTimes ?? DEFAULT_PICKUP_TIMES,
+  );
+  const [dirty, setDirty] = useState(false);
+  const toast = useToast();
+
+  useEffect(() => {
+    if (!dirty) return;
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+    const guardClientNavigation = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const target = event.target;
+      const anchor = target instanceof Element ? target.closest<HTMLAnchorElement>("a[href]") : null;
+      if (!anchor || anchor.target === "_blank" || anchor.hasAttribute("download")) return;
+      const next = new URL(anchor.href, window.location.href);
+      const current = new URL(window.location.href);
+      // In-page settings jump links do not unmount the form or lose its values.
+      if (next.pathname === current.pathname && next.search === current.search) return;
+      if (window.confirm("Leave without saving these product rules?")) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    window.addEventListener("beforeunload", warnBeforeLeaving);
+    document.addEventListener("click", guardClientNavigation, true);
+    return () => {
+      window.removeEventListener("beforeunload", warnBeforeLeaving);
+      document.removeEventListener("click", guardClientNavigation, true);
+    };
+  }, [dirty]);
 
   function handleSubmit(formData: FormData) {
-    startTransition(async () => setResult(await saveProductRulesAction(formData)));
+    startTransition(async () => {
+      try {
+        const next = await saveProductRulesAction(formData);
+        setResult(next);
+        if (next.ok) {
+          setDirty(false);
+          toast({ message: `${productName} rules saved.` });
+        } else {
+          toast({ tone: "error", message: `${productName}: ${next.error}` });
+        }
+      } catch {
+        const next: AdminResult = {
+          ok: false,
+          error: "We couldn't save these rules. Check your connection and try again.",
+        };
+        setResult(next);
+        toast({ tone: "error", message: `${productName}: ${next.error}` });
+      }
+    });
   }
 
   const errors = result && !result.ok ? result.fieldErrors : undefined;
@@ -34,18 +107,13 @@ export function ProductRulesForm({
   return (
     <form
       action={handleSubmit}
-      className="rounded-card border-border bg-surface flex flex-col gap-4 border p-5"
+      onChange={() => setDirty(true)}
+      className="card flex flex-col gap-4 p-5"
     >
       <input type="hidden" name="productId" value={productId} />
-
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-ink font-semibold">{productName}</h3>
-        {unconfigured ? (
-          <span className="bg-status-preparing-soft text-status-preparing rounded-control px-2 py-1 text-xs font-semibold">
-            Not yet orderable — needs rules
-          </span>
-        ) : null}
-      </div>
+      {/* The server still parses a comma-separated string; the chips above are
+          purely how staff choose the values. */}
+      <input type="hidden" name="pickupTimes" value={pickupTimes.join(", ")} />
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Field
@@ -66,8 +134,9 @@ export function ProductRulesForm({
         <Field
           label="Order cutoff"
           name="orderCutoffTime"
+          type="time"
           defaultValue={existing?.orderCutoffTime ?? "18:00"}
-          hint="24-hour, e.g. 18:00 for 6 PM"
+          hint="Last moment an order can be placed"
           errors={errors?.["orderCutoffTime"]}
         />
         <Field
@@ -80,21 +149,83 @@ export function ProductRulesForm({
         />
       </div>
 
+      <fieldset className="flex flex-col gap-2">
+        <legend className="text-ink text-sm font-medium">Pickup times</legend>
+        <div className="flex flex-wrap gap-2 pt-1">
+          {SELECTABLE_TIMES.map((time) => {
+            const chosen = pickupTimes.includes(time);
+            return (
+              <button
+                key={time}
+                type="button"
+                aria-pressed={chosen}
+                onClick={() => {
+                  setDirty(true);
+                  setPickupTimes((current) =>
+                    chosen
+                      ? current.filter((t) => t !== time)
+                      : [...current, time].sort((a, b) => a.localeCompare(b)),
+                  );
+                }}
+                className="chip btn-sm text-sm"
+              >
+                {formatPickupTime(time)}
+              </button>
+            );
+          })}
+        </div>
+        {errors?.["pickupTimes"] ? (
+          <span role="alert" className="field-error">
+            {errors["pickupTimes"][0]}
+          </span>
+        ) : null}
+        <span className="field-hint">
+          {pickupTimes.length === 0
+            ? "Choose at least one — with none, the product can't be ordered."
+            : `${pickupTimes.length} time${pickupTimes.length === 1 ? "" : "s"} offered.`}
+        </span>
+      </fieldset>
+
       <Field
-        label="Pickup times"
-        name="pickupTimes"
-        defaultValue={(existing?.allowedPickupTimes ?? ["16:00", "17:00", "18:00", "19:00", "20:00"]).join(", ")}
-        hint="24-hour times, comma separated — e.g. 16:00, 17:00, 18:00"
-        errors={errors?.["pickupTimes"]}
+        label="Photo URL (optional)"
+        name="heroImageUrl"
+        type="url"
+        defaultValue={existing?.heroImageUrl ?? ""}
+        hint="Overrides the item's Square photo. Leave blank to use Square's."
+        errors={errors?.["heroImageUrl"]}
       />
 
+      <label className="flex flex-col gap-1.5">
+        <span className="text-ink-subtle text-sm font-medium">Storefront description</span>
+        <textarea
+          name="descriptionMd"
+          defaultValue={existing?.descriptionMd ?? ""}
+          rows={5}
+          maxLength={2000}
+          aria-invalid={errors?.["descriptionMd"]?.length ? true : undefined}
+          aria-describedby={errors?.["descriptionMd"]?.length ? `rules-description-error-${productId}` : undefined}
+          className="input"
+          placeholder="Tell customers what is included, how it tastes, and who it serves."
+        />
+        {errors?.["descriptionMd"]?.length ? (
+          <span id={`rules-description-error-${productId}`} role="alert" className="field-error">
+            {errors["descriptionMd"][0]}
+          </span>
+        ) : (
+          <span className="field-hint">Overrides the description from Square. Plain text is shown safely in paragraphs.</span>
+        )}
+      </label>
+
       <label className="flex items-center gap-2">
+        {/* Unchecked checkboxes submit nothing; the hidden value makes "Hidden"
+            an explicit, validated save instead of an invalid form. */}
+        <input type="hidden" name="isOrderable" value="false" />
         <input
           type="checkbox"
           name="isOrderable"
           value="true"
           defaultChecked={existing?.isOrderable ?? true}
-          className="accent-brand"
+          className="accent-brand h-5 w-5"
         />
         <span className="text-ink text-sm">Available to order</span>
       </label>
@@ -102,28 +233,47 @@ export function ProductRulesForm({
       {result?.ok && result.warnings?.length ? (
         <ul className="text-warning flex flex-col gap-1 text-sm" role="status">
           {result.warnings.map((warning) => (
-            <li key={warning}>⚠ {warning}</li>
+            <li key={warning} className="flex items-start gap-2">
+              <AlertIcon className="mt-0.5 h-4 w-4 shrink-0" />
+              {warning}
+            </li>
           ))}
         </ul>
       ) : null}
 
       {result?.ok ? (
-        <p role="status" className="text-success text-sm">
+        <p role="status" className="text-success flex items-center gap-2 text-sm">
+          <CheckIcon className="h-4 w-4" />
           Saved.
         </p>
       ) : result ? (
-        <p role="alert" className="text-danger text-sm">
+        <p role="alert" className="field-error">
           {result.error}
         </p>
       ) : null}
 
-      <button
-        type="submit"
-        disabled={isPending}
-        className="rounded-control bg-brand text-brand-ink hover:bg-brand-hover self-start px-5 py-2.5 font-semibold transition-colors disabled:opacity-50"
-      >
-        {isPending ? "Saving…" : "Save rules"}
-      </button>
+      <div className="flex items-center gap-3">
+        <button
+          type="submit"
+          disabled={isPending || pickupTimes.length === 0}
+          className="btn btn-primary btn-sm"
+        >
+          {isPending ? <span className="spinner" aria-hidden /> : null}
+          {isPending ? "Saving…" : "Save rules"}
+        </button>
+
+        {/* Dirty state, so an untouched form and one with unsaved edits don't
+            look identical on a page full of forms. */}
+        {dirty && !isPending ? (
+          <span className="text-warning text-sm">Unsaved changes</span>
+        ) : null}
+
+        {unconfigured ? (
+          <span className="text-ink-subtle text-sm">
+            Not sellable until these rules are saved.
+          </span>
+        ) : null}
+      </div>
     </form>
   );
 }
@@ -143,24 +293,38 @@ function Field({
   errors?: string[];
   type?: string;
 }) {
+  const id = `rules-${name}-${useId()}`;
+  const hintId = hint ? `${id}-hint` : undefined;
+  const errorId = errors?.length ? `${id}-error` : undefined;
+
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-ink text-sm font-medium">{label}</span>
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor={id} className="text-ink text-sm font-medium">
+        {label}
+      </label>
       <input
+        id={id}
         type={type}
         name={name}
         defaultValue={defaultValue}
         aria-invalid={errors ? true : undefined}
-        className="rounded-control border-border bg-surface text-ink border px-3 py-2"
+        /* Error AND hint, not one or the other. The old version swapped the hint
+           out for the error, which removed the format guidance at the exact
+           moment the format was wrong. */
+        aria-describedby={[errorId, hintId].filter(Boolean).join(" ") || undefined}
+        className="input"
       />
       {errors?.length ? (
-        <span role="alert" className="text-danger text-xs">
+        <span id={errorId} role="alert" className="field-error">
           {errors[0]}
         </span>
-      ) : hint ? (
-        <span className="text-ink-subtle text-xs">{hint}</span>
       ) : null}
-    </label>
+      {hint ? (
+        <span id={hintId} className="field-hint">
+          {hint}
+        </span>
+      ) : null}
+    </div>
   );
 }
 

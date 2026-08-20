@@ -20,18 +20,20 @@ const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 const describeIfDb = TEST_DATABASE_URL ? describe : describe.skip;
 
 /**
- * Inside the booking horizon but far enough out not to collide with demo data.
- *
- * It must be a date the engine would actually offer: past every lead time and
- * within MAX_ORDER_HORIZON_DAYS. A date beyond the horizon is rejected before
- * capacity is ever consulted, which would make this test pass vacuously.
+ * A date the engine would actually offer: past every lead time and within
+ * MAX_ORDER_HORIZON_DAYS. A date beyond the horizon is rejected before capacity
+ * is ever consulted, which would make this test pass vacuously. With the short
+ * booking window this sits at the horizon edge — the latest date still bookable
+ * regardless of whether the order is placed before or after the daily cutoff.
  */
 const SLOT_DATE = addCalendarDays(
   storeToday(new Date(), process.env.STORE_TIMEZONE ?? "America/Los_Angeles"),
-  45,
+  3,
 );
 const SLOT_TIME = "16:00";
 const PRODUCT_ID = "DEMO_ITEM_ENSAYMADA";
+const LOCATION_A = "TEST_LOCATION_TORONTO";
+const LOCATION_B = "TEST_LOCATION_LONDON";
 
 describeIfDb("slot reservation under concurrency", () => {
   let db: typeof import("@/lib/db").db;
@@ -87,16 +89,17 @@ describeIfDb("slot reservation under concurrency", () => {
   }
 
   /** Create N unpaid orders that will all race for the same slot. */
-  async function createContenders(count: number): Promise<string[]> {
+  async function createContenders(count: number, locationId = LOCATION_A): Promise<string[]> {
     const ids: string[] = [];
     for (let i = 0; i < count; i++) {
       const [order] = await db()
         .insert(schema.orders)
         .values({
-          orderNumber: `PT-RACE${String(i).padStart(2, "0")}`,
+          orderNumber: `PT-R${locationId === LOCATION_B ? "B" : "A"}CE${String(i).padStart(2, "0")}`,
           customerName: `Racer ${i}`,
           customerEmail: `racer${i}@example.com`,
           customerPhone: "+15550000000",
+          squareLocationId: locationId,
           pickupDate: SLOT_DATE,
           pickupTime: SLOT_TIME,
           status: "pending_payment",
@@ -112,9 +115,9 @@ describeIfDb("slot reservation under concurrency", () => {
   it("lets exactly one of ten simultaneous checkouts take the last slot", async () => {
     await db()
       .insert(schema.slotCapacity)
-      .values({ pickupDate: SLOT_DATE, pickupTime: SLOT_TIME, maxOrders: 1 })
+      .values({ squareLocationId: LOCATION_A, pickupDate: SLOT_DATE, pickupTime: SLOT_TIME, maxOrders: 1 })
       .onConflictDoUpdate({
-        target: [schema.slotCapacity.pickupDate, schema.slotCapacity.pickupTime],
+        target: [schema.slotCapacity.squareLocationId, schema.slotCapacity.pickupDate, schema.slotCapacity.pickupTime],
         set: { maxOrders: 1 },
       });
 
@@ -124,7 +127,7 @@ describeIfDb("slot reservation under concurrency", () => {
     // Fired together on purpose: this is the check-then-act race that a naive
     // "read the count, then insert" implementation loses.
     const results = await Promise.all(
-      orderIds.map((orderId) => claimSlot(orderId, cart, { date: SLOT_DATE, time: SLOT_TIME })),
+      orderIds.map((orderId) => claimSlot(orderId, cart, { date: SLOT_DATE, time: SLOT_TIME }, LOCATION_A)),
     );
 
     const won = results.filter((r) => r.ok);
@@ -156,13 +159,13 @@ describeIfDb("slot reservation under concurrency", () => {
     await cleanup();
     await db()
       .insert(schema.slotCapacity)
-      .values({ pickupDate: SLOT_DATE, pickupTime: SLOT_TIME, maxOrders: 3 });
+      .values({ squareLocationId: LOCATION_A, pickupDate: SLOT_DATE, pickupTime: SLOT_TIME, maxOrders: 3 });
 
     const orderIds = await createContenders(12);
     const cart = [{ productId: PRODUCT_ID, quantity: 1 }];
 
     const results = await Promise.all(
-      orderIds.map((orderId) => claimSlot(orderId, cart, { date: SLOT_DATE, time: SLOT_TIME })),
+      orderIds.map((orderId) => claimSlot(orderId, cart, { date: SLOT_DATE, time: SLOT_TIME }, LOCATION_A)),
     );
 
     expect(results.filter((r) => r.ok)).toHaveLength(3);
@@ -178,18 +181,18 @@ describeIfDb("slot reservation under concurrency", () => {
     await cleanup();
     await db()
       .insert(schema.slotCapacity)
-      .values({ pickupDate: SLOT_DATE, pickupTime: SLOT_TIME, maxOrders: 1 });
+      .values({ squareLocationId: LOCATION_A, pickupDate: SLOT_DATE, pickupTime: SLOT_TIME, maxOrders: 1 });
 
     const [first, second] = await createContenders(2);
     const cart = [{ productId: PRODUCT_ID, quantity: 1 }];
 
-    expect((await claimSlot(first!, cart, { date: SLOT_DATE, time: SLOT_TIME })).ok).toBe(true);
-    expect((await claimSlot(second!, cart, { date: SLOT_DATE, time: SLOT_TIME })).ok).toBe(false);
+    expect((await claimSlot(first!, cart, { date: SLOT_DATE, time: SLOT_TIME }, LOCATION_A)).ok).toBe(true);
+    expect((await claimSlot(second!, cart, { date: SLOT_DATE, time: SLOT_TIME }, LOCATION_A)).ok).toBe(false);
 
     // Abandoned checkout: expire the hold rather than waiting ten minutes.
     await client`UPDATE slot_holds SET expires_at = now() - interval '1 minute' WHERE pickup_date = ${SLOT_DATE}`;
 
-    expect((await claimSlot(second!, cart, { date: SLOT_DATE, time: SLOT_TIME })).ok).toBe(true);
+    expect((await claimSlot(second!, cart, { date: SLOT_DATE, time: SLOT_TIME }, LOCATION_A)).ok).toBe(true);
   }, 30_000);
 
   it("sweeps expired holds", async () => {
@@ -199,11 +202,11 @@ describeIfDb("slot reservation under concurrency", () => {
     const [orderId] = await createContenders(1);
     await db()
       .insert(schema.slotCapacity)
-      .values({ pickupDate: SLOT_DATE, pickupTime: SLOT_TIME, maxOrders: 5 });
+      .values({ squareLocationId: LOCATION_A, pickupDate: SLOT_DATE, pickupTime: SLOT_TIME, maxOrders: 5 });
     await claimSlot(orderId!, [{ productId: PRODUCT_ID, quantity: 1 }], {
       date: SLOT_DATE,
       time: SLOT_TIME,
-    });
+    }, LOCATION_A);
 
     await client`UPDATE slot_holds SET expires_at = now() - interval '1 hour' WHERE pickup_date = ${SLOT_DATE}`;
     expect(await sweepExpiredHolds()).toBeGreaterThanOrEqual(1);
@@ -212,5 +215,24 @@ describeIfDb("slot reservation under concurrency", () => {
       sql`SELECT count(*)::int AS n FROM slot_holds WHERE pickup_date = ${SLOT_DATE}`,
     );
     expect(remaining[0]?.n).toBe(0);
+  }, 30_000);
+
+  it("books the same date and time independently at different locations", async () => {
+    await cleanup();
+    await db().insert(schema.slotCapacity).values([
+      { squareLocationId: LOCATION_A, pickupDate: SLOT_DATE, pickupTime: SLOT_TIME, maxOrders: 1 },
+      { squareLocationId: LOCATION_B, pickupDate: SLOT_DATE, pickupTime: SLOT_TIME, maxOrders: 1 },
+    ]);
+    const [toronto] = await createContenders(1, LOCATION_A);
+    const [london] = await createContenders(1, LOCATION_B);
+    const cart = [{ productId: PRODUCT_ID, quantity: 1 }];
+
+    const [first, second] = await Promise.all([
+      claimSlot(toronto!, cart, { date: SLOT_DATE, time: SLOT_TIME }, LOCATION_A),
+      claimSlot(london!, cart, { date: SLOT_DATE, time: SLOT_TIME }, LOCATION_B),
+    ]);
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
   }, 30_000);
 });

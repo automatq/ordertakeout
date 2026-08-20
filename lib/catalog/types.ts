@@ -22,6 +22,8 @@ export interface CatalogVariant {
   currency: string;
   sku: string | null;
   ordinal: number;
+  /** Present only when a storefront location has been selected. */
+  available?: boolean;
 }
 
 /**
@@ -36,7 +38,16 @@ export interface CatalogProduct {
   id: string;
   name: string;
   description: string | null;
+  /** Square IMAGE object ids, in the order the item lists them. */
   imageIds: string[];
+  /**
+   * `imageIds` resolved to CDN URLs (lib/catalog/images.ts).
+   *
+   * Separate from the ids because resolving them costs a second Square call, so
+   * it happens once in the cached server load rather than per render. Empty
+   * where the item has no photography or a referenced image has been deleted.
+   */
+  imageUrls: string[];
   variants: CatalogVariant[];
 }
 

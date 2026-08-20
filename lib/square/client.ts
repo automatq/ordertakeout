@@ -27,7 +27,8 @@ export function squareClient(): SquareClient {
   return cached;
 }
 
-export const squareLocationId = () => publicEnv().NEXT_PUBLIC_SQUARE_LOCATION_ID;
+/** Legacy configured location, kept only for compatibility/backfilling old rows. */
+export const squareLocationId = () => serverEnv().LEGACY_SQUARE_LOCATION_ID;
 
 /**
  * Square money amounts are in the smallest currency unit (cents for USD) and are

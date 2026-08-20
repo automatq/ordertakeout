@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq, gt, inArray, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import {
@@ -13,6 +13,7 @@ import {
   type OrderStatus,
 } from "@/lib/db/schema";
 import { serverEnv } from "@/lib/env";
+import { getStoreLocation } from "@/lib/locations/server";
 import {
   DEFAULT_MAX_ORDERS_PER_SLOT,
   MAX_ORDER_HORIZON_DAYS,
@@ -100,8 +101,10 @@ export async function loadProductRules(
 export async function loadAvailabilityInput(
   cart: readonly CartLine[],
   exec: Executor = db(),
+  locationId?: string,
 ): Promise<AvailabilityInput> {
-  const timeZone = serverEnv().STORE_TIMEZONE;
+  const location = locationId ? await getStoreLocation(locationId) : null;
+  const timeZone = location?.timezone ?? serverEnv().STORE_TIMEZONE;
   const now = new Date();
   const today = storeToday(now, timeZone);
   const lastDate = addCalendarDays(today, MAX_ORDER_HORIZON_DAYS);
@@ -116,16 +119,28 @@ export async function loadAvailabilityInput(
         and(
           sql`${blackoutDatesTable.date} >= ${today}`,
           sql`${blackoutDatesTable.date} <= ${lastDate}`,
+          locationId
+            ? or(
+                eq(blackoutDatesTable.squareLocationId, locationId),
+                isNull(blackoutDatesTable.squareLocationId),
+              )
+            : undefined,
         ),
       ),
     exec
       .select()
       .from(slotCapacity)
       .where(
-        and(sql`${slotCapacity.pickupDate} >= ${today}`, sql`${slotCapacity.pickupDate} <= ${lastDate}`),
+        and(
+          sql`${slotCapacity.pickupDate} >= ${today}`,
+          sql`${slotCapacity.pickupDate} <= ${lastDate}`,
+          locationId
+            ? or(eq(slotCapacity.squareLocationId, locationId), isNull(slotCapacity.squareLocationId))
+            : undefined,
+        ),
       ),
-    countOrdersPerSlot(today, lastDate, exec),
-    countUnitsPerProductPerDay(today, lastDate, exec),
+    countOrdersPerSlot(today, lastDate, exec, locationId),
+    countUnitsPerProductPerDay(today, lastDate, exec, locationId),
   ]);
 
   return {
@@ -137,7 +152,9 @@ export async function loadAvailabilityInput(
     blackoutDates: new Set(blackouts.map((b) => b.date)),
     slotUsage: new Map(slotCounts.map((r) => [slotKey(r.date, r.time), r.count])),
     slotCapacityOverrides: new Map(
-      capacities.map((c) => [slotKey(c.pickupDate, c.pickupTime), c.maxOrders]),
+      capacities
+        .sort((a, b) => Number(Boolean(a.squareLocationId)) - Number(Boolean(b.squareLocationId)))
+        .map((c) => [slotKey(c.pickupDate, c.pickupTime), c.maxOrders]),
     ),
     defaultSlotCapacity: DEFAULT_MAX_ORDERS_PER_SLOT,
     productDayUsage: new Map(
@@ -158,6 +175,7 @@ async function countOrdersPerSlot(
   from: StoreDate,
   to: StoreDate,
   exec: Executor,
+  locationId?: string,
 ): Promise<{ date: StoreDate; time: StoreTime; count: number }[]> {
   const rows = await exec.execute<{ date: string; time: string; count: string }>(sql`
     SELECT pickup_date AS date, pickup_time AS time, COUNT(*)::text AS count
@@ -166,11 +184,13 @@ async function countOrdersPerSlot(
       FROM ${orders} o
       WHERE o.status = ANY(${sql.raw(`ARRAY['${COMMITTED_STATUSES.join("','")}']::order_status[]`)})
         AND o.pickup_date BETWEEN ${from} AND ${to}
+        ${locationId ? sql`AND o.square_location_id = ${locationId}` : sql``}
       UNION ALL
       SELECT h.pickup_date, h.pickup_time
       FROM ${slotHolds} h
       WHERE h.expires_at > now()
         AND h.pickup_date BETWEEN ${from} AND ${to}
+        ${locationId ? sql`AND h.square_location_id = ${locationId}` : sql``}
     ) occupied
     GROUP BY pickup_date, pickup_time
   `);
@@ -187,14 +207,16 @@ async function countUnitsPerProductPerDay(
   from: StoreDate,
   to: StoreDate,
   exec: Executor,
+  locationId?: string,
 ): Promise<{ productId: string; date: StoreDate; units: number }[]> {
   const rows = await exec.execute<{ product_id: string; date: string; units: string }>(sql`
-    SELECT i.square_catalog_object_id AS product_id,
+    SELECT COALESCE(i.square_product_id, i.square_catalog_object_id) AS product_id,
            o.pickup_date AS date,
            SUM(i.quantity)::text AS units
     FROM ${orderItems} i
     JOIN ${orders} o ON o.id = i.order_id
     WHERE o.pickup_date BETWEEN ${from} AND ${to}
+      ${locationId ? sql`AND o.square_location_id = ${locationId}` : sql``}
       AND (
         o.status = ANY(${sql.raw(`ARRAY['${COMMITTED_STATUSES.join("','")}']::order_status[]`)})
         OR EXISTS (
@@ -202,7 +224,7 @@ async function countUnitsPerProductPerDay(
           WHERE h.order_id = o.id AND h.expires_at > now()
         )
       )
-    GROUP BY i.square_catalog_object_id, o.pickup_date
+    GROUP BY COALESCE(i.square_product_id, i.square_catalog_object_id), o.pickup_date
   `);
 
   return rows.map((r) => ({
@@ -239,8 +261,9 @@ export async function claimSlot(
   orderId: string,
   cart: readonly CartLine[],
   selection: { date: StoreDate; time: StoreTime },
+  locationId?: string,
 ): Promise<ClaimResult> {
-  return db().transaction((tx) => reserveSlotWithin(tx, orderId, cart, selection));
+  return db().transaction((tx) => reserveSlotWithin(tx, orderId, cart, selection, locationId));
 }
 
 /**
@@ -256,13 +279,14 @@ export async function reserveSlotWithin(
   orderId: string,
   cart: readonly CartLine[],
   selection: { date: StoreDate; time: StoreTime },
+  locationId?: string,
 ): Promise<ClaimResult> {
   const time = normalizeTime(selection.time);
-  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${slotKey(selection.date, time)}))`);
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`${locationId ?? "legacy"}:${slotKey(selection.date, time)}`}))`);
 
   // Re-read availability *inside* the lock. Anything checked before the lock
   // was taken is stale by definition.
-  const input = await loadAvailabilityInput(cart, tx);
+  const input = await loadAvailabilityInput(cart, tx, locationId);
   const verdict = validatePickupSelection(input, { date: selection.date, time });
   if (!verdict.ok) {
     return { ok: false, rejection: verdict.rejection };
@@ -271,7 +295,7 @@ export async function reserveSlotWithin(
   const expiresAt = new Date(Date.now() + SLOT_HOLD_TTL_MINUTES * 60_000);
   const [hold] = await tx
     .insert(slotHolds)
-    .values({ pickupDate: selection.date, pickupTime: time, orderId, expiresAt })
+    .values({ squareLocationId: locationId ?? null, pickupDate: selection.date, pickupTime: time, orderId, expiresAt })
     .returning({ id: slotHolds.id });
 
   if (!hold) {
@@ -304,6 +328,7 @@ export async function sweepExpiredHolds(): Promise<number> {
 export async function liveHoldsForSlot(
   date: StoreDate,
   time: StoreTime,
+  locationId?: string,
 ): Promise<number> {
   const rows = await db()
     .select({ id: slotHolds.id })
@@ -312,6 +337,7 @@ export async function liveHoldsForSlot(
       and(
         eq(slotHolds.pickupDate, date),
         eq(slotHolds.pickupTime, normalizeTime(time)),
+        locationId ? eq(slotHolds.squareLocationId, locationId) : undefined,
         gt(slotHolds.expiresAt, new Date()),
       ),
     );

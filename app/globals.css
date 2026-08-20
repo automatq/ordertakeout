@@ -1,102 +1,370 @@
 @import "tailwindcss";
 
+/* Brand fonts (Poppins + Bebas Neue) are self-hosted by next/font — see
+   app/layout.tsx, which puts them on <html> as --font-poppins and
+   --font-bebas-neue. The --font-sans / --font-display tokens below point at
+   those. (They used to be a Google Fonts <link> in the layout <head>: a CSS
+   `@import url(…)` here is silently stripped by the Turbopack CSS pipeline, so
+   the link was the reliable equivalent at the time. next/font removes the
+   third-party round trip and the flash of fallback text entirely.) */
+
 /* ============================================================================
    DESIGN TOKENS — the entire visual identity of this site lives in this block.
    ============================================================================
 
    Every colour, font, radius and shadow used anywhere in the app resolves back
    to a token defined here. No component hardcodes a hex value. That means when
-   the bakery's real branding arrives, rebranding the whole site is editing this
-   one block — not touching components.
+   the brand evolves, rebranding the whole site is editing this one block — not
+   touching components.
 
-   The values below are a deliberately NEUTRAL PLACEHOLDER. They are meant to
-   look clean and finished, not to look like the final brand.
+   The palette is the storefront brand: a warm cream canvas with white cards, a
+   rust-red primary that brightens on hover, and gold + green as the two accents.
+   Type is Bebas Neue for display and Poppins for interface text, set light and
+   tightly tracked — the house look is airy and generous, never heavy.
 
    Two rules keep this cheap to swap. Please don't break them:
 
      1. Token names are SEMANTIC (what it's for), never literal (what it looks
-        like). `--color-surface`, not `--color-white`. `--color-status-ready`,
+        like). `--color-surface`, not `--color-cream`. `--color-status-ready`,
         not `--color-green`. A literal name becomes a lie the moment the brand
         changes, and then nobody dares touch it.
 
      2. Components use token utilities only — `bg-surface`, `text-ink`,
-        `border-border`. Never `bg-[#8B5CF6]`, never `text-purple-600`. Tailwind's
-        stock palette (`slate-*`, `purple-*`, …) is off-limits in components for
+        `border-border`. Never `bg-[#ce3f23]`, never `text-orange-600`. Tailwind's
+        stock palette (`slate-*`, `gray-*`, …) is off-limits in components for
         the same reason: it isn't swappable.
 
-   See docs/THEMING.md for the branding-handoff checklist.
+   See docs/THEMING.md for the branding checklist.
    ========================================================================= */
 
 @theme {
   /* --- Typography -----------------------------------------------------------
-     Swap point for brand fonts. Today these are system stacks so the app has
-     zero network font dependency; at branding handoff, replace with next/font
-     and point these variables at the generated CSS variables. */
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
-  --font-display: var(--font-sans);
+     Bebas Neue for display (headings, prices, hero numbers) — it ships a single
+     400 weight, so anything using `font-display` must pair it with `font-normal`,
+     never `font-semibold`/`font-bold`, or the browser synthesises a fake bold.
+     Poppins carries interface text and body copy.
+
+     Both families are self-hosted by next/font (see app/layout.tsx), which
+     exposes them as --font-poppins / --font-bebas-neue on <html>. The literal
+     family names stay in the stack as a belt-and-braces fallback. */
+  --font-sans: var(--font-poppins), "Poppins", ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-display: var(--font-bebas-neue), "Bebas Neue", var(--font-poppins), "Poppins",
+    ui-sans-serif, system-ui, sans-serif;
+
+  /* --- Display type scale ---------------------------------------------------
+     Headings are fluid: one class covers every breakpoint, so we stop writing
+     `text-4xl sm:text-5xl` pairs and stop guessing at the in-between sizes.
+     The clamp middle terms are viewport-relative, so these keep their rhythm
+     on a phone, a kitchen tablet and a desktop without a media query.
+
+     Bebas is condensed and set uppercase, so its line-height runs tighter than
+     the sans scale would want — the pairs below bake that in. */
+  --text-display-xl: clamp(2.75rem, 1.5rem + 6vw, 5rem);
+  --text-display-xl--line-height: 0.95;
+  --text-display-lg: clamp(2.125rem, 1.35rem + 3.6vw, 3.5rem);
+  --text-display-lg--line-height: 1;
+  --text-display-md: clamp(1.625rem, 1.25rem + 1.8vw, 2.5rem);
+  --text-display-md--line-height: 1.05;
+  --text-display-sm: 1.5rem;
+  --text-display-sm--line-height: 1.1;
+
+  /* Staff screens are read at arm's length on a wall-mounted tablet, so their
+     secondary text needs a floor the storefront's `text-xs` doesn't give it. */
+  --text-kitchen: 1.0625rem;
+  --text-kitchen--line-height: 1.35;
 
   /* --- Neutrals -------------------------------------------------------------
-     Warm-tinted rather than pure grey — reads as "bakery" instead of "SaaS"
-     without committing to a brand hue. */
-  --color-canvas: #faf8f5; /* page background */
+     A cream page with white cards floating on it. `surface-sunken` is a deeper
+     cream so insets read as recessed against BOTH the white cards and the cream
+     canvas — the storefront uses it for inputs, the dashboard for table headers
+     and empty states. */
+  --color-canvas: #f5f1e9; /* page background */
   --color-surface: #ffffff; /* cards, panels, sheets */
-  --color-surface-sunken: #f2eee8; /* insets, table headers, empty states */
-  --color-border: #e4ddd3; /* default hairline */
-  --color-border-strong: #cfc5b7; /* emphasised divider, input outline */
+  --color-surface-sunken: #ece4d7; /* insets, inputs, table headers, empty states */
+  --color-border: #e8e1d5; /* default hairline */
+  --color-border-strong: #d6cbb8; /* emphasised divider, input outline */
 
   /* --- Text -----------------------------------------------------------------
      All three clear AA (4.5:1) on --color-canvas. If you retint the neutrals,
-     re-check these; ink-subtle has the least headroom. */
-  --color-ink: #1f1b16; /* body + headings */
-  --color-ink-muted: #5c544a; /* secondary text, labels */
-  --color-ink-subtle: #756b60; /* captions, timestamps, help text */
+     re-check these; ink-subtle has the least headroom (currently ~5:1). */
+  --color-ink: #1a1a1a; /* body + headings */
+  --color-ink-muted: #5c5449; /* secondary text, labels */
+  --color-ink-subtle: #6f665a; /* captions, timestamps, help text */
 
-  /* --- Brand ----------------------------------------------------------------
-     PLACEHOLDER: a muted violet that nods at ube without pretending to be the
-     real brand. Expect this to be replaced wholesale. */
-  --color-brand: #6d4aa8; /* primary buttons, links, focus */
-  --color-brand-hover: #5a3b8f;
-  --color-brand-soft: #f1ebfa; /* tinted backgrounds, selected states */
+  /* --- Brand (rust red) -----------------------------------------------------
+     Primary actions, links, focus. Note the hover is BRIGHTER, not darker —
+     that lift is the signature of this palette, so keep the direction. */
+  --color-brand: #ce3f23;
+  --color-brand-hover: #f44a35;
+  --color-brand-deep: #a8321c; /* strongest brand ink, on-tint text */
+  --color-brand-soft: #fbe9e5; /* tinted backgrounds, selected states */
+  --color-brand-tint: #fdf5f2; /* faintest brand wash */
   --color-brand-ink: #ffffff; /* text/icons placed ON --color-brand */
 
-  /* --- Accent ---------------------------------------------------------------
-     PLACEHOLDER: warm pastry gold. Fills and borders only — too light for text.
-     Use --color-accent-ink when accent-coloured text is needed. */
-  --color-accent: #c8873a;
-  --color-accent-soft: #fbf1e2;
-  --color-accent-ink: #8a5a22;
+  /* --- Accent (gold) --------------------------------------------------------
+     Highlights, rewards and price flags — never a primary action. Too light for
+     text on a light background; use --color-accent-ink when gold text is needed. */
+  --color-accent: #ffc446;
+  --color-accent-hover: #f0b02e;
+  --color-accent-soft: #fff3d4;
+  --color-accent-ink: #805718;
 
   /* --- Order status ---------------------------------------------------------
-     One pair per status in the order lifecycle (see docs/SCOPE.md). These are
-     semantic, so they survive a rebrand mostly untouched — but they must stay
+     One pair per status in the order lifecycle (see docs/SCOPE.md). Semantic,
+     so they survive a rebrand mostly untouched — but they must stay
      distinguishable from each other, including for colour-blind staff, which is
      why the UI always pairs the colour with a text label and never relies on
      hue alone. */
-  --color-status-new: #2563eb;
-  --color-status-new-soft: #e8f0fe;
-  --color-status-preparing: #9a6520;
-  --color-status-preparing-soft: #fbf1e2;
-  --color-status-ready: #15803d;
-  --color-status-ready-soft: #e6f4ea;
-  --color-status-completed: #5c544a;
-  --color-status-completed-soft: #f2eee8;
-  --color-status-canceled: #b42318;
-  --color-status-canceled-soft: #fdecea;
+  --color-status-new: #ce3f23;
+  --color-status-new-soft: #fbe9e5;
+  --color-status-preparing: #8a5a00;
+  --color-status-preparing-soft: #fff3d4;
+  --color-status-ready: #1c7755;
+  --color-status-ready-soft: #e3f2eb;
+  --color-status-completed: #6b6157;
+  --color-status-completed-soft: #f0ebe1;
+  --color-status-canceled: #3a352f;
+  --color-status-canceled-soft: #e9e4da;
 
-  /* --- Feedback ------------------------------------------------------------- */
-  --color-success: #15803d;
-  --color-warning: #b45309;
-  --color-danger: #b42318;
-  --color-danger-soft: #fdecea;
+  /* --- Feedback -------------------------------------------------------------
+     Danger sits deeper than --color-brand so a destructive action still reads
+     as distinct from an ordinary primary button in this red-forward palette. */
+  --color-success: #1c7755;
+  --color-warning: #8a5a00;
+  --color-danger: #b3331b;
+  --color-danger-soft: #fbe9e5;
 
-  /* --- Shape ---------------------------------------------------------------- */
-  --radius-control: 0.5rem; /* buttons, inputs, slot chips */
-  --radius-card: 0.875rem; /* product cards, order cards, panels */
+  /* --- Shape ----------------------------------------------------------------
+     The house shape is a generous 1rem round on cards, buttons and inputs alike,
+     with true pills reserved for badges, chips and icon buttons. */
+  --radius-control: 1rem; /* buttons, inputs, slot chips */
+  --radius-card: 1rem; /* product cards, order cards, panels */
+  --radius-pill: 999px; /* badges, chips, avatars */
+
+  /* --- Rhythm ---------------------------------------------------------------
+     Vertical space between storefront sections was `py-20` at every width,
+     which is generous on a desktop and exhausting on a phone. `py-section`
+     scales with the viewport instead. `--spacing-gutter` is the horizontal
+     page inset, so the shell and any full-bleed child can agree on it. */
+  --spacing-section: clamp(3rem, 1.5rem + 5vw, 6rem);
+  --spacing-gutter: 1.5rem;
 
   /* --- Elevation ------------------------------------------------------------ */
-  --shadow-card: 0 1px 2px rgb(31 27 22 / 0.05), 0 1px 3px rgb(31 27 22 / 0.06);
-  --shadow-raised: 0 4px 12px rgb(31 27 22 / 0.08);
+  --shadow-card: 0 1px 2px rgb(26 26 26 / 0.04), 0 2px 8px -2px rgb(26 26 26 / 0.06);
+  --shadow-raised: 0 4px 6px -4px rgb(26 26 26 / 0.08), 0 16px 32px -8px rgb(26 26 26 / 0.14);
+  --shadow-brand: 0 12px 20px -6px rgb(206 63 35 / 0.30), 0 6px 8px -6px rgb(206 63 35 / 0.28);
+  /* A hairline lip for sticky bars, so they read as attached to the viewport
+     edge rather than floating over the content. */
+  --shadow-sticky: 0 1px 0 0 rgb(26 26 26 / 0.04), 0 8px 24px -16px rgb(26 26 26 / 0.25);
+
+  /* --- Motion ---------------------------------------------------------------
+     Referenced by the component primitives below and by any transition that
+     wants the house easing/duration. */
+  --ease: cubic-bezier(0.2, 0.8, 0.25, 1);
+  --dur-fast: 150ms;
+  --dur: 300ms;
+  --dur-slow: 500ms;
+
+  /* Named animations. Tailwind v4 picks up @keyframes declared inside @theme
+     and emits them alongside the `animate-*` utility that references them.
+     Every one of these is disabled by the reduced-motion block further down. */
+  --animate-shimmer: shimmer 1.4s var(--ease) infinite;
+  --animate-rise: rise var(--dur-slow) var(--ease) both;
+  --animate-pulse-ring: pulse-ring 2s var(--ease) infinite;
+  --animate-spin-slow: spin 900ms linear infinite;
+  /* The desktop megamenu drop: a short fade + settle as the panel opens under
+     the header. Killed by the reduced-motion block below like the rest. */
+  --animate-mega: mega var(--dur) var(--ease) both;
+
+  @keyframes mega {
+    from {
+      opacity: 0;
+      transform: translateY(-0.5rem);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes shimmer {
+    from {
+      background-position: 200% 0;
+    }
+    to {
+      background-position: -200% 0;
+    }
+  }
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(0.75rem);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* The new-order highlight on the staff queue: a brand halo that breathes
+     once every couple of seconds, loud enough to catch an eye crossing the
+     kitchen, quiet enough to live on screen all shift. */
+  @keyframes pulse-ring {
+    0%,
+    100% {
+      box-shadow: var(--shadow-card), 0 0 0 0 color-mix(in srgb, var(--color-brand) 45%, transparent);
+    }
+    50% {
+      box-shadow: var(--shadow-card), 0 0 0 0.5rem color-mix(in srgb, var(--color-brand) 0%, transparent);
+    }
+  }
+
+  /* --- Intro sequence -------------------------------------------------------
+     The homepage curtain is the only surface in this app that is darker than
+     the page. It is not a dark theme — it is a lit oven mouth, so every value
+     here is MIXED FROM THE EXISTING BRAND RAMP rather than introduced as a new
+     hue. Retint --color-brand-deep or --color-accent and the whole sequence
+     follows without anyone opening the component.
+
+     The sequence's *timings* deliberately live in lib/intro/session.ts instead,
+     because a blocking inline script and a client component both need them and
+     neither can read CSS. Only the curve is here, because CSS uses it too. */
+
+  /* Near-black pulled warm by the deep brand red, so it reads as the inside of
+     a cooling oven rather than as a modal scrim. */
+  --color-intro-scrim: color-mix(in srgb, var(--color-ink) 72%, var(--color-brand-deep));
+
+  /* The heat itself — the bloom behind the logo, and the light that spills from
+     under the lifting curtain. Sits between the gold accent and the bright
+     brand hover, which is where a real oven glow lives. */
+  --color-intro-ember: color-mix(in srgb, var(--color-accent) 62%, var(--color-brand-hover));
+
+  /* Flour dust. A warm white rather than #fff — dusted flour on a dark ground
+     is never neutral, and pure white against the scrim reads as dead pixels. */
+  --color-intro-flour: color-mix(in srgb, var(--color-surface) 70%, var(--color-canvas));
+
+  /* A weighted lift: slow to break, fast to clear. The house --ease is a settle
+     curve and makes a full-viewport panel feel like it is floating. Mirrored as
+     a literal array in the curtain component, which drives the lift in JS. */
+  --ease-curtain: cubic-bezier(0.7, 0, 0.2, 1);
+
+  /* One timeline rather than two animations, because a separate breathe would
+     have to re-declare `transform` and would win from time 0 through its
+     backwards fill, cancelling the bloom. */
+  --animate-intro-ember: intro-ember 1500ms var(--ease) both;
+  --animate-intro-mote-in: intro-mote-in 400ms var(--ease) var(--mote-delay, 0ms) both;
+  --animate-intro-mote-drift: intro-mote-drift var(--mote-dur, 5s) linear infinite;
+
+  /* Shared by the glow and the medallion, which need the same timeline at very
+     different strengths — hence --intro-bloom rather than a literal 1. Without
+     it the keyframe's opacity would override whatever the element declares
+     statically, and the medallion would bloom to full and swallow the logo. */
+  @keyframes intro-ember {
+    /* Oven door opening onto heat. */
+    0% {
+      opacity: 0;
+      transform: scale(0.62);
+    }
+    37% {
+      opacity: var(--intro-bloom, 1);
+      transform: scale(1);
+    }
+    /* …then one breath, so the glow is alive under the settled logo. */
+    60% {
+      opacity: var(--intro-bloom, 1);
+      transform: scale(1);
+    }
+    80% {
+      opacity: calc(var(--intro-bloom, 1) * 0.86);
+      transform: scale(1.055);
+    }
+    100% {
+      opacity: var(--intro-bloom, 1);
+      transform: scale(1);
+    }
+  }
+
+  @keyframes intro-mote-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: var(--mote-opacity, 0.5);
+    }
+  }
+
+  /* Drifts back to the origin so the loop is seamless. Splitting fade and drift
+     across two animations only works because they touch different properties —
+     opacity here, transform there. */
+  @keyframes intro-mote-drift {
+    0%,
+    100% {
+      transform: translate3d(0, 0, 0);
+    }
+    25% {
+      transform: translate3d(var(--mote-sway, 6px), -1.8vh, 0);
+    }
+    50% {
+      transform: translate3d(0, -3.6vh, 0);
+    }
+    75% {
+      transform: translate3d(calc(var(--mote-sway, 6px) * -1), -1.8vh, 0);
+    }
+  }
+}
+
+/* ============================================================================
+   UTILITIES
+   Layout shorthands that were being retyped on every page.
+   ========================================================================= */
+
+/* The page shell — `mx-auto w-full max-w-6xl px-6` appeared on ~20 sections.
+   Three fixed widths rather than one plus a Tailwind `max-w-*` override: custom
+   utilities are emitted after the core ones, so `shell max-w-4xl` silently
+   loses and the page renders at the shell's width. Pick a variant instead. */
+@utility shell {
+  margin-inline: auto;
+  width: 100%;
+  max-width: 72rem;
+  padding-inline: var(--spacing-gutter);
+}
+
+/* Forms and settings: wide enough for two columns, narrow enough to scan. */
+@utility shell-tight {
+  margin-inline: auto;
+  width: 100%;
+  max-width: 60rem;
+  padding-inline: var(--spacing-gutter);
+}
+
+/* A single reading column — cart, order confirmation, lookup. */
+@utility shell-narrow {
+  margin-inline: auto;
+  width: 100%;
+  max-width: 42rem;
+  padding-inline: var(--spacing-gutter);
+}
+
+/* Horizontal rail for chip rows that would otherwise wrap into a wall of
+   pills — the pickup date picker and the staff prep lanes. Scrollbar hidden
+   because the snap points and the partially-visible next item carry the
+   affordance; the row stays keyboard- and wheel-scrollable either way. */
+@utility scroll-row {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  /* Let focus rings on the children breathe instead of being clipped. */
+  padding-block: 0.375rem;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+  & > * {
+    scroll-snap-align: start;
+    flex: none;
+  }
 }
 
 /* ============================================================================
@@ -109,13 +377,40 @@
     /* The staff dashboard is used on a kitchen tablet with wet/floury hands;
        generous tap targets and no accidental text selection on controls. */
     -webkit-text-size-adjust: 100%;
+    /* Reserves the scrollbar track permanently. Without it, the intro's scroll
+       lock below takes ~15px away and gives it back, shifting the whole page
+       twice — two layout shifts on the one route we most care about. The cost
+       is a visible gutter on pages too short to scroll. */
+    scrollbar-gutter: stable;
+  }
+
+  /* The intro curtain holds the viewport still while it plays. Driven by the
+     attribute rather than by an imperative style so it is live from first paint
+     with no JS timing, and so there is nothing to unwind — the attribute IS the
+     state, and it cannot get stuck half-applied. Released three independent
+     ways: the lift completing, the component unmounting, and the boot script's
+     failsafe (see lib/intro/session.ts). */
+  html[data-intro="playing"] {
+    overflow: hidden;
   }
 
   body {
     background-color: var(--color-canvas);
     color: var(--color-ink);
     font-family: var(--font-sans);
+    font-weight: 400;
+    /* The tight track is part of the brand voice — near-universal in the
+       storefront design, so it belongs here rather than on every element. */
+    letter-spacing: -0.015em;
     -webkit-font-smoothing: antialiased;
+    line-height: 1.5;
+  }
+
+  /* Bebas Neue is a condensed display face: it needs to breathe horizontally
+     and sit tight vertically wherever it's used. */
+  .font-display {
+    letter-spacing: 0.005em;
+    line-height: 1.05;
   }
 
   /* A single visible focus treatment everywhere, so keyboard users get a
@@ -123,11 +418,40 @@
   :focus-visible {
     outline: 2px solid var(--color-brand);
     outline-offset: 2px;
-    border-radius: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background: var(--color-brand-soft);
+    color: var(--color-brand-deep);
+  }
+
+  /* In-page anchors (the storefront's `#trays` jump) should glide, and every
+     sticky header in the app is ~5rem tall, so nothing lands underneath one. */
+  html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 6rem;
+  }
+
+  /* Long uppercase display headings break badly on narrow screens; balancing
+     them here means no page has to remember `text-balance` per heading. */
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  /* Figures are always tabular in this app — prices, quantities, order numbers
+     and every staff statistic — so columns line up without per-site opt-in. */
+  .font-display,
+  output,
+  time {
+    font-variant-numeric: tabular-nums;
   }
 
   /* Respect users who ask for reduced motion — the dashboard has a pulsing
-     new-order highlight that would otherwise be hostile. */
+     new-order highlight, and the buttons lift on hover, both of which would
+     otherwise be hostile. */
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
@@ -137,5 +461,872 @@
       transition-duration: 0.01ms !important;
       scroll-behavior: auto !important;
     }
+    html {
+      scroll-behavior: auto;
+    }
+    .btn:hover,
+    .chip:hover,
+    .card-interactive:hover,
+    .radio-card:hover {
+      transform: none;
+    }
+    /* These three loop rather than run once, so killing the duration is not
+       enough — they have to be switched off outright. */
+    .skeleton,
+    .is-new,
+    .spinner {
+      animation: none !important;
+    }
+    .skeleton {
+      /* Without the sweep the block still needs to read as "not content yet". */
+      opacity: 0.7;
+    }
+  }
+}
+
+/* ============================================================================
+   COMPONENT PRIMITIVES
+   The shared shape vocabulary — buttons, status badges, selectable chips.
+   Built ONLY on the tokens above so they rebrand with the block. There is
+   intentionally no React UI library; these classes are the single source of
+   truth for these shapes and are reused across every screen, customer and staff.
+   ========================================================================= */
+
+@layer components {
+  /* Buttons ---------------------------------------------------------------
+     Light weight and tightly tracked, on a 1rem round. The primary lifts on
+     hover and brightens rather than darkens — see --color-brand-hover. */
+  .btn {
+    font: inherit;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    border-radius: var(--radius-control);
+    padding: 0.85rem 1.5rem;
+    border: 2px solid transparent;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    line-height: 1.1;
+    /* Floor, not a fixed height — a wrapped two-line label still grows. The
+       staff dashboard is used on a tablet with floury hands, so no button in
+       this app is allowed below the 44px comfortable-target mark. */
+    min-height: 2.75rem;
+    text-align: center;
+    transition:
+      background var(--dur) var(--ease),
+      color var(--dur) var(--ease),
+      border-color var(--dur) var(--ease),
+      box-shadow var(--dur) var(--ease),
+      transform var(--dur) var(--ease);
+  }
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .btn-primary {
+    background: var(--color-brand);
+    color: var(--color-brand-ink);
+    border-color: var(--color-brand);
+    box-shadow: var(--shadow-brand);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--color-brand-hover);
+    border-color: var(--color-brand-hover);
+    transform: translateY(-2px);
+  }
+  /* Gold — highlights and opt-in rewards, never the main action on a screen. */
+  .btn-accent {
+    background: var(--color-accent);
+    color: var(--color-ink);
+    border-color: var(--color-accent);
+  }
+  .btn-accent:hover:not(:disabled) {
+    background: var(--color-accent-hover);
+    border-color: var(--color-accent-hover);
+    transform: translateY(-2px);
+  }
+  /* Neutral companion action — sits beside a primary without competing. */
+  .btn-secondary {
+    background: var(--color-surface);
+    color: var(--color-ink);
+    border-color: var(--color-border-strong);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    background: var(--color-surface-sunken);
+    border-color: var(--color-ink-subtle);
+  }
+  /* Brand outline that fills on hover — the storefront's add-to-cart treatment. */
+  .btn-outline {
+    background: var(--color-surface);
+    color: var(--color-brand);
+    border-color: color-mix(in srgb, var(--color-brand) 25%, transparent);
+  }
+  .btn-outline:hover:not(:disabled) {
+    background: var(--color-brand);
+    border-color: var(--color-brand);
+    color: var(--color-brand-ink);
+  }
+  .btn-ghost {
+    background: transparent;
+    color: var(--color-brand);
+    border-color: transparent;
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--color-brand-soft);
+  }
+  /* Destructive. Deliberately NOT btn-secondary: cancelling a paid order is a
+     terminal transition, and it used to look identical to "mark ready" sitting
+     next to it on the queue. Outlined rather than filled so it still loses the
+     visual contest with the primary action beside it. */
+  .btn-danger {
+    background: var(--color-surface);
+    color: var(--color-danger);
+    border-color: color-mix(in srgb, var(--color-danger) 35%, transparent);
+  }
+  .btn-danger:hover:not(:disabled) {
+    background: var(--color-danger);
+    border-color: var(--color-danger);
+    color: var(--color-brand-ink);
+  }
+  .btn-block {
+    width: 100%;
+  }
+  /* Compact, but still 2.75rem tall — the padding shrinks, the target does not. */
+  .btn-sm {
+    padding: 0.45rem 0.9rem;
+    font-size: 0.9rem;
+    border-radius: calc(var(--radius-control) - 0.35rem);
+  }
+  /* Square icon-only button. Always needs an aria-label. */
+  .btn-icon {
+    padding: 0;
+    width: 2.75rem;
+    min-width: 2.75rem;
+    border-radius: var(--radius-pill);
+  }
+
+  /* An inline spinner for any button mid-action, so a pending control says
+     "working" instead of just going 50% transparent. */
+  .spinner {
+    width: 1em;
+    height: 1em;
+    border-radius: 999px;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    animation: var(--animate-spin-slow);
+    flex: none;
+  }
+
+  /* Form fields -----------------------------------------------------------
+     Sunken cream on a white card, borderless until focus — the storefront's
+     field treatment, reused by every staff form so admin matches the shopfront. */
+  .input {
+    font: inherit;
+    letter-spacing: inherit;
+    width: 100%;
+    background: var(--color-surface-sunken);
+    color: var(--color-ink);
+    border: 1px solid transparent;
+    border-radius: var(--radius-control);
+    padding: 0.7rem 1rem;
+    outline: none;
+    transition:
+      background var(--dur) var(--ease),
+      border-color var(--dur) var(--ease),
+      box-shadow var(--dur) var(--ease);
+  }
+  .input::placeholder {
+    color: var(--color-ink-subtle);
+  }
+  .input:focus {
+    background: var(--color-surface);
+    border-color: var(--color-brand);
+    box-shadow: 0 0 0 3px var(--color-brand-soft);
+  }
+  .input[aria-invalid="true"] {
+    border-color: var(--color-danger);
+  }
+
+  /* Status badges ---------------------------------------------------------
+     A soft tinted pill carrying a hairline of its own hue. Always rendered with
+     a text label — colour is never the only cue. */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+    font-weight: 400;
+    letter-spacing: -0.015em;
+    padding: 0.3rem 0.75rem;
+    border-radius: var(--radius-pill);
+    border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+    white-space: nowrap;
+  }
+  .badge-new {
+    color: var(--color-status-new);
+    background: var(--color-status-new-soft);
+  }
+  .badge-preparing {
+    color: var(--color-status-preparing);
+    background: var(--color-status-preparing-soft);
+  }
+  .badge-ready {
+    color: var(--color-status-ready);
+    background: var(--color-status-ready-soft);
+  }
+  .badge-completed {
+    color: var(--color-status-completed);
+    background: var(--color-status-completed-soft);
+  }
+  .badge-canceled {
+    color: var(--color-status-canceled);
+    background: var(--color-status-canceled-soft);
+  }
+
+  /* Selectable option chips ------------------------------------------------
+     Pills that lift on hover and fill with brand when chosen. */
+  .chip {
+    font: inherit;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    border: 2px solid var(--color-border-strong);
+    background: var(--color-surface);
+    color: var(--color-ink);
+    border-radius: var(--radius-pill);
+    padding: 0.6rem 1.15rem;
+    cursor: pointer;
+    box-shadow: var(--shadow-card);
+    transition:
+      border-color var(--dur) var(--ease),
+      background var(--dur) var(--ease),
+      color var(--dur) var(--ease),
+      box-shadow var(--dur) var(--ease),
+      transform var(--dur) var(--ease);
+  }
+  /* Selected state is driven by whichever ARIA property the control legitimately
+     carries — `aria-pressed` for a toggle button, `aria-checked` for a radio in
+     a radiogroup. One visual definition, both semantics. */
+  .chip:hover:not(:disabled):not([aria-pressed="true"]):not([aria-checked="true"]) {
+    border-color: var(--color-accent);
+    background: var(--color-accent-soft);
+    transform: translateY(-2px);
+  }
+  .chip[aria-pressed="true"],
+  .chip[aria-checked="true"] {
+    border-color: var(--color-brand);
+    background: var(--color-brand);
+    color: var(--color-brand-ink);
+    box-shadow: var(--shadow-brand);
+  }
+  /* An unavailable slot is information, not noise: the customer needs to read
+     "Fully booked" to know to try another time. Dimming to 50% took text that
+     was already muted below the contrast floor, so this recedes by going flat
+     and struck through instead of by fading. */
+  .chip:disabled {
+    cursor: not-allowed;
+    box-shadow: none;
+    background: var(--color-surface-sunken);
+    border-color: var(--color-border);
+    color: var(--color-ink-muted);
+    text-decoration: line-through;
+    text-decoration-color: color-mix(in srgb, var(--color-ink-muted) 50%, transparent);
+  }
+  /* …but the reason label underneath must stay readable. */
+  .chip:disabled .chip-note {
+    text-decoration: none;
+  }
+
+  /* Interactive card hover lift ------------------------------------------- */
+  .card-interactive {
+    transition:
+      box-shadow var(--dur) var(--ease),
+      transform var(--dur) var(--ease),
+      border-color var(--dur) var(--ease);
+  }
+  .card-interactive:hover {
+    box-shadow: var(--shadow-raised);
+    border-color: color-mix(in srgb, var(--color-brand) 25%, transparent);
+    transform: translateY(-4px);
+  }
+
+  /* Surfaces ---------------------------------------------------------------
+     `.card` is the white-panel-on-cream recipe that was being spelled out as
+     four utilities in ~30 places. `.panel` is its recessed sibling, for things
+     that sit *inside* a card: help text, order summaries, empty states. */
+  .card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+  }
+  .panel {
+    background: var(--color-surface-sunken);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+  }
+
+  /* The small caps line that introduces a section heading. */
+  .eyebrow {
+    color: var(--color-brand);
+    font-size: 0.8125rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+
+  /* Descriptive pill — NOT a status.
+     `.badge-*` carries order-lifecycle meaning (green = ready, amber =
+     preparing). Reusing those for "Uber Eats" or a price flag makes the one
+     thing staff must read at a glance ambiguous, so neutral labels get this
+     instead. */
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+    letter-spacing: -0.015em;
+    padding: 0.3rem 0.75rem;
+    border-radius: var(--radius-pill);
+    background: var(--color-surface-sunken);
+    color: var(--color-ink-muted);
+    border: 1px solid var(--color-border-strong);
+    white-space: nowrap;
+  }
+  .tag-brand {
+    background: var(--color-brand-soft);
+    color: var(--color-brand-deep);
+    border-color: color-mix(in srgb, var(--color-brand) 22%, transparent);
+  }
+  .tag-accent {
+    background: var(--color-accent-soft);
+    color: var(--color-accent-ink);
+    border-color: color-mix(in srgb, var(--color-accent-ink) 22%, transparent);
+  }
+
+  /* Loading placeholder. Give it a width/height and it does the rest; the
+     sweep runs across a cream base so it reads as "not yet" rather than
+     "empty box". */
+  .skeleton {
+    border-radius: var(--radius-control);
+    background-color: var(--color-surface-sunken);
+    background-image: linear-gradient(
+      100deg,
+      transparent 20%,
+      color-mix(in srgb, var(--color-surface) 70%, transparent) 50%,
+      transparent 80%
+    );
+    background-size: 200% 100%;
+    animation: var(--animate-shimmer);
+  }
+
+  /* Quantity stepper -------------------------------------------------------
+     Replaces the bare `type=number` spinners, whose native arrows are a ~10px
+     target and vanish entirely on touch. The value is a real input so it stays
+     typeable and screen-reader-labelled. */
+  .stepper {
+    display: inline-flex;
+    align-items: center;
+    background: var(--color-surface-sunken);
+    border: 1px solid transparent;
+    border-radius: var(--radius-control);
+    transition:
+      border-color var(--dur) var(--ease),
+      box-shadow var(--dur) var(--ease);
+  }
+  .stepper:focus-within {
+    border-color: var(--color-brand);
+    box-shadow: 0 0 0 3px var(--color-brand-soft);
+  }
+  .stepper-btn {
+    width: 2.75rem;
+    height: 2.75rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-control);
+    color: var(--color-ink-muted);
+    font-size: 1.25rem;
+    line-height: 1;
+    cursor: pointer;
+    transition:
+      background var(--dur-fast) var(--ease),
+      color var(--dur-fast) var(--ease);
+  }
+  .stepper-btn:hover:not(:disabled) {
+    background: var(--color-brand-soft);
+    color: var(--color-brand-deep);
+  }
+  .stepper-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .stepper-value {
+    font: inherit;
+    width: 2.5rem;
+    text-align: center;
+    background: transparent;
+    border: 0;
+    outline: none;
+    color: var(--color-ink);
+    font-variant-numeric: tabular-nums;
+    /* The native spinners duplicate the buttons either side of this. */
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+  .stepper-value::-webkit-outer-spin-button,
+  .stepper-value::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  /* Selectable option card -------------------------------------------------
+     A radio dressed as a card (product sizes). The whole tile is the target,
+     and because focus lands on the visually-hidden input we mirror the ring
+     onto the tile with :has() — otherwise a keyboard user sees nothing. */
+  .radio-card {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.9rem 1.15rem;
+    border: 2px solid var(--color-border);
+    border-radius: var(--radius-control);
+    background: var(--color-surface);
+    cursor: pointer;
+    transition:
+      border-color var(--dur) var(--ease),
+      background var(--dur) var(--ease),
+      box-shadow var(--dur) var(--ease),
+      transform var(--dur) var(--ease);
+  }
+  .radio-card:hover:not(:has(input:checked)) {
+    border-color: var(--color-border-strong);
+    transform: translateY(-2px);
+  }
+  .radio-card:has(input:checked) {
+    border-color: var(--color-brand);
+    background: var(--color-brand-tint);
+    box-shadow: 0 0 0 1px var(--color-brand);
+  }
+  .radio-card:has(input:focus-visible) {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+  }
+
+  /* Funnel progress rail ---------------------------------------------------
+     Checkout is three phases inside one route, so without this the customer
+     has no idea how much is left. Rendered as an <ol>; the current step also
+     carries aria-current, never colour alone. */
+  .steps {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    counter-reset: step;
+  }
+  .step {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--color-ink-subtle);
+    white-space: nowrap;
+  }
+  .step::before {
+    counter-increment: step;
+    content: counter(step);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.6rem;
+    height: 1.6rem;
+    border-radius: 999px;
+    border: 1px solid var(--color-border-strong);
+    background: var(--color-surface);
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+    flex: none;
+  }
+  .step[data-state="current"] {
+    color: var(--color-ink);
+    font-weight: 500;
+  }
+  .step[data-state="current"]::before {
+    background: var(--color-brand);
+    border-color: var(--color-brand);
+    color: var(--color-brand-ink);
+  }
+  .step[data-state="done"] {
+    color: var(--color-ink-muted);
+  }
+  .step[data-state="done"]::before {
+    content: "✓";
+    background: var(--color-status-ready-soft);
+    border-color: color-mix(in srgb, var(--color-status-ready) 35%, transparent);
+    color: var(--color-status-ready);
+  }
+
+  /* Toasts -----------------------------------------------------------------
+     Every confirmation in the app used to be an inline <p> that could render
+     off-screen and never dismissed. The viewport is bottom-anchored on mobile
+     (thumb reach, above the sticky CTA) and top-right from `sm` up. */
+  .toast-viewport {
+    position: fixed;
+    z-index: 100;
+    inset-inline: var(--spacing-gutter);
+    bottom: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    pointer-events: none;
+  }
+  @media (width >= 40rem) {
+    .toast-viewport {
+      inset-inline: auto 1.5rem;
+      top: 5.5rem;
+      bottom: auto;
+      width: 22rem;
+    }
+  }
+  .toast {
+    pointer-events: auto;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.85rem 1rem;
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    box-shadow: var(--shadow-raised);
+    animation: var(--animate-rise);
+    /* The status hue rides on a left edge rather than tinting the whole card,
+       so long copy stays on the same high-contrast surface every time. */
+    border-left: 4px solid var(--color-border-strong);
+  }
+  .toast[data-tone="success"] {
+    border-left-color: var(--color-success);
+  }
+  .toast[data-tone="error"] {
+    border-left-color: var(--color-danger);
+  }
+  .toast[data-tone="info"] {
+    border-left-color: var(--color-brand);
+  }
+
+  /* Form messaging ---------------------------------------------------------
+     Hint and error are separate elements, not one slot: the field-rules forms
+     used to swap the hint OUT for the error, which removed the format guidance
+     exactly when the format was wrong. */
+  .field-hint {
+    color: var(--color-ink-subtle);
+    font-size: 0.8125rem;
+  }
+  .field-error {
+    color: var(--color-danger);
+    font-size: 0.8125rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.35rem;
+  }
+  .field-error::before {
+    content: "!";
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 1rem;
+    height: 1rem;
+    margin-top: 0.1rem;
+    border-radius: 999px;
+    background: var(--color-danger);
+    color: var(--color-brand-ink);
+    font-size: 0.7rem;
+    line-height: 1;
+  }
+
+  /* Text link inside body copy. */
+  .link {
+    color: var(--color-brand);
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+    text-decoration-thickness: 1px;
+    transition: color var(--dur-fast) var(--ease);
+  }
+  .link:hover {
+    color: var(--color-brand-hover);
+  }
+
+  /* Applied to an order card that arrived since the staff member last looked.
+     Pairs with a text label — the halo is a locator, never the only cue. */
+  .is-new {
+    animation: var(--animate-pulse-ring);
+  }
+
+  /* Intro sequence -----------------------------------------------------------
+     The homepage curtain: an oven mouth that glows, throws flour, and lifts.
+
+     Everything here is CSS rather than JS on purpose. The curtain ships in the
+     prerendered shell and the boot script reveals it during HTML parse, so on a
+     slow phone it is on screen for several hundred milliseconds before the
+     bundle lands. If the glow and the dust waited for hydration the opening of
+     the sequence would be a flat rectangle. Only the logo and the lift are
+     driven by Motion, in components/storefront/intro/intro-curtain.tsx, and
+     they never touch a node styled here.
+
+     Default is OFF. Nothing shows the curtain except the two attribute values
+     below, so no-JS, a CSP that blocks the inline script, a thrown exception
+     and a returning visitor all land on "page visible" for free. */
+  .intro-curtain {
+    display: none;
+    position: fixed;
+    inset: 0;
+    /* Above the sticky header (50), the mobile order bar (40) and the focused
+       skip link (100). */
+    z-index: 200;
+    place-items: center;
+    overflow: hidden;
+    /* A heat wash rising off the bottom edge, over the warm dark. */
+    background:
+      radial-gradient(
+        ellipse 92% 62% at 50% 108%,
+        color-mix(in srgb, var(--color-brand-deep) 52%, transparent) 0%,
+        transparent 62%
+      ),
+      var(--color-intro-scrim);
+  }
+  html[data-intro="playing"] .intro-curtain,
+  html[data-intro="lifting"] .intro-curtain {
+    display: grid;
+  }
+
+  /* Light spilling out from under the rising edge. This is the detail that
+     sells the lift as a curtain rather than a panel sliding away. */
+  .intro-curtain::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    height: 2px;
+    opacity: 0;
+    background: linear-gradient(90deg, transparent, var(--color-intro-ember), transparent);
+    box-shadow: 0 0 32px 6px color-mix(in srgb, var(--color-intro-ember) 45%, transparent);
+    transition: opacity 240ms var(--ease-curtain);
+  }
+  html[data-intro="lifting"] .intro-curtain::after {
+    opacity: 1;
+  }
+
+  /* The crown-and-H badge, blown up far past its resolution and buried in the
+     haze. At a tenth opacity behind a 6px blur the softness is invisible by
+     design, which is what lets the composition carry a scale the 230px lockup
+     cannot. `height: auto` because a CSS width on a next/image needs it to keep
+     the aspect ratio. */
+  .intro-medallion {
+    position: absolute;
+    width: min(70vw, 34rem);
+    height: auto;
+    /* Read by the shared keyframe above — a static `opacity` here would be
+       overridden by it. */
+    --intro-bloom: 0.14;
+    filter: blur(16px);
+    animation: var(--animate-intro-ember);
+  }
+
+  /* The oven glow: a HALO, not a core. Both gradients are deliberately
+     transparent at dead centre and peak in a ring outside the lockup, because
+     the mark is rust-on-transparent and was drawn for a light ground — sat on a
+     bright gold centre its wordmark all but vanishes. Lit from behind and
+     around instead, it reads the way a sign over a shop door does. */
+  .intro-ember {
+    position: absolute;
+    inset: 0;
+    animation: var(--animate-intro-ember);
+    background:
+      radial-gradient(
+        circle 32vmin at 50% 50%,
+        transparent 0%,
+        transparent 26%,
+        color-mix(in srgb, var(--color-accent) 22%, transparent) 58%,
+        transparent 84%
+      ),
+      radial-gradient(
+        ellipse 66% 54% at 50% 50%,
+        transparent 0%,
+        transparent 22%,
+        color-mix(in srgb, var(--color-intro-ember) 28%, transparent) 48%,
+        color-mix(in srgb, var(--color-intro-ember) 9%, transparent) 68%,
+        transparent 86%
+      );
+  }
+
+  /* Flour dust. Positions and timings come from a frozen table in the component
+     — `Math.random()` at render would both break the prerender and desync
+     hydration — and arrive as the --mote-* custom properties read below. */
+  .intro-mote {
+    position: absolute;
+    top: var(--mote-y);
+    left: var(--mote-x);
+    width: var(--mote-size);
+    height: var(--mote-size);
+    border-radius: var(--radius-pill);
+    background: var(--color-intro-flour);
+    box-shadow: 0 0 6px color-mix(in srgb, var(--color-intro-flour) 38%, transparent);
+    animation: var(--animate-intro-mote-in), var(--animate-intro-mote-drift);
+  }
+
+  /* The logo and its kicker line. Motion owns the transforms; this only builds
+     the stack and the backlight that makes a 230px raster mark read as a lit
+     sign rather than a low-resolution image. */
+  .intro-stage {
+    position: relative;
+    display: grid;
+    justify-items: center;
+    gap: 1.25rem;
+    padding-inline: var(--spacing-gutter);
+  }
+  /* The backlight sits on the mark rather than on .intro-logo, because Motion
+     owns that element's `filter` — it animates the entrance blur through it —
+     and an inline filter would simply replace this one. Putting it inside also
+     means the glow blurs in along with the mark, which is the better read: at
+     this size a 230px raster lockup is under-resolution, and a warm halo on a
+     dark ground makes it land as a lit sign rather than a soft image. */
+  .intro-logo > img {
+    /* The lift is not decoration. The lockup is rust-on-transparent, drawn for
+       a cream page; dropped straight onto a dark warm ground its wordmark goes
+       muddy. Brightening pushes the rust up towards --color-brand-hover, which
+       is the palette's own answer to "same colour, more light on it", so the
+       mark reads as lit from behind rather than recoloured. */
+    filter: drop-shadow(0 0 26px color-mix(in srgb, var(--color-intro-ember) 55%, transparent))
+      brightness(1.3) saturate(1.12);
+  }
+  .intro-kicker {
+    margin: 0;
+    color: var(--color-intro-flour);
+    font-family: var(--font-display);
+    font-size: clamp(0.72rem, 2.4vw, 0.95rem);
+    line-height: 1;
+    text-transform: uppercase;
+    /* Motion animates the tracking in from 0.78em; this is where it lands. */
+    letter-spacing: 0.34em;
+    /* The tracking pushes the line off-centre by half its trailing space. */
+    text-indent: 0.34em;
+    white-space: nowrap;
+  }
+
+  /* The handoff. The hero stagger starts as the curtain begins to move, not
+     after it has gone, so the two reads as one continuous shot.
+
+     Gated on an attribute that is ABSENT by default, which is what keeps the
+     hero correct with no JS at all. And scoped inside `no-preference` rather
+     than leaning on the global reduced-motion block further up: that block
+     zeroes animation-duration but NOT animation-delay, so a delayed reveal with
+     a backwards fill would leave the hero blank for its delay window on exactly
+     the machines that asked for less motion. Here the rule simply doesn't
+     exist. */
+  @media (prefers-reduced-motion: no-preference) {
+    html[data-hero-reveal] .hero-reveal [data-reveal] {
+      /* Reuses the house `rise`, whose `both` fill supplies the backwards half
+         that holds each element until its turn. */
+      animation: var(--animate-rise);
+      animation-delay: calc(var(--reveal-step, 0) * 80ms);
+    }
+  }
+}
+
+/* ============================================================================
+   PRINT
+   The prep sheet is a real deliverable: it goes on a bakery bench and gets
+   worked from for a whole shift. Screen defaults sabotage that in three ways —
+   browsers drop background fills, our body ink is a mid grey, and nothing
+   stops an order splitting across a page break. All three are fixed here.
+   ========================================================================= */
+
+@media print {
+  :root {
+    /* Cream on paper is a waste of toner and a loss of contrast. */
+    --color-canvas: #ffffff;
+    --color-surface: #ffffff;
+  }
+
+  @page {
+    /* Extra top margin reserves a clean band for the repeated prep-sheet header. */
+    margin: 24mm 12mm 12mm;
+  }
+
+  html,
+  body {
+    background: #fff;
+    /* Grey text at 14px through a kitchen laser is unreadable. */
+    color: #000;
+    font-size: 12pt;
+    line-height: 1.35;
+  }
+
+  /* Badges and the customer-note highlight carry meaning in their fill. Without
+     this they print as invisible-on-white and the sheet loses its emphasis. */
+  .badge,
+  .tag,
+  .panel,
+  [data-print-fill] {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Muted greys exist to recede on screen; on paper they just fade. */
+  .text-ink-muted,
+  .text-ink-subtle {
+    color: #1a1a1a !important;
+  }
+
+  /* An order is the atomic unit of a prep sheet — it must never straddle a
+     page. Slot groups keep together where they can but may break if a single
+     slot is longer than a page, which is why both rules are here. */
+  li,
+  .break-inside-avoid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  h1,
+  h2,
+  h3 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  /* Chrome that has no business on paper. */
+  header:not([data-print-keep]),
+  footer:not([data-print-keep]),
+  nav,
+  .btn,
+  .toast-viewport {
+    display: none !important;
+  }
+
+  /* Chromium repeats fixed elements on every printed page. Position this in the
+     top page-margin band so every loose sheet still identifies its date/store. */
+  header[data-print-keep] {
+    position: fixed;
+    top: -17mm;
+    right: 0;
+    left: 0;
+    height: 13mm;
+    background: #fff;
+  }
+
+  /* Shadows and lifts render as grey smudges. */
+  *,
+  *::before,
+  *::after {
+    box-shadow: none !important;
+    text-shadow: none !important;
+    transform: none !important;
+    animation: none !important;
+  }
+
+  .card {
+    border: 1px solid #999;
   }
 }

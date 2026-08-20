@@ -1,10 +1,11 @@
 import "server-only";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, lt, lte, or, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { notificationLog, orderItems, orders } from "@/lib/db/schema";
 import { normalizeTime } from "@/lib/scheduling/time";
+import { orderTrackingUrl } from "@/lib/orders/access";
 
 import { CHANNELS } from "./channels";
 import type {
@@ -33,15 +34,15 @@ import type {
  */
 export async function dispatch(event: NotificationEvent): Promise<ChannelResult[]> {
   const entries = Object.entries(CHANNELS) as [
-    ChannelName,
-    (typeof CHANNELS)[ChannelName],
+    Exclude<ChannelName, "email">,
+    (typeof CHANNELS)[Exclude<ChannelName, "email">],
   ][];
 
   const results = await Promise.all(
     entries.map(async ([name, send]): Promise<ChannelResult> => {
-      // Both paths — payForOrder and the payment.updated webhook — can fire the
-      // same event for one order. Without this the store gets everything twice.
-      if (await alreadySent(event.order.orderId, event.kind, name)) {
+      // Claim the unique delivery before touching the provider. This closes the
+      // old check-then-send race between checkout and Square's payment webhook.
+      if (!(await claim(event.order.orderId, event.kind, name))) {
         return { channel: name, ok: true, skipped: true };
       }
 
@@ -62,25 +63,29 @@ export async function dispatch(event: NotificationEvent): Promise<ChannelResult[
   return results;
 }
 
-async function alreadySent(
+async function claim(
   orderId: string,
   kind: NotificationEventKind,
   channel: ChannelName,
 ): Promise<boolean> {
-  const [existing] = await db()
-    .select({ id: notificationLog.id })
-    .from(notificationLog)
-    .where(
-      and(
-        eq(notificationLog.orderId, orderId),
-        eq(notificationLog.event, kind),
-        eq(notificationLog.channel, channel),
-        eq(notificationLog.status, "sent"),
-      ),
-    )
-    .limit(1);
-
-  return Boolean(existing);
+  const rows = await db().execute<{ id: string }>(sql`
+    INSERT INTO ${notificationLog} (order_id, channel, event, status, attempts, created_at)
+    VALUES (${orderId}, ${channel}::notification_channel, ${kind}, 'pending', 1, now())
+    ON CONFLICT (order_id, event, channel) DO UPDATE
+      SET status = 'pending',
+          attempts = ${notificationLog.attempts} + 1,
+          last_error = NULL,
+          next_attempt_at = NULL
+      WHERE (
+          (${notificationLog.status} = 'failed'
+            AND (${notificationLog.nextAttemptAt} IS NULL OR ${notificationLog.nextAttemptAt} <= now()))
+          OR (${notificationLog.status} = 'pending'
+            AND ${notificationLog.createdAt} <= now() - interval '15 minutes')
+        )
+        AND ${notificationLog.attempts} < 5
+    RETURNING id
+  `);
+  return rows.length > 0;
 }
 
 async function record(
@@ -88,19 +93,54 @@ async function record(
   channel: ChannelName,
   result: ChannelResult,
 ): Promise<void> {
-  // A skipped channel isn't logged as sent — otherwise enabling it later would
-  // look like it had already delivered.
-  if (result.skipped) return;
+  const delivery = and(
+    eq(notificationLog.orderId, event.order.orderId),
+    eq(notificationLog.event, event.kind),
+    eq(notificationLog.channel, channel),
+  );
 
-  await db().insert(notificationLog).values({
-    orderId: event.order.orderId,
-    channel,
-    event: event.kind,
-    status: result.ok ? "sent" : "failed",
-    attempts: 1,
-    lastError: result.error ?? null,
-    sentAt: result.ok ? new Date() : null,
-  });
+  // A disabled channel should be eligible as soon as configuration is added.
+  if (result.skipped) {
+    await db().delete(notificationLog).where(delivery);
+    return;
+  }
+
+  await db()
+    .update(notificationLog)
+    .set({
+      status: result.ok ? "sent" : "failed",
+      lastError: result.error ?? null,
+      sentAt: result.ok ? new Date() : null,
+      nextAttemptAt: result.ok ? null : new Date(Date.now() + 5 * 60_000),
+    })
+    .where(delivery);
+}
+
+/** Retry due deliveries. Safe to call from a cron; `claim` enforces idempotency. */
+export async function retryFailedNotifications(limit = 50): Promise<number> {
+  const due = await db()
+    .select({ orderId: notificationLog.orderId, event: notificationLog.event })
+    .from(notificationLog)
+    .where(
+      and(
+        or(
+          and(eq(notificationLog.status, "failed"), lte(notificationLog.nextAttemptAt, new Date())),
+          and(eq(notificationLog.status, "pending"), lt(notificationLog.createdAt, new Date(Date.now() - 15 * 60_000))),
+        ),
+        sql`${notificationLog.attempts} < 5`,
+      ),
+    )
+    .limit(limit);
+
+  const unique = [...new Map(due.map((entry) => [`${entry.orderId}:${entry.event}`, entry])).values()];
+  for (const entry of unique) {
+    if (isNotificationKind(entry.event)) await notifyOrder(entry.orderId, entry.event);
+  }
+  return unique.length;
+}
+
+function isNotificationKind(value: string): value is NotificationEventKind {
+  return value === "order_paid" || value === "order_ready" || value === "order_canceled";
 }
 
 /** Load everything the channels need for an order. */
@@ -123,10 +163,14 @@ export async function buildOrderNotification(
     customerPhone: order.customerPhone,
     pickupDate: order.pickupDate,
     pickupTime: normalizeTime(order.pickupTime),
+    pickupLocationName: order.pickupLocationName,
+    pickupLocationId: order.squareLocationId,
+    pickupLocationAddress: order.pickupLocationAddress,
     totalCents: order.totalCents,
     currency: order.currency,
     items: items.map((item) => ({ quantity: item.quantity, name: item.nameSnapshot })),
     note: order.customerNote,
+    trackingUrl: orderTrackingUrl(order.id, order.orderNumber),
   };
 }
 

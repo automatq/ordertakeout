@@ -16,7 +16,13 @@ import * as schema from "../lib/db/schema";
 import { addCalendarDays, storeToday } from "../lib/scheduling/time";
 
 const DATABASE_URL = process.env.DATABASE_URL;
-const STORE_TIMEZONE = process.env.STORE_TIMEZONE ?? "America/Los_Angeles";
+const STORE_TIMEZONE = process.env.STORE_TIMEZONE ?? "America/Toronto";
+
+const LOCATIONS = [
+  { id: "DEMO_TORONTO_WILSON", name: "Harina Bakeshoppe — Wilson", address: "314 Wilson Avenue", city: "North York, ON", phone: "(416) 555-0142" },
+  { id: "DEMO_TORONTO_SECOND", name: "Harina Bakeshoppe — Toronto", address: "222 Toronto Street", city: "Toronto, ON", phone: "(416) 555-0188" },
+  { id: "DEMO_LONDON", name: "Harina Bakeshoppe — London", address: "125 London Road", city: "London, ON", phone: "(519) 555-0164" },
+] as const;
 
 if (!DATABASE_URL) {
   console.error("DATABASE_URL is required.");
@@ -75,7 +81,7 @@ async function main() {
   const closure = addCalendarDays(today, 3);
   await db
     .insert(schema.blackoutDates)
-    .values({ date: closure, reason: "Demo: staff training day" })
+    .values({ squareLocationId: LOCATIONS[2].id, date: closure, reason: "Demo: London staff training day" })
     .onConflictDoNothing();
   console.log(`  closure on ${closure}`);
 
@@ -83,9 +89,9 @@ async function main() {
   const busyDate = addCalendarDays(today, 1);
   await db
     .insert(schema.slotCapacity)
-    .values({ pickupDate: busyDate, pickupTime: "16:00", maxOrders: 2, notes: "Demo" })
+    .values({ squareLocationId: LOCATIONS[0].id, pickupDate: busyDate, pickupTime: "16:00", maxOrders: 2, notes: "Demo" })
     .onConflictDoUpdate({
-      target: [schema.slotCapacity.pickupDate, schema.slotCapacity.pickupTime],
+      target: [schema.slotCapacity.squareLocationId, schema.slotCapacity.pickupDate, schema.slotCapacity.pickupTime],
       set: { maxOrders: 2 },
     });
   console.log(`  4:00 PM on ${busyDate} capped at 2 orders`);
@@ -103,11 +109,11 @@ async function main() {
   }
 
   const samples = [
-    { customer: 0, date: today, time: "16:00", status: "paid" as const, variant: 0, qty: 2 },
-    { customer: 1, date: today, time: "17:00", status: "preparing" as const, variant: 2, qty: 1 },
-    { customer: 2, date: today, time: "18:00", status: "ready" as const, variant: 4, qty: 3 },
-    { customer: 3, date: busyDate, time: "16:00", status: "paid" as const, variant: 6, qty: 1 },
-    { customer: 0, date: busyDate, time: "16:00", status: "paid" as const, variant: 1, qty: 4 },
+    { customer: 0, location: 0, date: today, time: "16:00", status: "paid" as const, variant: 0, qty: 2 },
+    { customer: 1, location: 1, date: today, time: "17:00", status: "preparing" as const, variant: 2, qty: 1 },
+    { customer: 2, location: 2, date: today, time: "18:00", status: "ready" as const, variant: 4, qty: 3 },
+    { customer: 3, location: 0, date: busyDate, time: "16:00", status: "paid" as const, variant: 6, qty: 1 },
+    { customer: 0, location: 2, date: busyDate, time: "16:00", status: "paid" as const, variant: 1, qty: 4 },
   ];
 
   const allVariants = DEMO_PRODUCTS.flatMap((product) =>
@@ -117,6 +123,7 @@ async function main() {
   for (const [index, sample] of samples.entries()) {
     const customer = CUSTOMERS[sample.customer]!;
     const entry = allVariants[sample.variant]!;
+    const location = LOCATIONS[sample.location]!;
     const lineTotal = entry.variant.priceCents * sample.qty;
     const now = new Date();
 
@@ -129,12 +136,18 @@ async function main() {
         customerName: customer.name,
         customerEmail: customer.email,
         customerPhone: customer.phone,
+        squareLocationId: location.id,
+        pickupLocationName: location.name,
+        pickupLocationAddress: location.address,
+        pickupLocationCity: location.city,
+        pickupLocationPhone: location.phone,
+        pickupLocationTimezone: "America/Toronto",
         pickupDate: sample.date,
         pickupTime: sample.time,
         status: sample.status,
         subtotalCents: lineTotal,
         totalCents: lineTotal,
-        currency: "USD",
+        currency: "CAD",
         customerNote: index === 1 ? "Please label the tray — it's a surprise!" : null,
         paidAt: now,
         readyAt: sample.status === "ready" ? now : null,
@@ -144,6 +157,7 @@ async function main() {
     await db.insert(schema.orderItems).values({
       orderId: order!.id,
       squareCatalogObjectId: entry.variant.id,
+      squareProductId: entry.product.id,
       nameSnapshot: `${entry.product.name} — ${entry.variant.name}`,
       quantity: sample.qty,
       unitPriceCents: entry.variant.priceCents,

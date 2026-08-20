@@ -1,4 +1,5 @@
 import type { OrderStatus } from "@/lib/db/schema";
+import { orderProgressStepState } from "@/lib/orders/progress";
 
 /**
  * Pickup progress rail for a customer's order.
@@ -20,22 +21,8 @@ const STEPS = [
   { label: "Picked up", caption: "Thanks — enjoy!" },
 ] as const;
 
-/**
- * How far along the rail each status sits.
- *
- * `pending_payment` and `canceled` are absent deliberately: neither is a point
- * on the happy path, and the page renders its own copy for those.
- */
-const REACHED: Partial<Record<OrderStatus, number>> = {
-  paid: 0,
-  preparing: 1,
-  ready: 2,
-  completed: 3,
-};
-
 export function OrderProgress({ status }: { status: OrderStatus }) {
-  const reached = REACHED[status];
-  if (reached === undefined) return null;
+  if (orderProgressStepState(status, 0) === null) return null;
 
   return (
     <section aria-label="Order progress" className="flex flex-col gap-3">
@@ -45,12 +32,18 @@ export function OrderProgress({ status }: { status: OrderStatus }) {
 
       <ol className="flex flex-col">
         {STEPS.map((step, index) => {
-          const isDone = index < reached;
-          const isCurrent = index === reached;
+          const { isDone, isCurrent } = orderProgressStepState(status, index)!;
           const isLast = index === STEPS.length - 1;
 
           return (
-            <li key={step.label} className="relative flex gap-4 pb-6 last:pb-0">
+            <li
+              key={step.label}
+              /* The step's position is already in the text ("— in progress"),
+                 but assistive tech reading the list on its own still needs to
+                 know which item is the current one. */
+              aria-current={isCurrent ? "step" : undefined}
+              className="relative flex gap-4 pb-6 last:pb-0"
+            >
               {/* Connector, drawn behind the dot and stopping at the last step. */}
               {!isLast ? (
                 <span

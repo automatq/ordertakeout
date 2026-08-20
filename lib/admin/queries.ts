@@ -1,13 +1,43 @@
 import "server-only";
 
-import { asc, eq, gte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { blackoutDates, productsConfig, slotCapacity } from "@/lib/db/schema";
+import { blackoutDates, notificationLog, orders, productsConfig, slotCapacity, webhookEvents } from "@/lib/db/schema";
 import { serverEnv } from "@/lib/env";
 import { normalizeTime, storeToday, type StoreDate, type StoreTime } from "@/lib/scheduling/time";
 
 /** Reads and writes behind the admin screens. */
+
+export async function listOperationalIssues() {
+  const [refunds, squareSync, notifications, webhooks] = await Promise.all([
+    db()
+      .select({ orderNumber: orders.orderNumber, error: orders.refundError })
+      .from(orders)
+      .where(eq(orders.refundStatus, "failed"))
+      .orderBy(desc(orders.updatedAt))
+      .limit(10),
+    db()
+      .select({ orderNumber: orders.orderNumber, error: orders.squareSyncError })
+      .from(orders)
+      .where(isNotNull(orders.squareSyncError))
+      .orderBy(desc(orders.updatedAt))
+      .limit(10),
+    db()
+      .select({ orderId: notificationLog.orderId, channel: notificationLog.channel, event: notificationLog.event, error: notificationLog.lastError, attempts: notificationLog.attempts })
+      .from(notificationLog)
+      .where(eq(notificationLog.status, "failed"))
+      .orderBy(desc(notificationLog.createdAt))
+      .limit(10),
+    db()
+      .select({ eventType: webhookEvents.eventType, error: webhookEvents.error, receivedAt: webhookEvents.receivedAt })
+      .from(webhookEvents)
+      .where(isNotNull(webhookEvents.error))
+      .orderBy(desc(webhookEvents.receivedAt))
+      .limit(10),
+  ]);
+  return { refunds, squareSync, notifications, webhooks };
+}
 
 export interface ProductRuleRow {
   productId: string;
@@ -19,6 +49,7 @@ export interface ProductRuleRow {
   isOrderable: boolean;
   sortOrder: number;
   descriptionMd: string | null;
+  heroImageUrl: string | null;
 }
 
 export async function listProductRules(): Promise<ProductRuleRow[]> {
@@ -37,6 +68,7 @@ export async function listProductRules(): Promise<ProductRuleRow[]> {
     isOrderable: row.isOrderable,
     sortOrder: row.sortOrder,
     descriptionMd: row.descriptionMd,
+    heroImageUrl: row.heroImageUrl,
   }));
 }
 
@@ -55,6 +87,7 @@ export async function saveProductRules(input: {
   maxUnitsPerDay: number | null;
   isOrderable: boolean;
   descriptionMd: string | null;
+  heroImageUrl: string | null;
 }): Promise<void> {
   const values = {
     squareCatalogObjectId: input.productId,
@@ -65,6 +98,7 @@ export async function saveProductRules(input: {
     maxUnitsPerDay: input.maxUnitsPerDay,
     isOrderable: input.isOrderable,
     descriptionMd: input.descriptionMd,
+    heroImageUrl: input.heroImageUrl,
     updatedAt: new Date(),
   };
 
@@ -77,7 +111,7 @@ export async function saveProductRules(input: {
     });
 }
 
-export async function listBlackoutDates(): Promise<{ date: StoreDate; reason: string | null }[]> {
+export async function listBlackoutDates(): Promise<{ locationId: string | null; date: StoreDate; reason: string | null }[]> {
   // Only from today forward: past closures are history, and a growing list of
   // them would bury the ones that still matter.
   const today = storeToday(new Date(), serverEnv().STORE_TIMEZONE);
@@ -87,22 +121,27 @@ export async function listBlackoutDates(): Promise<{ date: StoreDate; reason: st
     .where(gte(blackoutDates.date, today))
     .orderBy(asc(blackoutDates.date));
 
-  return rows.map((row) => ({ date: row.date, reason: row.reason }));
+  return rows.map((row) => ({ locationId: row.squareLocationId, date: row.date, reason: row.reason }));
 }
 
-export async function addBlackoutDate(date: StoreDate, reason: string | null): Promise<void> {
+export async function addBlackoutDate(locationId: string, date: StoreDate, reason: string | null): Promise<void> {
   await db()
     .insert(blackoutDates)
-    .values({ date, reason })
-    .onConflictDoUpdate({ target: blackoutDates.date, set: { reason } });
+    .values({ squareLocationId: locationId, date, reason })
+    .onConflictDoUpdate({
+      target: [blackoutDates.squareLocationId, blackoutDates.date],
+      set: { reason },
+    });
 }
 
-export async function removeBlackoutDate(date: StoreDate): Promise<void> {
-  await db().delete(blackoutDates).where(eq(blackoutDates.date, date));
+export async function removeBlackoutDate(locationId: string, date: StoreDate): Promise<void> {
+  await db()
+    .delete(blackoutDates)
+    .where(and(eq(blackoutDates.squareLocationId, locationId), eq(blackoutDates.date, date)));
 }
 
 export async function listSlotCapacity(): Promise<
-  { pickupDate: StoreDate; pickupTime: StoreTime; maxOrders: number }[]
+  { locationId: string | null; pickupDate: StoreDate; pickupTime: StoreTime; maxOrders: number }[]
 > {
   const today = storeToday(new Date(), serverEnv().STORE_TIMEZONE);
   const rows = await db()
@@ -112,6 +151,7 @@ export async function listSlotCapacity(): Promise<
     .orderBy(asc(slotCapacity.pickupDate), asc(slotCapacity.pickupTime));
 
   return rows.map((row) => ({
+    locationId: row.squareLocationId,
     pickupDate: row.pickupDate,
     pickupTime: normalizeTime(row.pickupTime),
     maxOrders: row.maxOrders,
@@ -119,26 +159,28 @@ export async function listSlotCapacity(): Promise<
 }
 
 export async function setSlotCapacity(
+  locationId: string,
   pickupDate: StoreDate,
   pickupTime: StoreTime,
   maxOrders: number,
 ): Promise<void> {
   await db()
     .insert(slotCapacity)
-    .values({ pickupDate, pickupTime: normalizeTime(pickupTime), maxOrders })
+    .values({ squareLocationId: locationId, pickupDate, pickupTime: normalizeTime(pickupTime), maxOrders })
     .onConflictDoUpdate({
-      target: [slotCapacity.pickupDate, slotCapacity.pickupTime],
+      target: [slotCapacity.squareLocationId, slotCapacity.pickupDate, slotCapacity.pickupTime],
       set: { maxOrders },
     });
 }
 
 export async function clearSlotCapacity(
+  locationId: string,
   pickupDate: StoreDate,
   pickupTime: StoreTime,
 ): Promise<void> {
   await db()
     .delete(slotCapacity)
     .where(
-      sql`${slotCapacity.pickupDate} = ${pickupDate} AND ${slotCapacity.pickupTime} = ${normalizeTime(pickupTime)}`,
+      sql`${slotCapacity.squareLocationId} = ${locationId} AND ${slotCapacity.pickupDate} = ${pickupDate} AND ${slotCapacity.pickupTime} = ${normalizeTime(pickupTime)}`,
     );
 }

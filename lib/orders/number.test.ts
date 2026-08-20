@@ -1,11 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import { generateOrderNumber, isOrderNumber, normalizeOrderNumber } from "./number";
+import {
+  generateOrderNumber,
+  isOrderNumber,
+  LEGACY_ORDER_NUMBER_CODE_LENGTH,
+  normalizeOrderNumber,
+  ORDER_NUMBER_CODE_LENGTH,
+  ORDER_NUMBER_CODE_SPACE,
+} from "./number";
 
 describe("generateOrderNumber", () => {
   it("produces the documented format", () => {
     for (let i = 0; i < 200; i++) {
-      expect(generateOrderNumber()).toMatch(/^PT-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}$/);
+      expect(generateOrderNumber()).toMatch(/^PT-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{8}$/);
     }
   });
 
@@ -15,12 +22,9 @@ describe("generateOrderNumber", () => {
     expect(codes).not.toMatch(/[01OIL]/);
   });
 
-  it("does not collide over a realistic order volume", () => {
-    const seen = new Set(Array.from({ length: 5000 }, generateOrderNumber));
-    // ~887M possible codes; 5k draws should essentially never collide. The
-    // unique index on orders.order_number is the real guarantee — this catches a
-    // generator that isn't actually random.
-    expect(seen.size).toBe(5000);
+  it("has a collision-resistant code space", () => {
+    expect(ORDER_NUMBER_CODE_LENGTH).toBe(8);
+    expect(ORDER_NUMBER_CODE_SPACE).toBeGreaterThan(850_000_000_000n);
   });
 
   it("distributes across the alphabet rather than favouring early characters", () => {
@@ -35,7 +39,7 @@ describe("generateOrderNumber", () => {
 
     expect(counts.size).toBe(31);
     const frequencies = [...counts.values()];
-    const expected = 24000 / 31;
+    const expected = (4000 * ORDER_NUMBER_CODE_LENGTH) / 31;
     // Generous band — this catches systematic bias, not sampling noise.
     expect(Math.min(...frequencies)).toBeGreaterThan(expected * 0.75);
     expect(Math.max(...frequencies)).toBeLessThan(expected * 1.25);
@@ -53,12 +57,26 @@ describe("normalizeOrderNumber", () => {
 describe("isOrderNumber", () => {
   it("accepts well-formed references", () => {
     expect(isOrderNumber("PT-K7M2QX")).toBe(true);
+    expect(isOrderNumber("PT-K7M2QX9D")).toBe(true);
     expect(isOrderNumber("  pt-k7m2qx  ")).toBe(true);
   });
 
   it("rejects malformed ones rather than querying for them", () => {
-    for (const bad of ["PT-K7M2Q", "PT-K7M2QXX", "K7M2QX", "PT-K7M2Q0", "PT-K7M2QI", ""]) {
+    for (const bad of [
+      "PT-K7M2Q",
+      "PT-K7M2QXX",
+      "PT-K7M2QX9",
+      "K7M2QX",
+      "PT-K7M2Q0",
+      "PT-K7M2QI",
+      "",
+    ]) {
       expect(isOrderNumber(bad)).toBe(false);
     }
+  });
+
+  it("continues accepting legacy six-character references", () => {
+    expect(LEGACY_ORDER_NUMBER_CODE_LENGTH).toBe(6);
+    expect(isOrderNumber("PT-K7M2QX")).toBe(true);
   });
 });

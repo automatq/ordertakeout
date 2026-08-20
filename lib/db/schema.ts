@@ -38,6 +38,8 @@ export const orderStatus = pgEnum("order_status", [
 
 export const notificationChannel = pgEnum("notification_channel", [
   "email",
+  "email_store",
+  "email_customer",
   "sms",
   "discord",
   "slack",
@@ -48,6 +50,13 @@ export const notificationChannel = pgEnum("notification_channel", [
 export const notificationStatus = pgEnum("notification_status", [
   "pending",
   "sent",
+  "failed",
+]);
+
+export const refundStatus = pgEnum("refund_status", [
+  "not_required",
+  "pending",
+  "completed",
   "failed",
 ]);
 
@@ -104,21 +113,38 @@ export const slotCapacity = pgTable(
   "slot_capacity",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    /** Null only on legacy rows created before multi-location support. */
+    squareLocationId: text("square_location_id"),
     pickupDate: date("pickup_date").notNull(),
     pickupTime: time("pickup_time").notNull(),
     maxOrders: integer("max_orders").notNull(),
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("slot_capacity_date_time_key").on(t.pickupDate, t.pickupTime)],
+  (t) => [
+    uniqueIndex("slot_capacity_location_date_time_key").on(
+      t.squareLocationId,
+      t.pickupDate,
+      t.pickupTime,
+    ),
+  ],
 );
 
-/** Holidays and closures. Presence of a row blocks all pickups that day. */
-export const blackoutDates = pgTable("blackout_dates", {
-  date: date("date").primaryKey(),
-  reason: text("reason"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+/** Holidays and closures, independently configurable for each branch. */
+export const blackoutDates = pgTable(
+  "blackout_dates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Null only on legacy rows, which continue to apply to every branch. */
+    squareLocationId: text("square_location_id"),
+    date: date("date").notNull(),
+    reason: text("reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("blackout_dates_location_date_key").on(t.squareLocationId, t.date),
+  ],
+);
 
 /* -------------------------------------------------------------------------- */
 /* Orders                                                                     */
@@ -134,10 +160,23 @@ export const orders = pgTable(
     squareOrderId: text("square_order_id"),
     squarePaymentId: text("square_payment_id"),
     squareRefundId: text("square_refund_id"),
+    refundStatus: refundStatus("refund_status").notNull().default("not_required"),
+    refundError: text("refund_error"),
+    squareSyncError: text("square_sync_error"),
 
     customerName: text("customer_name").notNull(),
     customerEmail: text("customer_email").notNull(),
     customerPhone: text("customer_phone").notNull(),
+    /** Square location chosen at checkout; never inferred later from the current store list. */
+    squareLocationId: text("square_location_id"),
+    pickupLocationName: text("pickup_location_name"),
+    pickupLocationAddress: text("pickup_location_address"),
+    pickupLocationCity: text("pickup_location_city"),
+    pickupLocationPhone: text("pickup_location_phone"),
+    pickupLocationTimezone: text("pickup_location_timezone"),
+    pickupLocationHours: jsonb("pickup_location_hours").$type<
+      { dayOfWeek: string; startTime: string; endTime: string }[]
+    >(),
 
     /** Wall-clock at the store — see conventions above. */
     pickupDate: date("pickup_date").notNull(),
@@ -164,7 +203,7 @@ export const orders = pgTable(
     uniqueIndex("orders_order_number_key").on(t.orderNumber),
     uniqueIndex("orders_square_order_id_key").on(t.squareOrderId),
     // The dashboard's main query: "everything for this pickup day, by slot".
-    index("orders_pickup_idx").on(t.pickupDate, t.pickupTime),
+    index("orders_pickup_idx").on(t.squareLocationId, t.pickupDate, t.pickupTime),
     index("orders_status_idx").on(t.status),
   ],
 );
@@ -181,6 +220,8 @@ export const orderItems = pgTable(
       .notNull()
       .references(() => orders.id, { onDelete: "cascade" }),
     squareCatalogObjectId: text("square_catalog_object_id").notNull(),
+    /** Parent Square ITEM id, used for product-level production limits. */
+    squareProductId: text("square_product_id"),
     nameSnapshot: text("name_snapshot").notNull(),
     quantity: integer("quantity").notNull(),
     unitPriceCents: integer("unit_price_cents").notNull(),
@@ -201,6 +242,7 @@ export const slotHolds = pgTable(
   "slot_holds",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    squareLocationId: text("square_location_id"),
     pickupDate: date("pickup_date").notNull(),
     pickupTime: time("pickup_time").notNull(),
     orderId: uuid("order_id").references(() => orders.id, { onDelete: "cascade" }),
@@ -208,7 +250,7 @@ export const slotHolds = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    index("slot_holds_slot_idx").on(t.pickupDate, t.pickupTime),
+    index("slot_holds_slot_idx").on(t.squareLocationId, t.pickupDate, t.pickupTime),
     index("slot_holds_expires_at_idx").on(t.expiresAt),
   ],
 );
@@ -235,9 +277,31 @@ export const notificationLog = pgTable(
     lastError: text("last_error"),
     payload: jsonb("payload"),
     sentAt: timestamp("sent_at", { withTimezone: true }),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("notification_log_order_id_idx").on(t.orderId)],
+  (t) => [
+    index("notification_log_order_id_idx").on(t.orderId),
+    index("notification_log_retry_idx").on(t.status, t.nextAttemptAt),
+    uniqueIndex("notification_log_delivery_key").on(t.orderId, t.event, t.channel),
+  ],
+);
+
+/** Durable, shared throttling for public actions and staff sign-in. */
+export const rateLimits = pgTable(
+  "rate_limits",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    scope: text("scope").notNull(),
+    identifierHash: text("identifier_hash").notNull(),
+    windowStartedAt: timestamp("window_started_at", { withTimezone: true }).notNull(),
+    attempts: integer("attempts").notNull().default(1),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("rate_limits_scope_identifier_key").on(t.scope, t.identifierHash),
+    index("rate_limits_updated_at_idx").on(t.updatedAt),
+  ],
 );
 
 /**

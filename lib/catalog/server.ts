@@ -8,8 +8,12 @@ import { productsConfig } from "@/lib/db/schema";
 import { normalizeTime } from "@/lib/scheduling/time";
 import { DEMO_PRODUCTS } from "@/lib/demo/catalog";
 import { isDemoMode } from "@/lib/demo/config";
+import { serverEnv } from "@/lib/env";
 import { squareClient } from "@/lib/square/client";
+import { getInStockVariationIds } from "@/lib/inventory/server";
+import { getStoreLocation } from "@/lib/locations/server";
 
+import { attachImageUrls, collectImageIds, extractImageUrls } from "./images";
 import { mapCatalogItems } from "./map";
 import type { CatalogProduct, SkippedCatalogObject, StoreProduct } from "./types";
 
@@ -66,11 +70,56 @@ async function fetchSquareCatalog(): Promise<CatalogLoad> {
       cursor = response.cursor;
     } while (cursor);
 
-    return mapCatalogItems(objects);
+    const mapped = mapCatalogItems(objects, { expectedCurrency: serverEnv().STORE_CURRENCY });
+
+    return {
+      ...mapped,
+      products: attachImageUrls(mapped.products, await fetchImageUrls(client, mapped)),
+    };
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
     console.error("[catalog] Square catalog fetch failed:", message);
     return { products: [], skipped: [], error: message };
+  }
+}
+
+/**
+ * Resolve the IMAGE objects the items reference.
+ *
+ * `searchItems` returns image *ids* only, so without this pass every product
+ * renders its typographic fallback tile. Deliberately non-fatal: a menu with no
+ * photos is a degraded storefront, but a menu that fails to load because the
+ * image call timed out is a closed one. Errors are logged and swallowed.
+ *
+ * Square caps `batchGet` at 1000 ids per call; this bakery has three products,
+ * so the chunking is insurance rather than a live concern.
+ */
+async function fetchImageUrls(
+  client: ReturnType<typeof squareClient>,
+  mapped: { products: CatalogProduct[] },
+): Promise<Map<string, string>> {
+  const ids = collectImageIds(mapped.products);
+  if (ids.length === 0) return new Map();
+
+  try {
+    const urls = new Map<string, string>();
+
+    for (let start = 0; start < ids.length; start += 1000) {
+      const response = await client.catalog.batchGet({
+        objectIds: ids.slice(start, start + 1000),
+      });
+      for (const [id, url] of extractImageUrls(response.objects ?? [])) {
+        urls.set(id, url);
+      }
+    }
+
+    return urls;
+  } catch (cause) {
+    console.error(
+      "[catalog] image resolution failed, falling back to text tiles:",
+      cause instanceof Error ? cause.message : String(cause),
+    );
+    return new Map();
   }
 }
 
@@ -184,6 +233,26 @@ export async function getStoreCatalog(): Promise<StoreCatalog> {
 export async function getOrderableProducts(): Promise<StoreCatalog> {
   const catalog = await getStoreCatalog();
   return { ...catalog, products: catalog.products.filter((p) => p.rule.isOrderable) };
+}
+
+/** Catalog enriched with live inventory for one validated pickup location. */
+export async function getOrderableProductsForLocation(locationId: string): Promise<StoreCatalog> {
+  const catalog = await getOrderableProducts();
+  if (catalog.error) return catalog;
+  if (!(await getStoreLocation(locationId))) {
+    return { ...catalog, products: [], error: "Pickup location is not active" };
+  }
+  const inStock = await getInStockVariationIds(
+    locationId,
+    catalog.products.flatMap((product) => product.variants.map((variant) => variant.id)),
+  );
+  return {
+    ...catalog,
+    products: catalog.products.map((product) => ({
+      ...product,
+      variants: product.variants.map((variant) => ({ ...variant, available: inStock.has(variant.id) })),
+    })),
+  };
 }
 
 export async function getProductBySlug(slug: string): Promise<StoreProduct | null> {

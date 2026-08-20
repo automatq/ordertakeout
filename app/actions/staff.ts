@@ -14,6 +14,7 @@ import { requireStaffSession } from "@/lib/auth/guard";
 import { getDashboardData, type DashboardData } from "@/lib/orders/dashboard";
 import { advanceOrder, type TransitionResult } from "@/lib/orders/transitions";
 import { serverEnv } from "@/lib/env";
+import { consumeRateLimit, requestFingerprint } from "@/lib/security/rate-limit";
 
 /** Staff dashboard actions. Every one of these re-checks the session. */
 
@@ -22,6 +23,13 @@ export async function signIn(
   formData: FormData,
 ): Promise<{ error?: string }> {
   const password = String(formData.get("password") ?? "");
+  const limit = await consumeRateLimit("staff-sign-in", await requestFingerprint(), {
+    attempts: 5,
+    windowMs: 15 * 60_000,
+  });
+  if (!limit.allowed) {
+    return { error: "Too many sign-in attempts. Wait a few minutes and try again." };
+  }
 
   if (!safeEqual(password, serverEnv().STAFF_DASHBOARD_PASSWORD)) {
     // Deliberately vague, and no hint about length or format.

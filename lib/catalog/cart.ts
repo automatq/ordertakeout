@@ -27,9 +27,16 @@ export interface ResolvedCartLine {
   lineTotalCents: number;
 }
 
+interface CartResolutionBase {
+  /** Lines that still resolve, even when another cart item was archived. */
+  lines: ResolvedCartLine[];
+  subtotalCents: number;
+  currency: string;
+}
+
 export type CartResolution =
-  | { ok: true; lines: ResolvedCartLine[]; subtotalCents: number; currency: string }
-  | { ok: false; unknownVariantIds: string[] };
+  | (CartResolutionBase & { ok: true })
+  | (CartResolutionBase & { ok: false; unknownVariantIds: string[] });
 
 /**
  * Resolve cart items against the catalog, pricing them from Square rather than
@@ -57,16 +64,17 @@ export function resolveCart(
     });
   }
 
-  if (unknownVariantIds.length > 0) {
-    return { ok: false, unknownVariantIds };
-  }
-
-  return {
-    ok: true,
+  const priced = {
     lines,
     subtotalCents: lines.reduce((sum, l) => sum + l.lineTotalCents, 0),
     currency: lines[0]?.variant.currency ?? "USD",
   };
+
+  if (unknownVariantIds.length > 0) {
+    return { ok: false, unknownVariantIds, ...priced };
+  }
+
+  return { ok: true, ...priced };
 }
 
 /**

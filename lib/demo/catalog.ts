@@ -10,6 +10,11 @@ import type { CatalogProduct } from "@/lib/catalog/types";
  *
  * The ids are prefixed `DEMO_` so a demo order is unmistakable if one ever ends
  * up in a real database.
+ *
+ * `imageUrls` points at the bakery's own photography in /public rather than at
+ * Square's CDN — demo mode has no Square to resolve `imageIds` against, and a
+ * demo that shows the real image treatment is worth more than one that shows
+ * every product as a fallback tile.
  */
 export const DEMO_PRODUCTS: CatalogProduct[] = [
   {
@@ -18,12 +23,13 @@ export const DEMO_PRODUCTS: CatalogProduct[] = [
     description:
       "Soft, buttery brioche rolls topped with cheese or ube, baked fresh for your party.",
     imageIds: [],
+    imageUrls: ["/harina/ube-pandesal.webp", "/harina/freshly-baked.webp"],
     variants: [
       {
         id: "DEMO_VAR_ENSAYMADA_25_UBE",
         name: "25 pcs Ube",
         priceCents: 2500,
-        currency: "USD",
+        currency: "CAD",
         sku: "ENS-25-UBE",
         ordinal: 0,
       },
@@ -31,7 +37,7 @@ export const DEMO_PRODUCTS: CatalogProduct[] = [
         id: "DEMO_VAR_ENSAYMADA_25_CHEESE",
         name: "25 pcs Cheese",
         priceCents: 2000,
-        currency: "USD",
+        currency: "CAD",
         sku: "ENS-25-CHE",
         ordinal: 1,
       },
@@ -39,7 +45,7 @@ export const DEMO_PRODUCTS: CatalogProduct[] = [
         id: "DEMO_VAR_ENSAYMADA_56_UBE",
         name: "56 pcs Ube",
         priceCents: 5000,
-        currency: "USD",
+        currency: "CAD",
         sku: "ENS-56-UBE",
         ordinal: 2,
       },
@@ -47,7 +53,7 @@ export const DEMO_PRODUCTS: CatalogProduct[] = [
         id: "DEMO_VAR_ENSAYMADA_56_CHEESE",
         name: "56 pcs Cheese",
         priceCents: 4000,
-        currency: "USD",
+        currency: "CAD",
         sku: "ENS-56-CHE",
         ordinal: 3,
       },
@@ -58,12 +64,13 @@ export const DEMO_PRODUCTS: CatalogProduct[] = [
     name: "Hopia Ube / Hopia Baboy",
     description: "Flaky bean-filled pastries, in ube or classic baboy.",
     imageIds: [],
+    imageUrls: ["/harina/hopia-pirat-baboy.webp"],
     variants: [
       {
         id: "DEMO_VAR_HOPIA_60",
         name: "60 pcs",
         priceCents: 4500,
-        currency: "USD",
+        currency: "CAD",
         sku: "HOP-60",
         ordinal: 0,
       },
@@ -71,7 +78,7 @@ export const DEMO_PRODUCTS: CatalogProduct[] = [
         id: "DEMO_VAR_HOPIA_90",
         name: "90 pcs",
         priceCents: 6500,
-        currency: "USD",
+        currency: "CAD",
         sku: "HOP-90",
         ordinal: 1,
       },
@@ -82,12 +89,13 @@ export const DEMO_PRODUCTS: CatalogProduct[] = [
     name: "Ube Bars",
     description: "Purple yam bars, rich and not too sweet.",
     imageIds: [],
+    imageUrls: ["/harina/ube-bars.webp"],
     variants: [
       {
         id: "DEMO_VAR_UBE_BARS_BIG",
         name: "Big — 78 pcs",
         priceCents: 5000,
-        currency: "USD",
+        currency: "CAD",
         sku: "UBE-78",
         ordinal: 0,
       },
@@ -95,7 +103,7 @@ export const DEMO_PRODUCTS: CatalogProduct[] = [
         id: "DEMO_VAR_UBE_BARS_SMALL",
         name: "Small — 48 pcs",
         priceCents: 3000,
-        currency: "USD",
+        currency: "CAD",
         sku: "UBE-48",
         ordinal: 1,
       },

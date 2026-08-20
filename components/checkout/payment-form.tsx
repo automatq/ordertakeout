@@ -4,12 +4,20 @@ import { payments as loadSquarePayments } from "@square/web-sdk";
 import type { Card, Payments } from "@square/web-payments-sdk-types";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { AlertIcon, LockIcon } from "@/components/ui/icons";
+import { STORE_INFO } from "@/lib/store";
+
 /**
  * Square Web Payments SDK card entry.
  *
  * Card details are entered in an iframe hosted by Square and never touch our
  * servers — we only ever see a single-use token. That's what keeps card data out
  * of our PCI scope.
+ *
+ * The visible changes are all about the two states either side of "ready":
+ * loading used to render an empty bordered box with a dead button next to it,
+ * and failure collapsed the whole component to one red sentence telling the
+ * customer to "call the store" without giving them the number.
  */
 export function PaymentForm({
   applicationId,
@@ -29,6 +37,7 @@ export function PaymentForm({
   const [status, setStatus] = useState<"loading" | "ready" | "failed">("loading");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -59,7 +68,8 @@ export function PaymentForm({
       void card?.destroy();
       cardRef.current = null;
     };
-  }, [applicationId, locationId]);
+    // `attempt` is the retry trigger: bumping it re-runs the whole attach.
+  }, [applicationId, locationId, attempt]);
 
   const handleSubmit = useCallback(async () => {
     const card = cardRef.current;
@@ -92,21 +102,54 @@ export function PaymentForm({
 
   if (status === "failed") {
     return (
-      <p role="alert" className="text-danger text-sm">
-        Card payment is unavailable right now. Please call the store to place your order.
-      </p>
+      <div role="alert" className="panel border-danger/30 flex flex-col gap-3 p-5">
+        <p className="text-ink flex items-start gap-2 text-sm">
+          <AlertIcon className="text-danger mt-0.5 h-4 w-4 shrink-0" />
+          Card payment isn&rsquo;t loading right now. Your pickup time is still held.
+        </p>
+        <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              setStatus("loading");
+              setAttempt((current) => current + 1);
+            }}
+            className="btn btn-primary btn-sm"
+          >
+            Try again
+          </button>
+          <a href={STORE_INFO.phoneHref} className="btn btn-secondary btn-sm">
+            Call {STORE_INFO.phone}
+          </a>
+        </div>
+      </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-4">
-      <div
-        ref={containerRef}
-        className="rounded-control border-border bg-surface min-h-[90px] border p-3"
-      />
+      <div className="relative">
+        <div
+          ref={containerRef}
+          aria-busy={status === "loading"}
+          className="rounded-control border-border bg-surface min-h-[90px] border p-3"
+        />
+
+        {/* Overlays rather than replaces the container: Square needs the real
+            node mounted to attach its iframe to. */}
+        {status === "loading" ? (
+          <div
+            role="status"
+            className="rounded-control bg-surface-sunken absolute inset-0 flex items-center justify-center gap-3"
+          >
+            <span className="spinner text-ink-subtle" aria-hidden />
+            <span className="text-ink-muted text-sm">Loading secure card form…</span>
+          </div>
+        ) : null}
+      </div>
 
       {error ? (
-        <p role="alert" className="text-danger text-sm">
+        <p role="alert" className="field-error">
           {error}
         </p>
       ) : null}
@@ -115,14 +158,25 @@ export function PaymentForm({
         type="button"
         onClick={handleSubmit}
         disabled={disabled || submitting || status !== "ready"}
-        className="rounded-control bg-brand text-brand-ink hover:bg-brand-hover px-5 py-3 font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+        className="btn btn-primary btn-block"
       >
-        {submitting ? "Processing…" : `Pay ${amountLabel}`}
+        {submitting ? (
+          <>
+            <span className="spinner" aria-hidden />
+            Processing…
+          </>
+        ) : (
+          <>
+            <LockIcon className="h-4 w-4" />
+            Pay {amountLabel}
+          </>
+        )}
       </button>
 
-      <p className="text-ink-subtle text-xs">
+      <p className="text-ink-subtle flex items-start gap-2 text-xs">
+        <LockIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
         Payments are processed securely by Square. Your card details never reach our
-        servers.
+        servers. Visa, Mastercard and American Express accepted.
       </p>
     </div>
   );

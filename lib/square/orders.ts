@@ -20,11 +20,13 @@ import { fromSquareAmount, toSquareAmount } from "./money";
  */
 
 export interface SquareOrderInput {
+  locationId: string;
   orderNumber: string;
   lines: readonly ResolvedCartLine[];
   pickup: { date: StoreDate; time: StoreTime };
   customer: { name: string; email: string; phone: string };
   note?: string | null;
+  timeZone?: string;
 }
 
 export interface SquareDraftOrder {
@@ -53,7 +55,7 @@ export interface SquareDraftOrder {
 export async function createSquareDraftOrder(
   input: SquareOrderInput,
 ): Promise<SquareDraftOrder> {
-  const timeZone = serverEnv().STORE_TIMEZONE;
+  const timeZone = input.timeZone ?? serverEnv().STORE_TIMEZONE;
 
   // Demo mode prices the order from our own resolved lines. In production Square
   // is the pricing authority — see the total comparison in createPendingOrder.
@@ -88,7 +90,7 @@ export async function createSquareDraftOrder(
     // order rather than creating a duplicate.
     idempotencyKey: `order-${input.orderNumber}`,
     order: {
-      locationId: squareLocationId(),
+      locationId: input.locationId,
       referenceId: input.orderNumber,
       lineItems: input.lines.map((line) => ({
         catalogObjectId: line.variant.id,
@@ -106,7 +108,8 @@ export async function createSquareDraftOrder(
   return {
     squareOrderId: order.id,
     totalCents: fromSquareAmount(order.totalMoney?.amount),
-    subtotalCents: fromSquareAmount(order.netAmountDueMoney?.amount ?? order.totalMoney?.amount),
+    subtotalCents:
+      fromSquareAmount(order.totalMoney?.amount) - fromSquareAmount(order.totalTaxMoney?.amount),
     taxCents: fromSquareAmount(order.totalTaxMoney?.amount),
     currency: order.totalMoney?.currency ?? "USD",
   };
@@ -125,6 +128,7 @@ export type PaymentResult =
  * regenerated on retry.
  */
 export async function createSquarePayment(params: {
+  locationId: string;
   orderId: string;
   squareOrderId: string;
   amountCents: number;
@@ -147,7 +151,7 @@ export async function createSquarePayment(params: {
       idempotencyKey: params.orderId,
       sourceId: params.sourceId,
       orderId: params.squareOrderId,
-      locationId: squareLocationId(),
+      locationId: params.locationId,
       referenceId: params.orderNumber,
       buyerEmailAddress: params.buyerEmail,
       amountMoney: {
@@ -180,6 +184,9 @@ export async function refundSquarePayment(params: {
   idempotencyKey: string;
   reason?: string;
 }): Promise<{ ok: true; refundId: string } | { ok: false; code: string; message: string }> {
+  if (isDemoMode()) {
+    return { ok: true, refundId: `DEMO_REFUND_${params.idempotencyKey}` };
+  }
   try {
     const response = await squareClient().refunds.refundPayment({
       idempotencyKey: params.idempotencyKey,

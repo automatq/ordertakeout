@@ -19,6 +19,7 @@ import {
   warnAboutRules,
 } from "@/lib/admin/validate";
 import { CATALOG_TAG, PRODUCT_CONFIG_TAG } from "@/lib/catalog/server";
+import { getStoreLocation } from "@/lib/locations/server";
 
 /**
  * Admin actions.
@@ -67,6 +68,7 @@ export async function saveProductRulesAction(formData: FormData): Promise<AdminR
     maxUnitsPerDay: parsed.data.maxUnitsPerDay,
     isOrderable: parsed.data.isOrderable,
     descriptionMd: parsed.data.descriptionMd ?? null,
+    heroImageUrl: parsed.data.heroImageUrl ?? null,
   });
 
   updateTag(PRODUCT_CONFIG_TAG);
@@ -90,7 +92,11 @@ export async function addBlackoutAction(formData: FormData): Promise<AdminResult
     return { ok: false, error: "Pick a valid date.", fieldErrors: flatten(parsed.error) };
   }
 
-  await addBlackoutDate(parsed.data.date, parsed.data.reason || null);
+  if (!(await getStoreLocation(parsed.data.locationId))) {
+    return { ok: false, error: "That pickup location is no longer active." };
+  }
+
+  await addBlackoutDate(parsed.data.locationId, parsed.data.date, parsed.data.reason || null);
   updateTag(PRODUCT_CONFIG_TAG);
   return { ok: true };
 }
@@ -99,11 +105,12 @@ export async function removeBlackoutAction(formData: FormData): Promise<AdminRes
   await requireStaffSession();
 
   const date = String(formData.get("date") ?? "");
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+  const locationId = String(formData.get("locationId") ?? "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !(await getStoreLocation(locationId))) {
     return { ok: false, error: "Pick a valid date." };
   }
 
-  await removeBlackoutDate(date);
+  await removeBlackoutDate(locationId, date);
   updateTag(PRODUCT_CONFIG_TAG);
   return { ok: true };
 }
@@ -116,7 +123,11 @@ export async function setSlotCapacityAction(formData: FormData): Promise<AdminRe
     return { ok: false, error: "Check the slot details.", fieldErrors: flatten(parsed.error) };
   }
 
-  await setSlotCapacity(parsed.data.pickupDate, parsed.data.pickupTime, parsed.data.maxOrders);
+  if (!(await getStoreLocation(parsed.data.locationId))) {
+    return { ok: false, error: "That pickup location is no longer active." };
+  }
+
+  await setSlotCapacity(parsed.data.locationId, parsed.data.pickupDate, parsed.data.pickupTime, parsed.data.maxOrders);
   updateTag(PRODUCT_CONFIG_TAG);
   return {
     ok: true,
@@ -132,11 +143,12 @@ export async function clearSlotCapacityAction(formData: FormData): Promise<Admin
 
   const pickupDate = String(formData.get("pickupDate") ?? "");
   const pickupTime = String(formData.get("pickupTime") ?? "");
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(pickupDate) || !/^\d{2}:\d{2}/.test(pickupTime)) {
+  const locationId = String(formData.get("locationId") ?? "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(pickupDate) || !/^\d{2}:\d{2}/.test(pickupTime) || !(await getStoreLocation(locationId))) {
     return { ok: false, error: "Pick a valid slot." };
   }
 
-  await clearSlotCapacity(pickupDate, pickupTime);
+  await clearSlotCapacity(locationId, pickupDate, pickupTime);
   updateTag(PRODUCT_CONFIG_TAG);
   return { ok: true };
 }

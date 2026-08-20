@@ -111,6 +111,8 @@ export function mapCatalogItems(
       name,
       description: item?.description?.trim() || null,
       imageIds: item?.imageIds ?? [],
+      // Resolved separately — see lib/catalog/images.ts. This module stays pure.
+      imageUrls: [],
       variants,
     });
   }

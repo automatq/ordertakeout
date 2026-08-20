@@ -56,6 +56,20 @@ const paymentUpdatedSchema = z.object({
   }),
 });
 
+const refundUpdatedSchema = z.object({
+  type: z.enum(["refund.created", "refund.updated"]),
+  event_id: z.string().min(1),
+  data: z.object({
+    object: z.object({
+      refund: z.object({
+        id: z.string().min(1),
+        payment_id: z.string().min(1),
+        status: z.string().optional(),
+      }),
+    }),
+  }),
+});
+
 /** Anything we don't act on, but still record for idempotency and debugging. */
 const unknownEventSchema = z.object({
   type: z.string().min(1),
@@ -65,6 +79,7 @@ const unknownEventSchema = z.object({
 export type SquareWebhookEvent =
   | { kind: "fulfillment"; eventId: string; type: string; squareOrderId: string; newState: string | null }
   | { kind: "payment"; eventId: string; type: string; paymentId: string; squareOrderId: string | null; status: string | null }
+  | { kind: "refund"; eventId: string; type: string; refundId: string; paymentId: string; status: string | null }
   | { kind: "other"; eventId: string; type: string };
 
 export type ParseResult =
@@ -102,6 +117,22 @@ export function parseSquareEvent(body: unknown): ParseResult {
         paymentId: paid.id,
         squareOrderId: paid.order_id ?? null,
         status: paid.status ?? null,
+      },
+    };
+  }
+
+  const refund = refundUpdatedSchema.safeParse(body);
+  if (refund.success) {
+    const refunded = refund.data.data.object.refund;
+    return {
+      ok: true,
+      event: {
+        kind: "refund",
+        eventId: refund.data.event_id,
+        type: refund.data.type,
+        refundId: refunded.id,
+        paymentId: refunded.payment_id,
+        status: refunded.status ?? null,
       },
     };
   }

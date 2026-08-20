@@ -62,12 +62,16 @@ export interface SalesAnalytics {
   today: StoreDate;
   from: StoreDate;
   to: StoreDate;
+  previousFrom: StoreDate;
+  previousTo: StoreDate;
   days: RangeDays;
   currency: string;
   current: PeriodTotals;
   /** The equal-length window immediately before this one, for the deltas. */
   previous: PeriodTotals;
   byDay: DayPoint[];
+  /** Previous window aligned by index with `byDay`, for chart comparison. */
+  previousByDay: DayPoint[];
   topItems: TopItem[];
   upcoming: { revenueCents: number; orderCount: number };
 }
@@ -75,7 +79,7 @@ export interface SalesAnalytics {
 /** Postgres returns sums and counts as strings; everything downstream wants numbers. */
 const toNumber = (value: string | number | null): number => Number(value ?? 0);
 
-export async function getSalesAnalytics(days: RangeDays): Promise<SalesAnalytics> {
+export async function getSalesAnalytics(days: RangeDays, locationId?: string): Promise<SalesAnalytics> {
   const today = storeToday(new Date(), serverEnv().STORE_TIMEZONE);
   const to = today;
   const from = addCalendarDays(today, -(days - 1));
@@ -98,6 +102,7 @@ export async function getSalesAnalytics(days: RangeDays): Promise<SalesAnalytics
           inArray(orders.status, [...REVENUE_STATUSES]),
           gte(orders.pickupDate, previousFrom),
           lte(orders.pickupDate, to),
+          locationId ? eq(orders.squareLocationId, locationId) : undefined,
         ),
       )
       .groupBy(orders.pickupDate),
@@ -110,6 +115,7 @@ export async function getSalesAnalytics(days: RangeDays): Promise<SalesAnalytics
           eq(orders.status, "canceled"),
           gte(orders.pickupDate, previousFrom),
           lte(orders.pickupDate, to),
+          locationId ? eq(orders.squareLocationId, locationId) : undefined,
         ),
       )
       .groupBy(orders.pickupDate),
@@ -127,6 +133,7 @@ export async function getSalesAnalytics(days: RangeDays): Promise<SalesAnalytics
           inArray(orders.status, [...REVENUE_STATUSES]),
           gte(orders.pickupDate, from),
           lte(orders.pickupDate, to),
+          locationId ? eq(orders.squareLocationId, locationId) : undefined,
         ),
       )
       .groupBy(orderItems.nameSnapshot)
@@ -143,6 +150,7 @@ export async function getSalesAnalytics(days: RangeDays): Promise<SalesAnalytics
         and(
           inArray(orders.status, [...REVENUE_STATUSES]),
           gte(orders.pickupDate, addCalendarDays(today, 1)),
+          locationId ? eq(orders.squareLocationId, locationId) : undefined,
         ),
       ),
   ]);
@@ -176,6 +184,7 @@ export async function getSalesAnalytics(days: RangeDays): Promise<SalesAnalytics
   // Every day in the window, including the empty ones — a chart that silently
   // drops zero-revenue days misreads as "we were busy all week".
   const byDay: DayPoint[] = [];
+  const previousByDay: DayPoint[] = [];
   for (let i = 0; i < days; i++) {
     const date = addCalendarDays(from, i);
     const row = revenueByDate.get(date);
@@ -184,17 +193,28 @@ export async function getSalesAnalytics(days: RangeDays): Promise<SalesAnalytics
       revenueCents: toNumber(row?.revenueCents ?? 0),
       orderCount: toNumber(row?.orderCount ?? 0),
     });
+
+    const previousDate = addCalendarDays(previousFrom, i);
+    const previousRow = revenueByDate.get(previousDate);
+    previousByDay.push({
+      date: previousDate,
+      revenueCents: toNumber(previousRow?.revenueCents ?? 0),
+      orderCount: toNumber(previousRow?.orderCount ?? 0),
+    });
   }
 
   return {
     today,
     from,
     to,
+    previousFrom,
+    previousTo,
     days,
     currency: revenueRows.find((r) => r.currency)?.currency ?? "USD",
     current: totalsFor(from, to),
     previous: totalsFor(previousFrom, previousTo),
     byDay,
+    previousByDay,
     topItems: topItemRows.map((r) => ({
       name: r.name,
       quantity: toNumber(r.quantity),

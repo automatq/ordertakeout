@@ -14,7 +14,7 @@ import type { NotificationEvent, OrderNotification } from "./types";
 export const SMS_SEGMENT_LIMIT = 160;
 
 export const pickupLine = (order: OrderNotification): string =>
-  `${formatStoreDate(order.pickupDate, "medium")} at ${formatPickupTime(order.pickupTime)}`;
+  `${formatStoreDate(order.pickupDate, "medium")} at ${formatPickupTime(order.pickupTime)}${order.pickupLocationName ? ` — ${order.pickupLocationName}` : ""}`;
 
 export const itemLines = (order: OrderNotification): string[] =>
   order.items.map((item) => `${item.quantity}x ${item.name}`);
@@ -111,6 +111,7 @@ export function renderCustomerEmail(
           `Paid:   ${total(order)}`,
           "",
           "Please collect in store at your chosen time. Bring your order number.",
+          ...(order.trackingUrl ? ["", `Track your order: ${order.trackingUrl}`] : []),
         ].join("\n"),
       };
 
@@ -124,6 +125,7 @@ export function renderCustomerEmail(
           `Pickup: ${pickupLine(order)}`,
           "",
           "See you soon!",
+          ...(order.trackingUrl ? ["", `Order details: ${order.trackingUrl}`] : []),
         ].join("\n"),
       };
 
@@ -132,6 +134,7 @@ export function renderCustomerEmail(
         subject: `Order ${order.orderNumber} cancelled`,
         text: [
           `Hi ${order.customerName}, your order ${order.orderNumber} has been cancelled.`,
+          ...(order.trackingUrl ? ["", `Order details: ${order.trackingUrl}`] : []),
           "",
           `If you paid online, a refund of ${total(order)} is on its way and usually`,
           "appears within a few business days.",

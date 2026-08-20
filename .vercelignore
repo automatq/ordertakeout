@@ -1,0 +1,8 @@
+# Never upload local environment files — secrets belong in Vercel's env settings.
+.env
+.env.*
+!.env.example
+
+# Local-only working files.
+.context
+tsconfig.tsbuildinfo

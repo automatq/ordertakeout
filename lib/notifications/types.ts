@@ -9,10 +9,14 @@ export interface OrderNotification {
   customerPhone: string;
   pickupDate: StoreDate;
   pickupTime: StoreTime;
+  pickupLocationName?: string | null;
+  pickupLocationId?: string | null;
+  pickupLocationAddress?: string | null;
   totalCents: number;
   currency: string;
   items: { quantity: number; name: string }[];
   note: string | null;
+  trackingUrl?: string | null;
 }
 
 export type NotificationEventKind = "order_paid" | "order_ready" | "order_canceled";
@@ -24,6 +28,8 @@ export interface NotificationEvent {
 
 export type ChannelName =
   | "email"
+  | "email_store"
+  | "email_customer"
   | "sms"
   | "discord"
   | "slack"

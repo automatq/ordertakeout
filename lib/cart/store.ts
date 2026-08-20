@@ -22,36 +22,46 @@ const STORAGE_KEY = "bakery-cart-v1";
 
 export interface CartSnapshot {
   items: CartItem[];
+  /** Location the cart was last reconciled against. */
+  locationId: string | null;
   /** False during SSR and hydration, so the UI can avoid a flash of "empty". */
   ready: boolean;
 }
 
 /** Stable identity: returning a new object each call would loop forever. */
-const SERVER_SNAPSHOT: CartSnapshot = { items: [], ready: false };
+const SERVER_SNAPSHOT: CartSnapshot = { items: [], locationId: null, ready: false };
 
 let snapshot: CartSnapshot = SERVER_SNAPSHOT;
 let hydrated = false;
 const listeners = new Set<() => void>();
 
-function readStoredCart(): CartItem[] {
+function readStoredCart(): { items: CartItem[]; locationId: string | null } {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
+    if (!raw) return { items: [], locationId: null };
     const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
+    const entries = Array.isArray(parsed)
+      ? parsed
+      : parsed && typeof parsed === "object" && Array.isArray((parsed as { items?: unknown }).items)
+        ? (parsed as { items: unknown[] }).items
+        : [];
+    const locationId = !Array.isArray(parsed) && parsed && typeof parsed === "object"
+      && typeof (parsed as { locationId?: unknown }).locationId === "string"
+      ? (parsed as { locationId: string }).locationId
+      : null;
 
-    return normalizeCart(
-      parsed.flatMap((entry): CartItem[] => {
+    return { locationId, items: normalizeCart(
+      entries.flatMap((entry): CartItem[] => {
         if (typeof entry !== "object" || entry === null) return [];
         const { variantId, quantity } = entry as Partial<CartItem>;
         if (typeof variantId !== "string" || typeof quantity !== "number") return [];
         if (!Number.isInteger(quantity) || quantity < 1) return [];
         return [{ variantId, quantity }];
       }),
-    );
+    ) };
   } catch {
     // A corrupt or unreadable cart must never break the storefront.
-    return [];
+    return { items: [], locationId: null };
   }
 }
 
@@ -59,11 +69,19 @@ function emit() {
   for (const listener of listeners) listener();
 }
 
-function commit(items: CartItem[], { persist = true } = {}) {
-  snapshot = { items: normalizeCart(items), ready: true };
+function commit(items: CartItem[], options: { persist?: boolean; locationId?: string | null } = {}) {
+  const { persist = true } = options;
+  snapshot = {
+    items: normalizeCart(items),
+    locationId: options.locationId === undefined ? snapshot.locationId : options.locationId,
+    ready: true,
+  };
   if (persist) {
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot.items));
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        items: snapshot.items,
+        locationId: snapshot.locationId,
+      }));
     } catch {
       // Private browsing or a full quota — the cart just won't survive a reload.
     }
@@ -74,7 +92,7 @@ function commit(items: CartItem[], { persist = true } = {}) {
 function getSnapshot(): CartSnapshot {
   if (!hydrated) {
     hydrated = true;
-    snapshot = { items: readStoredCart(), ready: true };
+    snapshot = { ...readStoredCart(), ready: true };
   }
   return snapshot;
 }
@@ -87,7 +105,8 @@ function subscribe(listener: () => void): () => void {
   // Another tab changed the cart — re-read rather than clobbering it.
   const onStorage = (event: StorageEvent) => {
     if (event.key !== STORAGE_KEY) return;
-    commit(readStoredCart(), { persist: false });
+    const stored = readStoredCart();
+    commit(stored.items, { persist: false, locationId: stored.locationId });
   };
   window.addEventListener("storage", onStorage);
 
@@ -103,10 +122,11 @@ export interface Cart extends CartSnapshot {
   setQuantity: (variantId: string, quantity: number) => void;
   remove: (variantId: string) => void;
   clear: () => void;
+  reconcileLocation: (locationId: string, retainedItems: readonly CartItem[]) => void;
 }
 
 export function useCart(): Cart {
-  const { items, ready } = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const { items, locationId, ready } = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
   const add = useCallback((variantId: string, quantity = 1) => {
     commit([...snapshot.items, { variantId, quantity }]);
@@ -125,14 +145,19 @@ export function useCart(): Cart {
   }, []);
 
   const clear = useCallback(() => commit([]), []);
+  const reconcileLocation = useCallback((nextLocationId: string, retainedItems: readonly CartItem[]) => {
+    commit([...retainedItems], { locationId: nextLocationId });
+  }, []);
 
   return {
     items,
+    locationId,
     ready,
     totalQuantity: items.reduce((sum, item) => sum + item.quantity, 0),
     add,
     setQuantity,
     remove,
     clear,
+    reconcileLocation,
   };
 }

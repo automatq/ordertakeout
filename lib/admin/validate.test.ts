@@ -100,6 +100,10 @@ describe("productRulesSchema", () => {
   it("allows a zero-day lead time for same-day products", () => {
     expect(productRulesSchema.parse({ ...valid, leadTimeDays: "0" }).leadTimeDays).toBe(0);
   });
+
+  it("parses the explicit unchecked value as false", () => {
+    expect(productRulesSchema.parse({ ...valid, isOrderable: "false" }).isOrderable).toBe(false);
+  });
 });
 
 describe("warnAboutRules", () => {
@@ -144,18 +148,19 @@ describe("warnAboutRules", () => {
 
 describe("blackout and capacity schemas", () => {
   it("accepts a blackout date with a reason", () => {
-    expect(blackoutSchema.parse({ date: "2026-12-25", reason: "Christmas" }).date).toBe(
+    expect(blackoutSchema.parse({ locationId: "LOCATION", date: "2026-12-25", reason: "Christmas" }).date).toBe(
       "2026-12-25",
     );
   });
 
   it("rejects a malformed blackout date", () => {
-    expect(blackoutSchema.safeParse({ date: "25/12/2026" }).success).toBe(false);
+    expect(blackoutSchema.safeParse({ locationId: "LOCATION", date: "25/12/2026" }).success).toBe(false);
   });
 
   it("accepts a slot cap, including zero to close a slot", () => {
     expect(
       slotCapacitySchema.parse({
+        locationId: "LOCATION",
         pickupDate: "2026-03-05",
         pickupTime: "16:00",
         maxOrders: "0",
@@ -166,6 +171,7 @@ describe("blackout and capacity schemas", () => {
   it("rejects a negative slot cap", () => {
     expect(
       slotCapacitySchema.safeParse({
+        locationId: "LOCATION",
         pickupDate: "2026-03-05",
         pickupTime: "16:00",
         maxOrders: "-1",

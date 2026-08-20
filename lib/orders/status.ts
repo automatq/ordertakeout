@@ -36,3 +36,35 @@ export const ACTION_LABEL: Partial<Record<OrderStatus, string>> = {
   completed: "Picked up",
   canceled: "Cancel",
 };
+
+/**
+ * Badge class per status.
+ *
+ * Lives here because the queue and the prep timeline both need it and each
+ * carried its own copy — two places to update, and no guarantee they agreed.
+ */
+export const BADGE_CLASS: Record<OrderStatus, string> = {
+  pending_payment: "badge badge-completed",
+  paid: "badge badge-new",
+  preparing: "badge badge-preparing",
+  ready: "badge badge-ready",
+  completed: "badge badge-completed",
+  canceled: "badge badge-canceled",
+};
+
+/**
+ * Left-edge colour per status, for cards on the queue and tickets on the
+ * timeline.
+ *
+ * The timeline had this and the queue didn't, which meant the screen staff
+ * actually work from was the one where every card looked identical. Always
+ * accompanies the text label — the edge is a scanning aid, not the information.
+ */
+export const STATUS_EDGE: Record<OrderStatus, string> = {
+  pending_payment: "border-l-status-completed",
+  paid: "border-l-status-new",
+  preparing: "border-l-status-preparing",
+  ready: "border-l-status-ready",
+  completed: "border-l-status-completed",
+  canceled: "border-l-status-canceled",
+};

@@ -51,71 +51,108 @@ async function expectOk(response: Response, channel: ChannelName): Promise<Chann
 
 /* -------------------------------------------------------------------------- */
 
-/** Email via Resend. Sends to the store and, separately, to the customer. */
-export async function sendEmail(event: NotificationEvent): Promise<ChannelResult> {
+function resendConfig(event: NotificationEvent) {
   const env = serverEnv();
-  if (!env.RESEND_API_KEY || !env.STORE_NOTIFY_EMAIL) return skip("email");
+  const storeEmail = notificationEmailFor(
+    event.order.pickupLocationId,
+    env.LOCATION_NOTIFY_EMAILS,
+  ) ?? env.STORE_NOTIFY_EMAIL;
+  if (!env.RESEND_API_KEY || !env.NOTIFY_FROM_EMAIL || !storeEmail) return null;
 
-  const headers = {
-    Authorization: `Bearer ${env.RESEND_API_KEY}`,
-    "Content-Type": "application/json",
+  return {
+    storeEmail,
+    from: env.NOTIFY_FROM_EMAIL,
+    headers: {
+      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+    },
   };
-  const from = `Party Tray Orders <orders@${emailDomain(env.STORE_NOTIFY_EMAIL)}>`;
-
-  const store = renderStoreEmail(event);
-  const customer = renderCustomerEmail(event);
-
-  const sends = [
-    post("https://api.resend.com/emails", {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        from,
-        to: [env.STORE_NOTIFY_EMAIL],
-        subject: store.subject,
-        text: store.text,
-      }),
-    }),
-    ...(customer
-      ? [
-          post("https://api.resend.com/emails", {
-            method: "POST",
-            headers,
-            body: JSON.stringify({
-              from,
-              to: [event.order.customerEmail],
-              // So a customer replying reaches the shop, not a no-reply void.
-              reply_to: env.STORE_NOTIFY_EMAIL,
-              subject: customer.subject,
-              text: customer.text,
-            }),
-          }),
-        ]
-      : []),
-  ];
-
-  const results = await Promise.allSettled(sends);
-  const failures = results.filter(
-    (r) => r.status === "rejected" || (r.status === "fulfilled" && !r.value.ok),
-  );
-
-  if (failures.length === 0) return ok("email");
-  return fail("email", `${failures.length} of ${results.length} emails failed`);
 }
 
-/** Domain for the From address. Configurable later; verified in Resend either way. */
-function emailDomain(storeEmail: string): string {
-  return storeEmail.split("@")[1] ?? "example.com";
+/** Store and customer email are separate retry units to prevent partial duplicates. */
+export async function sendStoreEmail(event: NotificationEvent): Promise<ChannelResult> {
+  const config = resendConfig(event);
+  if (!config) return skip("email_store");
+
+  const store = renderStoreEmail(event);
+  const response = await post("https://api.resend.com/emails", {
+    method: "POST",
+    headers: config.headers,
+    body: JSON.stringify({
+      from: config.from,
+      to: [config.storeEmail],
+      subject: store.subject,
+      text: store.text,
+    }),
+  });
+  return expectOk(response, "email_store");
+}
+
+export async function sendCustomerEmail(event: NotificationEvent): Promise<ChannelResult> {
+  const config = resendConfig(event);
+  const customer = renderCustomerEmail(event);
+  if (!config || !customer || !event.order.customerEmail) return skip("email_customer");
+
+  const response = await post("https://api.resend.com/emails", {
+    method: "POST",
+    headers: config.headers,
+    body: JSON.stringify({
+      from: config.from,
+      to: [event.order.customerEmail],
+      reply_to: config.storeEmail,
+      subject: customer.subject,
+      text: customer.text,
+    }),
+  });
+  return expectOk(response, "email_customer");
+}
+
+function notificationEmailFor(
+  locationId: string | null | undefined,
+  raw: string | undefined,
+): string | null {
+  if (!locationId || !raw) return null;
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!value || typeof value !== "object") return null;
+    const email = (value as Record<string, unknown>)[locationId];
+    return typeof email === "string" && /^\S+@\S+\.\S+$/.test(email) ? email : null;
+  } catch {
+    console.error("[notifications] LOCATION_NOTIFY_EMAILS is not valid JSON");
+    return null;
+  }
+}
+
+function notificationDestinationFor(
+  locationId: string | null | undefined,
+  raw: string | undefined,
+  pattern: RegExp,
+): string | null {
+  if (!locationId || !raw) return null;
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!value || typeof value !== "object") return null;
+    const destination = (value as Record<string, unknown>)[locationId];
+    return typeof destination === "string" && pattern.test(destination) ? destination : null;
+  } catch {
+    console.error("[notifications] location destination map is not valid JSON");
+    return null;
+  }
 }
 
 /** SMS to the store via Twilio. Customers are emailed, not texted, in v1. */
 export async function sendSms(event: NotificationEvent): Promise<ChannelResult> {
   const env = serverEnv();
+  const storePhone = notificationDestinationFor(
+    event.order.pickupLocationId,
+    env.LOCATION_NOTIFY_PHONES,
+    /^\+?[\d ()-]{7,}$/,
+  ) ?? env.STORE_NOTIFY_PHONE;
   if (
     !env.TWILIO_ACCOUNT_SID ||
     !env.TWILIO_AUTH_TOKEN ||
     !env.TWILIO_FROM_NUMBER ||
-    !env.STORE_NOTIFY_PHONE
+    !storePhone
   ) {
     return skip("sms");
   }
@@ -133,7 +170,7 @@ export async function sendSms(event: NotificationEvent): Promise<ChannelResult> 
         "Content-Type": "application/x-www-form-urlencoded",
       },
       body: new URLSearchParams({
-        To: env.STORE_NOTIFY_PHONE,
+        To: storePhone,
         From: env.TWILIO_FROM_NUMBER,
         Body: renderStoreSms(event),
       }).toString(),
@@ -202,11 +239,11 @@ export async function sendWebhook(event: NotificationEvent): Promise<ChannelResu
   return expectOk(response, "webhook");
 }
 
-export const CHANNELS: Record<
-  ChannelName,
+export const CHANNELS: Record<Exclude<ChannelName, "email">,
   (event: NotificationEvent) => Promise<ChannelResult>
 > = {
-  email: sendEmail,
+  email_store: sendStoreEmail,
+  email_customer: sendCustomerEmail,
   sms: sendSms,
   discord: sendDiscord,
   slack: sendSlack,

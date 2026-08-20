@@ -50,6 +50,18 @@ function paymentEvent(status: string, orderId: string | null = "SQ_ORDER_1") {
   };
 }
 
+function refundEvent(status: string) {
+  return {
+    type: "refund.updated",
+    event_id: "evt_refund_1",
+    data: {
+      object: {
+        refund: { id: "REFUND_1", payment_id: "PAY_1", status },
+      },
+    },
+  };
+}
+
 describe("parseSquareEvent", () => {
   it("reads a fulfillment update", () => {
     const result = parseSquareEvent(fulfillmentEvent("PREPARED"));
@@ -104,13 +116,27 @@ describe("parseSquareEvent", () => {
     expect(result.ok && result.event.kind === "payment" && result.event.squareOrderId).toBeNull();
   });
 
+  it("reads a refund update used to reconcile cancellation", () => {
+    expect(parseSquareEvent(refundEvent("COMPLETED"))).toEqual({
+      ok: true,
+      event: {
+        kind: "refund",
+        eventId: "evt_refund_1",
+        type: "refund.updated",
+        refundId: "REFUND_1",
+        paymentId: "PAY_1",
+        status: "COMPLETED",
+      },
+    });
+  });
+
   it("records unrecognised event types instead of rejecting them", () => {
     // Square adds event types over time; an unknown one must still be stored for
     // idempotency and acknowledged, not retried forever.
-    const result = parseSquareEvent({ type: "refund.updated", event_id: "evt_x" });
+    const result = parseSquareEvent({ type: "inventory.count.updated", event_id: "evt_x" });
     expect(result).toEqual({
       ok: true,
-      event: { kind: "other", eventId: "evt_x", type: "refund.updated" },
+      event: { kind: "other", eventId: "evt_x", type: "inventory.count.updated" },
     });
   });
 

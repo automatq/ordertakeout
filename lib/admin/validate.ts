@@ -72,18 +72,35 @@ export const productRulesSchema = z.object({
   maxUnitsPerDay: z
     .union([z.literal(""), z.coerce.number().int().min(1).max(MAX_UNITS_PER_DAY)])
     .transform((value) => (value === "" ? null : value)),
-  isOrderable: z.coerce.boolean(),
+  isOrderable: z.enum(["true", "false"]).transform((value) => value === "true"),
   descriptionMd: z.string().trim().max(2000).optional(),
+  /**
+   * Staff override for the product photo.
+   *
+   * The column has existed since the first migration and nothing ever wrote to
+   * it, so every product fell back to a typographic tile. Square's own images
+   * are resolved automatically (lib/catalog/images.ts); this is for the case
+   * where the item's Square photo isn't the one the shop wants to lead with.
+   *
+   * Blank clears it, which is why the empty string is a valid value rather than
+   * a validation failure.
+   */
+  heroImageUrl: z
+    .union([z.literal(""), z.url("Paste a full image link, starting with https://")])
+    .optional()
+    .transform((value) => (value ? value : null)),
 });
 
 export type ProductRulesInput = z.input<typeof productRulesSchema>;
 
 export const blackoutSchema = z.object({
+  locationId: z.string().min(1, "Choose a location"),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a date"),
   reason: z.string().trim().max(200).optional(),
 });
 
 export const slotCapacitySchema = z.object({
+  locationId: z.string().min(1, "Choose a location"),
   pickupDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a date"),
   pickupTime: timeField,
   maxOrders: z.coerce

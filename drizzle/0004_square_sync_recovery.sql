@@ -1,0 +1,1 @@
+ALTER TABLE "orders" ADD COLUMN "square_sync_error" text;
