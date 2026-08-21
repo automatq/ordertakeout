@@ -51,6 +51,12 @@ const paymentUpdatedSchema = z.object({
         id: z.string().min(1),
         order_id: z.string().optional(),
         status: z.string().optional(),
+        location_id: z.string().optional(),
+        reference_id: z.string().optional(),
+        amount_money: z.object({
+          amount: z.number().int().nonnegative().safe(),
+          currency: z.string().min(1),
+        }).optional(),
       }),
     }),
   }),
@@ -59,12 +65,19 @@ const paymentUpdatedSchema = z.object({
 const refundUpdatedSchema = z.object({
   type: z.enum(["refund.created", "refund.updated"]),
   event_id: z.string().min(1),
+  created_at: z.string().datetime({ offset: true }).optional(),
   data: z.object({
     object: z.object({
       refund: z.object({
         id: z.string().min(1),
         payment_id: z.string().min(1),
+        order_id: z.string().optional(),
+        location_id: z.string().optional(),
         status: z.string().optional(),
+        amount_money: z.object({
+          amount: z.number().int().nonnegative().safe(),
+          currency: z.string().min(1),
+        }).optional(),
       }),
     }),
   }),
@@ -78,8 +91,31 @@ const unknownEventSchema = z.object({
 
 export type SquareWebhookEvent =
   | { kind: "fulfillment"; eventId: string; type: string; squareOrderId: string; newState: string | null }
-  | { kind: "payment"; eventId: string; type: string; paymentId: string; squareOrderId: string | null; status: string | null }
-  | { kind: "refund"; eventId: string; type: string; refundId: string; paymentId: string; status: string | null }
+  | {
+      kind: "payment";
+      eventId: string;
+      type: string;
+      paymentId: string;
+      squareOrderId: string | null;
+      status: string | null;
+      amountCents: number | null;
+      currency: string | null;
+      locationId: string | null;
+      referenceId: string | null;
+    }
+  | {
+      kind: "refund";
+      eventId: string;
+      type: string;
+      createdAt: string | null;
+      refundId: string;
+      paymentId: string;
+      squareOrderId: string | null;
+      locationId: string | null;
+      status: string | null;
+      amountCents: number | null;
+      currency: string | null;
+    }
   | { kind: "other"; eventId: string; type: string };
 
 export type ParseResult =
@@ -117,6 +153,10 @@ export function parseSquareEvent(body: unknown): ParseResult {
         paymentId: paid.id,
         squareOrderId: paid.order_id ?? null,
         status: paid.status ?? null,
+        amountCents: paid.amount_money?.amount ?? null,
+        currency: paid.amount_money?.currency ?? null,
+        locationId: paid.location_id ?? null,
+        referenceId: paid.reference_id ?? null,
       },
     };
   }
@@ -130,9 +170,14 @@ export function parseSquareEvent(body: unknown): ParseResult {
         kind: "refund",
         eventId: refund.data.event_id,
         type: refund.data.type,
+        createdAt: refund.data.created_at ?? null,
         refundId: refunded.id,
         paymentId: refunded.payment_id,
+        squareOrderId: refunded.order_id ?? null,
+        locationId: refunded.location_id ?? null,
         status: refunded.status ?? null,
+        amountCents: refunded.amount_money?.amount ?? null,
+        currency: refunded.amount_money?.currency ?? null,
       },
     };
   }
@@ -201,5 +246,78 @@ export function shouldApplyStatus(current: OrderStatus, next: OrderStatus): bool
 
 /** Square payment statuses that mean the money is actually captured. */
 export function isPaymentCaptured(status: string | null): boolean {
-  return status === "COMPLETED" || status === "APPROVED";
+  return status === "COMPLETED";
+}
+
+export type RefundDisposition = "completed" | "pending" | "failed" | "unknown";
+export const PARTIAL_REFUND_ERROR_PREFIX = "PARTIAL_REFUND_REQUIRES_MANUAL:";
+
+/**
+ * Collapse Square's wire statuses into the only four financial outcomes the app
+ * may act on. Unknown values stay locked for reconciliation rather than being
+ * guessed into either success or failure.
+ */
+export function classifyRefundStatus(status: string | null): RefundDisposition {
+  switch (status) {
+    case "APPROVED":
+    case "COMPLETED":
+      return "completed";
+    case "PENDING":
+      return "pending";
+    case "FAILED":
+    case "REJECTED":
+      return "failed";
+    default:
+      return "unknown";
+  }
+}
+
+export function isRefundCompleted(status: string | null): boolean {
+  return classifyRefundStatus(status) === "completed";
+}
+
+/** Only a full refund in the order currency is allowed to cancel production. */
+export function isFullOrderRefund(
+  amountCents: number | null,
+  currency: string | null,
+  orderTotalCents: number,
+  orderCurrency: string,
+): boolean {
+  return amountCents === orderTotalCents && currency?.toUpperCase() === orderCurrency.toUpperCase();
+}
+
+export function isExpectedOrderPayment(input: {
+  amountCents: number | null;
+  currency: string | null;
+  locationId: string | null;
+  referenceId: string | null;
+  orderTotalCents: number;
+  orderCurrency: string;
+  orderLocationId: string | null;
+  orderNumber: string;
+}): boolean {
+  return input.amountCents === input.orderTotalCents &&
+    input.currency?.toUpperCase() === input.orderCurrency.toUpperCase() &&
+    input.locationId !== null &&
+    input.locationId === input.orderLocationId &&
+    input.referenceId === input.orderNumber;
+}
+
+export function isActiveCancellationRefund(input: {
+  refundId: string;
+  amountCents: number | null;
+  currency: string | null;
+  orderTotalCents: number;
+  orderCurrency: string;
+  refundStatus: "not_required" | "pending" | "completed" | "failed";
+  activeRefundId: string | null;
+}): boolean {
+  return input.refundStatus === "pending" &&
+    (input.activeRefundId === null || input.activeRefundId === input.refundId) &&
+    isFullOrderRefund(
+      input.amountCents,
+      input.currency,
+      input.orderTotalCents,
+      input.orderCurrency,
+    );
 }

@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/icons";
 import type { OrderStatus } from "@/lib/db/schema";
 import type { DashboardData, DashboardOrder } from "@/lib/orders/dashboard";
+import { dismissVisibleUnread } from "@/lib/orders/unread";
 import {
   ACTION_LABEL,
   BADGE_CLASS,
@@ -63,6 +64,13 @@ const LAST_CHECKED_KEY = "staff-order-last-checked-v1";
 /** Pickup this close counts as imminent, and the card says so. */
 const SOON_MINUTES = 60;
 
+function displayRefundFailure(error: string): string {
+  if (error.startsWith("PARTIAL_REFUND_REQUIRES_MANUAL:")) {
+    return "Square recorded a partial refund. Reconcile the remaining balance in Square before changing this order.";
+  }
+  return error;
+}
+
 export function OrderQueue({
   initialData,
   timeZone,
@@ -76,6 +84,7 @@ export function OrderQueue({
   const [locationFilter, setLocationFilter] = useState("all");
   const [pollError, setPollError] = useState<string | null>(null);
   const [transitionError, setTransitionError] = useState<string | null>(null);
+  const [transitionNotice, setTransitionNotice] = useState<string | null>(null);
   const [squareWarning, setSquareWarning] = useState<string | null>(null);
   const [updatedAge, setUpdatedAge] = useState("Loaded from the server");
   const lastUpdatedAt = useRef<number | null>(null);
@@ -161,6 +170,7 @@ export function OrderQueue({
 
   function handleTransition(orderId: string, status: OrderStatus) {
     setPendingOrderId(orderId);
+    setTransitionNotice(null);
     startTransition(async () => {
       try {
         const result = await changeOrderStatus({ orderId, status });
@@ -171,6 +181,7 @@ export function OrderQueue({
         }
 
         setTransitionError(null);
+        setTransitionNotice(result.notice ?? null);
         setSquareWarning(result.squareWarning ?? null);
 
         // Acting on an order clears its "new" highlight only after it succeeds.
@@ -264,7 +275,10 @@ export function OrderQueue({
         </button>
         <NotificationBell
           orders={freshOrders}
-          onDismissAll={() => setFreshIds(new Set())}
+          onDismissAll={() => setFreshIds((current) => dismissVisibleUnread(
+            current,
+            freshOrders.map((order) => order.id),
+          ))}
           onJumpTo={(orderId) => { jumpToOrder(orderId); setFreshIds((current) => { const next = new Set(current); next.delete(orderId); return next; }); }}
         />
       </div>
@@ -283,6 +297,13 @@ export function OrderQueue({
           <AlertIcon className="h-4 w-4 shrink-0" />
           {transitionError}
         </p>
+      ) : null}
+      {transitionNotice ? (
+        <div role="status" className="panel text-warning flex flex-wrap items-center gap-2 p-3 text-sm print:hidden">
+          <AlertIcon className="h-4 w-4 shrink-0" />
+          <span className="flex-1">{transitionNotice}</span>
+          <button type="button" onClick={() => setTransitionNotice(null)} className="btn btn-ghost btn-sm">Dismiss</button>
+        </div>
       ) : null}
       {squareWarning ? (
         <div role="alert" className="panel text-warning flex flex-wrap items-center gap-2 p-3 text-sm print:hidden">
@@ -430,7 +451,7 @@ function OrderCard({
 
       {order.refundStatus === "failed" && order.refundError ? (
         <p role="alert" className="panel border-danger/30 p-3 text-sm text-danger">
-          Refund failed: {order.refundError}. Cancelling again safely retries the same Square refund.
+          Refund failed: {displayRefundFailure(order.refundError)} Review the error before retrying.
         </p>
       ) : null}
 

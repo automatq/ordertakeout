@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeCart, resolveCart, toSchedulingCart } from "./cart";
+import {
+  cartSnapshotsMatch,
+  normalizeCart,
+  resolveCart,
+  retainCartVariants,
+  subtractCartItems,
+  toSchedulingCart,
+} from "./cart";
 import type { CatalogProduct } from "./types";
 
 const ENSAYMADA: CatalogProduct = {
@@ -134,5 +141,85 @@ describe("normalizeCart", () => {
         { variantId: "VAR_HOPIA_60", quantity: 1 },
       ]),
     ).toEqual([{ variantId: "VAR_HOPIA_60", quantity: 1 }]);
+  });
+});
+
+describe("retainCartVariants", () => {
+  it("removes unavailable items when the pickup location changes", () => {
+    expect(
+      retainCartVariants(
+        [
+          { variantId: "VAR_25_UBE", quantity: 2 },
+          { variantId: "VAR_HOPIA_60", quantity: 1 },
+        ],
+        ["VAR_HOPIA_60"],
+      ),
+    ).toEqual([{ variantId: "VAR_HOPIA_60", quantity: 1 }]);
+  });
+
+  it("normalizes retained quantities instead of reviving removed lines", () => {
+    expect(
+      retainCartVariants(
+        [
+          { variantId: "VAR_25_UBE", quantity: 1 },
+          { variantId: "VAR_25_UBE", quantity: 2 },
+          { variantId: "VAR_HOPIA_60", quantity: 1 },
+        ],
+        ["VAR_25_UBE"],
+      ),
+    ).toEqual([{ variantId: "VAR_25_UBE", quantity: 3 }]);
+  });
+});
+
+describe("cartSnapshotsMatch", () => {
+  it("accepts the same normalized cart regardless of line order", () => {
+    expect(cartSnapshotsMatch(
+      [
+        { variantId: "VAR_HOPIA_60", quantity: 1 },
+        { variantId: "VAR_25_UBE", quantity: 2 },
+      ],
+      [
+        { variantId: "VAR_25_UBE", quantity: 1 },
+        { variantId: "VAR_25_UBE", quantity: 1 },
+        { variantId: "VAR_HOPIA_60", quantity: 1 },
+      ],
+    )).toBe(true);
+  });
+
+  it("rejects a newly added line while location inventory is being checked", () => {
+    expect(cartSnapshotsMatch(
+      [{ variantId: "VAR_25_UBE", quantity: 1 }],
+      [
+        { variantId: "VAR_25_UBE", quantity: 1 },
+        { variantId: "VAR_HOPIA_60", quantity: 1 },
+      ],
+    )).toBe(false);
+  });
+
+  it("rejects a quantity increase while location inventory is being checked", () => {
+    expect(cartSnapshotsMatch(
+      [{ variantId: "VAR_25_UBE", quantity: 1 }],
+      [{ variantId: "VAR_25_UBE", quantity: 2 }],
+    )).toBe(false);
+  });
+});
+
+describe("subtractCartItems", () => {
+  it("empties an unchanged cart after payment", () => {
+    const cart = [{ variantId: "VAR_25_UBE", quantity: 2 }];
+    expect(subtractCartItems(cart, cart)).toEqual([]);
+  });
+
+  it("preserves items and extra quantities added from another tab", () => {
+    expect(subtractCartItems(
+      [
+        { variantId: "VAR_25_UBE", quantity: 3 },
+        { variantId: "VAR_HOPIA_60", quantity: 1 },
+      ],
+      [{ variantId: "VAR_25_UBE", quantity: 2 }],
+    )).toEqual([
+      { variantId: "VAR_25_UBE", quantity: 1 },
+      { variantId: "VAR_HOPIA_60", quantity: 1 },
+    ]);
   });
 });

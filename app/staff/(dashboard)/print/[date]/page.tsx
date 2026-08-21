@@ -6,7 +6,11 @@ import { Suspense } from "react";
 import { PrintControls } from "@/components/staff/print-controls";
 import { LoadingRegion, Skeleton } from "@/components/ui/skeleton";
 import { serverEnv } from "@/lib/env";
-import { getOrdersForDate, summariseProduction } from "@/lib/orders/dashboard";
+import {
+  getOrdersForDate,
+  mergeOperationalLocations,
+  summariseProduction,
+} from "@/lib/orders/dashboard";
 import { getStoreLocationsSafe } from "@/lib/locations/server";
 import {
   formatPickupTime,
@@ -55,7 +59,11 @@ async function PrepSheet({ params, searchParams }: PageProps) {
   const { location: requestedLocationId } = await searchParams;
   if (!isStoreDate(date)) notFound();
 
-  const locations = await getStoreLocationsSafe();
+  const [liveLocations, allOrders] = await Promise.all([
+    getStoreLocationsSafe(),
+    getOrdersForDate(date),
+  ]);
+  const locations = mergeOperationalLocations(liveLocations, allOrders);
   if (!requestedLocationId) {
     return (
       <div className="flex flex-col gap-5">
@@ -80,7 +88,7 @@ async function PrepSheet({ params, searchParams }: PageProps) {
   const location = locations.find((entry) => entry.id === requestedLocationId);
   if (!location) notFound();
 
-  const orders = await getOrdersForDate(date, location.id);
+  const orders = allOrders.filter((order) => order.squareLocationId === location.id);
   const active = orders.filter((o) => o.status !== "canceled");
   const canceled = orders.filter((o) => o.status === "canceled");
   const production = summariseProduction(orders);

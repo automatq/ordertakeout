@@ -9,6 +9,8 @@ import type { StoreLocation } from "@/lib/locations/types";
 import { usePickupLocation } from "@/lib/locations/store";
 import { distanceKm, recommendPickupLocation } from "@/lib/locations/distance";
 import { useCart } from "@/lib/cart/store";
+import { cartSnapshotsMatch, retainCartVariants, type CartItem } from "@/lib/catalog/cart";
+import { STORE_INFO } from "@/lib/store";
 
 export function LocationSelector({
   compact = false,
@@ -17,23 +19,48 @@ export function LocationSelector({
   compact?: boolean;
   initialLocations?: StoreLocation[];
 }) {
-  const { locationId, setLocation } = usePickupLocation();
+  const { locationId, lockedLocationId, setLocation } = usePickupLocation();
   const { items, locationId: cartLocationId, reconcileLocation } = useCart();
   const pathname = usePathname();
   const [locations, setLocations] = useState<StoreLocation[]>(initialLocations);
+  const [locationsLoading, setLocationsLoading] = useState(initialLocations.length === 0);
+  const [locationsError, setLocationsError] = useState(false);
+  const [locationsAttempt, setLocationsAttempt] = useState(0);
   const [recommendation, setRecommendation] = useState<{ location: StoreLocation; distance: number } | null>(null);
   const [recommendationMessage, setRecommendationMessage] = useState<string | null>(null);
   const [pendingChange, setPendingChange] = useState<{
     location: StoreLocation;
     reconciliation: CartReconciliation;
+    cartSnapshot: CartItem[];
   } | null>(null);
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
     if (initialLocations.length === 0) {
-      void getPickupLocations().then(setLocations).catch(() => setLocations([]));
+      let canceled = false;
+      void getPickupLocations()
+        .then((result) => {
+          if (canceled) return;
+          if (result.ok && result.locations.length > 0) {
+            setLocations(result.locations);
+            setLocationsError(false);
+          } else {
+            setLocations([]);
+            setLocationsError(true);
+          }
+        })
+        .catch(() => {
+          if (!canceled) {
+            setLocations([]);
+            setLocationsError(true);
+          }
+        })
+        .finally(() => {
+          if (!canceled) setLocationsLoading(false);
+        });
+      return () => { canceled = true; };
     }
-  }, [initialLocations.length]);
+  }, [initialLocations.length, locationsAttempt]);
 
   useEffect(() => {
     if (locationId && items.length === 0 && cartLocationId !== locationId) {
@@ -45,39 +72,68 @@ export function LocationSelector({
     if (locationId && items.length > 0 && cartLocationId !== locationId && !pendingChange) {
       requestLocation(locationId);
     }
-  // Cart contents are intentionally represented by their stable ids/quantities.
+  // Re-run when a transiently empty location list recovers; otherwise a
+  // persisted selection can remain mismatched with the cart's old branch.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cartLocationId, locationId, items, pendingChange]);
+  }, [cartLocationId, locationId, items, locations, pendingChange]);
 
   const selected = locations.find((location) => location.id === locationId);
-  const selectionRequired = (!locationId || (!selected && locations.length > 0))
-    && !pathname.startsWith("/orders");
+  const selectionRequired = !selected && !pathname.startsWith("/orders");
 
   function requestLocation(nextId: string) {
     const next = locations.find((location) => location.id === nextId);
     if (!next || (next.id === locationId && cartLocationId === next.id)) return;
+    if (lockedLocationId && next.id !== lockedLocationId) {
+      setRecommendationMessage("Your pickup location is locked while your reserved time is held.");
+      return;
+    }
     if (items.length === 0) {
+      if (!setLocation(next.id)) {
+        setRecommendationMessage("Your pickup location is locked while your reserved time is held.");
+        return;
+      }
       reconcileLocation(next.id, []);
-      setLocation(next.id);
       return;
     }
     startTransition(async () => {
-      const reconciliation = await reconcileCartForLocation({ locationId: next.id, items });
-      if (!reconciliation) {
+      try {
+        const reconciliation = await reconcileCartForLocation({ locationId: next.id, items });
+        if (!reconciliation) {
+          setRecommendationMessage("We couldn't verify inventory at that location. Please try again.");
+          return;
+        }
+        setPendingChange({
+          location: next,
+          reconciliation,
+          cartSnapshot: items.map((item) => ({ ...item })),
+        });
+      } catch {
         setRecommendationMessage("We couldn't verify inventory at that location. Please try again.");
-        return;
       }
-      setPendingChange({ location: next, reconciliation });
     });
   }
 
   function confirmLocationChange() {
     if (!pendingChange) return;
-    const retained = items.filter((item) =>
-      pendingChange.reconciliation.retainedVariantIds.includes(item.variantId),
+    if (!cartSnapshotsMatch(items, pendingChange.cartSnapshot)) {
+      const nextLocationId = pendingChange.location.id;
+      setPendingChange(null);
+      setRecommendationMessage(
+        "Your cart changed while we checked inventory. Please review the updated availability before switching.",
+      );
+      requestLocation(nextLocationId);
+      return;
+    }
+    if (!setLocation(pendingChange.location.id)) {
+      setPendingChange(null);
+      setRecommendationMessage("Your pickup location is locked while your reserved time is held.");
+      return;
+    }
+    const retained = retainCartVariants(
+      pendingChange.cartSnapshot,
+      pendingChange.reconciliation.retainedVariantIds,
     );
     reconcileLocation(pendingChange.location.id, retained);
-    setLocation(pendingChange.location.id);
     setPendingChange(null);
   }
 
@@ -127,9 +183,10 @@ export function LocationSelector({
         <select
           value={locationId ?? ""}
           onChange={(event) => requestLocation(event.target.value)}
-          disabled={isPending || locations.length === 0}
+          disabled={isPending || locations.length === 0 || lockedLocationId !== null}
           className="location-strip-select"
           aria-label="Change pickup location"
+          title={lockedLocationId ? "Pickup location is locked while your reserved time is held" : undefined}
         >
           <option value="">Choose a store</option>
           {locations.map((location) => (
@@ -140,16 +197,17 @@ export function LocationSelector({
       <button
         type="button"
         onClick={recommendFromDevice}
-        disabled={isPending || locations.length === 0 || recommendationMessage === "Finding the closest pickup location…"}
+        disabled={isPending || locations.length === 0 || lockedLocationId !== null || recommendationMessage === "Finding the closest pickup location…"}
         className="btn btn-ghost btn-sm hidden sm:inline-flex"
       >
         Recommend nearest
       </button>
       {recommendation ? (
-        <button type="button" onClick={() => requestLocation(recommendation.location.id)} className="btn btn-secondary btn-sm w-full lg:w-auto">
+        <button type="button" disabled={lockedLocationId !== null} onClick={() => requestLocation(recommendation.location.id)} className="btn btn-secondary btn-sm w-full lg:w-auto">
           Recommended: {recommendation.location.name} ({recommendation.distance.toFixed(1)} km)
         </button>
       ) : null}
+      {lockedLocationId ? <span role="status" className="text-secondary-ink/80 w-full text-xs">Pickup location locked while your reserved time is held.</span> : null}
       {recommendationMessage ? <span role="status" className="text-ink-subtle w-full text-xs">{recommendationMessage}</span> : null}
     </div>
   );
@@ -171,7 +229,7 @@ export function LocationSelector({
                 type="button"
                 data-autofocus={index === 0 ? "true" : undefined}
                 onClick={() => requestLocation(location.id)}
-                disabled={isPending}
+                disabled={isPending || lockedLocationId !== null}
                 className="location-choice"
               >
                 <span className="location-choice-icon"><MapPinIcon className="h-5 w-5" /></span>
@@ -182,12 +240,38 @@ export function LocationSelector({
               </button>
             ))}
           </div>
-          <button type="button" onClick={recommendFromDevice} disabled={isPending || locations.length === 0 || recommendationMessage === "Finding the closest pickup location…"} className="btn btn-secondary btn-block">
+          {locationsLoading ? (
+            <p role="status" className="panel text-ink-muted p-4 text-center text-sm">
+              Loading pickup locations…
+            </p>
+          ) : null}
+          {locationsError ? (
+            <div role="alert" className="panel border-danger/30 flex flex-col gap-3 p-4 text-sm">
+              <p className="text-ink">We couldn&rsquo;t load the bakery locations right now.</p>
+              <div className="flex flex-wrap justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLocationsLoading(true);
+                    setLocationsError(false);
+                    setLocationsAttempt((attempt) => attempt + 1);
+                  }}
+                  className="btn btn-primary btn-sm"
+                >
+                  Try again
+                </button>
+                <a href={STORE_INFO.phoneHref} className="btn btn-secondary btn-sm">
+                  Call {STORE_INFO.phone}
+                </a>
+              </div>
+            </div>
+          ) : null}
+          <button type="button" onClick={recommendFromDevice} disabled={isPending || locations.length === 0 || lockedLocationId !== null || recommendationMessage === "Finding the closest pickup location…"} className="btn btn-secondary btn-block">
             <MapPinIcon className="h-4 w-4" />
             Recommend the nearest shop
           </button>
           {recommendation ? (
-            <button type="button" onClick={() => requestLocation(recommendation.location.id)} className="btn btn-primary btn-block">
+            <button type="button" disabled={lockedLocationId !== null} onClick={() => requestLocation(recommendation.location.id)} className="btn btn-primary btn-block">
               Use {recommendation.location.name} — {recommendation.distance.toFixed(1)} km away
             </button>
           ) : null}
@@ -206,7 +290,11 @@ export function LocationSelector({
                 <p className="text-ink text-sm font-semibold">These items will be removed:</p>
                 <ul className="text-ink-muted mt-2 list-disc pl-5 text-sm">
                   {pendingChange.reconciliation.removed.map((item) => (
-                    <li key={item.variantId}>{item.name} — requested {item.requested}, available {item.available}</li>
+                    <li key={item.variantId}>
+                      {item.name} — {item.reason === "insufficient"
+                        ? "not enough stock for your requested quantity"
+                        : "not available at this location"}
+                    </li>
                   ))}
                 </ul>
               </div>

@@ -46,6 +46,43 @@ export interface DashboardData {
   locations: StoreLocation[];
 }
 
+type LocationSnapshotOrder = Pick<
+  Order,
+  | "squareLocationId"
+  | "pickupLocationName"
+  | "pickupLocationAddress"
+  | "pickupLocationCity"
+  | "pickupLocationTimezone"
+  | "pickupLocationPhone"
+  | "pickupLocationHours"
+  | "currency"
+>;
+
+/** Keep operations usable from immutable order snapshots during a Square outage. */
+export function mergeOperationalLocations(
+  liveLocations: readonly StoreLocation[],
+  rows: readonly LocationSnapshotOrder[],
+): StoreLocation[] {
+  const merged = new Map<string, StoreLocation>();
+  for (const order of rows) {
+    if (!order.squareLocationId) continue;
+    merged.set(order.squareLocationId, {
+      id: order.squareLocationId,
+      name: order.pickupLocationName ?? order.squareLocationId,
+      address: order.pickupLocationAddress ?? "",
+      city: order.pickupLocationCity,
+      timezone: order.pickupLocationTimezone,
+      currency: order.currency,
+      phone: order.pickupLocationPhone,
+      businessHours: order.pickupLocationHours ?? [],
+      coordinates: null,
+    });
+  }
+  // Current Square metadata enriches the snapshot when it is available.
+  for (const location of liveLocations) merged.set(location.id, location);
+  return [...merged.values()];
+}
+
 /** Group database rows on the same normalized wall-clock slot. */
 export function groupDashboardOrders(
   rows: readonly DashboardOrder[],
@@ -164,19 +201,7 @@ export async function getDashboardData(daysAhead = 7, locationId?: string): Prom
     today,
     days,
     newOrderCount: rows.filter((r) => r.status === "paid").length,
-    locations: locations.length ? locations : [...new Map(rows.flatMap((order) =>
-      order.squareLocationId ? [[order.squareLocationId, {
-        id: order.squareLocationId,
-        name: order.pickupLocationName ?? order.squareLocationId,
-        address: order.pickupLocationAddress ?? "",
-        city: order.pickupLocationCity,
-        timezone: order.pickupLocationTimezone,
-        currency: order.currency,
-        phone: order.pickupLocationPhone,
-        businessHours: order.pickupLocationHours ?? [],
-        coordinates: null,
-      } satisfies StoreLocation] as const] : [],
-    )).values()],
+    locations: mergeOperationalLocations(locations, rows),
   };
 }
 

@@ -71,8 +71,9 @@ npm run dev
 - **`SQUARE_WEBHOOK_NOTIFICATION_URL`** must match the subscription URL in the Square
   console character for character — it's part of the signed payload, so even a trailing
   slash mismatch will fail verification.
-- **`CRON_SECRET`** protects the five-minute maintenance endpoint that expires holds,
-  retries provider failures, and applies the configured customer-data retention policy.
+- **`CRON_SECRET`** protects the maintenance endpoint that expires holds, retries provider
+  failures, and applies the configured customer-data retention policy. `vercel.json` runs it
+  once daily at 08:17 UTC, which is compatible with Vercel Hobby cron limits.
 
 Notification channels are all optional; an unset channel is skipped by the dispatcher, so
 the store can enable one later without a code change.
@@ -89,6 +90,7 @@ the store can enable one later without a code change.
 | `npm run db:generate` | Generate a migration from schema changes |
 | `npm run db:migrate` | Apply migrations |
 | `npm run db:push` | Push schema directly (development only) |
+| `npm run db:backfill-legacy-location` | One-time location backfill after a multi-location upgrade |
 | `npm run db:studio` | Drizzle Studio |
 
 ## Project layout
@@ -127,12 +129,17 @@ Everything below needs a real Postgres and Square Sandbox credentials. Until the
 has never processed an order end to end, and that should be assumed rather than hoped
 against.
 
-1. Point `DATABASE_URL` at a real database and run `npm run db:migrate`.
-2. Add Square Sandbox credentials and subscribe the two webhooks.
-3. Open `/staff/settings` and configure the three products — the store's rules for Hopia
+1. Point `DATABASE_URL` at the production database and run `npm run db:migrate`.
+2. For an existing installation, set `LEGACY_SQUARE_LOCATION_ID` to the active Square shop
+   that owned all pre-multi-location orders, keep `DATABASE_URL`, `SQUARE_ACCESS_TOKEN`, and
+   `NEXT_PUBLIC_SQUARE_ENVIRONMENT` pointed at the same production environment, then run
+   `npm run db:backfill-legacy-location`. The command validates the location before writing,
+   runs atomically, reports unresolved legacy line items, and is safe to rerun.
+3. Add Square credentials and subscribe to the four webhook events listed below.
+4. Open `/staff/settings` and configure the three products — the store's rules for Hopia
    and Ube Bars are still unconfirmed, so this is also where those get set.
-4. Place a sandbox order end to end and walk it through every status.
-5. Run the concurrency test described below before taking real money.
+5. Place a sandbox order end to end and walk it through every status.
+6. Run the concurrency tests described below before taking real money.
 
 ### The overbooking race — verified
 
@@ -219,8 +226,9 @@ Worth knowing before changing anything in `lib/orders/create.ts`:
   picker, Square Web Payments card entry, order creation, payment, confirmation page.
   Needs Square Sandbox credentials to actually run a payment through.
 - **Phase 7 — Webhooks:** done. Signed endpoint at `/api/webhooks/square` handling
-  `payment.updated` (payment reconciliation) and `order.fulfillment.updated` (two-way
-  status sync with Square POS), with replay-safe idempotency.
+  `payment.updated` (payment reconciliation), `refund.created` and `refund.updated`
+  (refund reconciliation), and `order.fulfillment.updated` (two-way status sync with
+  Square POS), with replay-safe idempotency.
 - **Phase 5 — Staff dashboard:** done. Password-gated order screen at `/staff` with live
   polling and a new-order chime, one-tap status changes that mirror to Square, a completed
   orders view, and a printable per-day prep sheet.
@@ -302,14 +310,17 @@ two afterwards.
 
 ## Webhooks
 
-Subscribe to **`payment.updated`** and **`order.fulfillment.updated`** in the Square
-Developer Console, pointed at `/api/webhooks/square`. They do two jobs:
+Subscribe to **`payment.updated`**, **`refund.created`**, **`refund.updated`**, and
+**`order.fulfillment.updated`** in the Square Developer Console, pointed at
+`/api/webhooks/square`. They do three jobs:
 
 - **Reconciliation.** If the database write immediately after a successful payment ever
   fails, the customer has been charged while our order still says `pending_payment`.
   `payment.updated` repairs that without anyone noticing.
 - **Two-way status sync.** Staff can advance an order in Square Point of Sale instead of
   our dashboard; `order.fulfillment.updated` brings those changes back so both agree.
+- **Refund reconciliation.** `refund.created` and `refund.updated` keep pending, completed,
+  failed, and rejected refunds aligned with the local cancellation state.
 
 Three things to know before touching this code:
 

@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { isAllowedProductImageSource } from "@/lib/catalog/image-policy";
 import { compareTimes, normalizeTime, type StoreTime } from "@/lib/scheduling/time";
 
 /**
@@ -86,7 +87,12 @@ export const productRulesSchema = z.object({
    * a validation failure.
    */
   heroImageUrl: z
-    .union([z.literal(""), z.url("Paste a full image link, starting with https://")])
+    .string()
+    .trim()
+    .refine(
+      (value) => value === "" || isAllowedProductImageSource(value),
+      "Use a /harina/ image or an HTTPS image supplied by Square",
+    )
     .optional()
     .transform((value) => (value ? value : null)),
 });

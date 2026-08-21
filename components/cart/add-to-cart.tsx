@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { QuantityStepper } from "@/components/ui/quantity-stepper";
 import { useToast } from "@/components/ui/toast";
 import { useCart } from "@/lib/cart/store";
-import { getVariantInventory } from "@/app/actions/locations";
+import { getVariantAvailability } from "@/app/actions/locations";
 import { usePickupLocation } from "@/lib/locations/store";
 import type { CatalogVariant } from "@/lib/catalog/types";
 import { formatPickupTime } from "@/lib/scheduling/time";
@@ -46,20 +46,25 @@ export function AddToCart({
   const router = useRouter();
   const [variantId, setVariantId] = useState(variants[0]?.id ?? "");
   const [quantity, setQuantity] = useState(1);
-  const [availabilityState, setAvailabilityState] = useState<{ locationId: string; values: Record<string, number> } | null>(null);
+  const [availabilityState, setAvailabilityState] = useState<{ locationId: string; values: Record<string, boolean> } | null>(null);
   const [inventoryErrorLocation, setInventoryErrorLocation] = useState<string | null>(null);
   const [inventoryAttempt, setInventoryAttempt] = useState(0);
   useEffect(() => {
     if (!locationId) return;
     let canceled = false;
-    void getVariantInventory({
+    void getVariantAvailability({
       locationId,
       variantIds: variants.map((variant) => variant.id),
     })
-      .then((values) => {
+      .then((result) => {
         if (!canceled) {
-          setAvailabilityState({ locationId, values });
-          setInventoryErrorLocation(null);
+          if (result.ok) {
+            setAvailabilityState({ locationId, values: result.values });
+            setInventoryErrorLocation(null);
+          } else {
+            setAvailabilityState(null);
+            setInventoryErrorLocation(locationId);
+          }
         }
       })
       .catch(() => {
@@ -75,8 +80,7 @@ export function AddToCart({
   const selected = variants.find((v) => v.id === variantId) ?? variants[0];
   if (!selected) return null;
 
-  const selectedStock = availability?.[selected.id];
-  const selectedMax = Math.max(1, Math.min(MAX_QUANTITY, selectedStock ?? MAX_QUANTITY));
+  const selectedInStock = availability?.[selected.id];
   const totalCents = selected.priceCents * quantity;
 
   return (
@@ -96,9 +100,9 @@ export function AddToCart({
         <div className="flex flex-col gap-3 pt-1">
           {variants.map((variant) => {
             const perPiece = pricePerPiece(variant);
-            const stock = availability?.[variant.id];
+            const inStock = availability?.[variant.id];
             const isSelected = variant.id === variantId;
-            const isSoldOut = stock === 0;
+            const isSoldOut = inStock === false;
 
             return (
               <label
@@ -120,7 +124,7 @@ export function AddToCart({
                     name="variant"
                     value={variant.id}
                     checked={variant.id === variantId}
-                    disabled={stock === 0}
+                    disabled={isSoldOut}
                     onChange={() => setVariantId(variant.id)}
                     className="sr-only"
                   />
@@ -173,12 +177,12 @@ export function AddToCart({
           label={`Quantity of ${selected.name}`}
           value={quantity}
           min={1}
-          max={selectedMax}
+          max={MAX_QUANTITY}
           onChange={setQuantity}
           onClamp={(attempted) =>
             toast({
               tone: "info",
-              message: `You can order up to ${selectedMax} of this tray here — we've set it to ${selectedMax}. For ${attempted}, please call the store.`,
+              message: `Online quantities are limited to ${MAX_QUANTITY} trays — we've set it to ${MAX_QUANTITY}. For ${attempted}, please call the store.`,
             })
           }
         />
@@ -187,27 +191,25 @@ export function AddToCart({
           type="button"
           onClick={() => {
             if (!locationId) { toast({ tone: "info", message: "Choose a pickup location before adding items." }); return; }
-            if (selectedStock == null || selectedStock < quantity) return;
+            if (selectedInStock !== true) return;
             add(selected.id, quantity);
             toast({
               message: `${quantity} × ${productName} (${selected.name}) added to your order.`,
               action: { label: "View order", onClick: () => router.push("/cart") },
             });
           }}
-          disabled={!locationId || inventoryError || selectedStock == null || selectedStock < quantity}
+          disabled={!locationId || inventoryError || selectedInStock !== true}
           className="btn btn-primary btn-block min-h-14 rounded-full text-base sm:text-lg"
         >
           {!locationId
             ? "Choose a pickup location"
             : inventoryError
               ? "Stock check unavailable"
-            : selectedStock == null
+            : selectedInStock == null
               ? "Checking stock…"
-              : selectedStock === 0
+              : selectedInStock === false
                 ? "Sold out at this location"
-                : selectedStock < quantity
-                  ? `Only ${selectedStock} available`
-                  : <>Add to order &middot; {formatMoney(totalCents, selected.currency)}</>}
+                : <>Add to order &middot; {formatMoney(totalCents, selected.currency)}</>}
         </button>
       </div>
 

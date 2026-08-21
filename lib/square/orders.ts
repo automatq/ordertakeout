@@ -6,8 +6,12 @@ import type { ResolvedCartLine } from "@/lib/catalog/cart";
 import { pickupInstant, type StoreDate, type StoreTime } from "@/lib/scheduling/time";
 import { serverEnv } from "@/lib/env";
 import { isDemoMode } from "@/lib/demo/config";
+import {
+  classifyRefundStatus,
+  type RefundDisposition,
+} from "@/lib/webhooks/events";
 
-import { squareClient, squareLocationId } from "./client";
+import { squareClient } from "./client";
 import { fromSquareAmount, toSquareAmount } from "./money";
 
 /**
@@ -116,18 +120,21 @@ export async function createSquareDraftOrder(
 }
 
 export type PaymentResult =
-  | { ok: true; paymentId: string; status: string }
+  | { ok: true; paymentId: string; status: "COMPLETED" }
   | { ok: false; code: string; message: string };
+
+/** Keep the external call well inside the two-minute local ownership lease. */
+export const PAYMENT_REQUEST_TIMEOUT_SECONDS = 30;
 
 /**
  * Charge the customer.
  *
- * `idempotencyKey` is our own order id, which is what makes a double-clicked pay
- * button or a network retry safe: Square returns the original payment instead of
- * charging a second time. It must therefore be stable per order and never
- * regenerated on retry.
+ * The caller persists one `idempotencyKey` per logical payment attempt. It is
+ * reused after an ambiguous response, but rotated after a definitive failure so
+ * corrected card details are not pinned to the old declined request.
  */
 export async function createSquarePayment(params: {
+  idempotencyKey: string;
   locationId: string;
   orderId: string;
   squareOrderId: string;
@@ -147,25 +154,48 @@ export async function createSquarePayment(params: {
   }
 
   try {
-    const response = await squareClient().payments.create({
-      idempotencyKey: params.orderId,
-      sourceId: params.sourceId,
-      orderId: params.squareOrderId,
-      locationId: params.locationId,
-      referenceId: params.orderNumber,
-      buyerEmailAddress: params.buyerEmail,
-      amountMoney: {
-        amount: toSquareAmount(params.amountCents),
-        currency: params.currency as Square.Currency,
+    const response = await squareClient().payments.create(
+      {
+        idempotencyKey: params.idempotencyKey,
+        sourceId: params.sourceId,
+        orderId: params.squareOrderId,
+        locationId: params.locationId,
+        referenceId: params.orderNumber,
+        buyerEmailAddress: params.buyerEmail,
+        amountMoney: {
+          amount: toSquareAmount(params.amountCents),
+          currency: params.currency as Square.Currency,
+        },
       },
-    });
+      {
+        timeoutInSeconds: PAYMENT_REQUEST_TIMEOUT_SECONDS,
+        // App-level retries reuse the persisted source and key. SDK retries can
+        // otherwise keep one invocation alive beyond the ownership lease.
+        maxRetries: 0,
+      },
+    );
 
     const payment = response.payment;
     if (!payment?.id) {
       return { ok: false, code: "NO_PAYMENT", message: "Square did not return a payment" };
     }
 
-    return { ok: true, paymentId: payment.id, status: payment.status ?? "UNKNOWN" };
+    // An APPROVED payment is only authorised, not captured. PENDING can still
+    // fail later. The payment webhook will reconcile the local order if either
+    // state subsequently reaches COMPLETED.
+    if (payment.status !== "COMPLETED") {
+      const status = payment.status ?? "UNKNOWN";
+      return {
+        ok: false,
+        code: `PAYMENT_${status}`,
+        message:
+          status === "APPROVED" || status === "PENDING"
+            ? "Your payment is still processing. Please wait a moment and try again; you will not be charged twice."
+            : "Square did not complete the payment. Please try again or use another card.",
+      };
+    }
+
+    return { ok: true, paymentId: payment.id, status: "COMPLETED" };
   } catch (cause) {
     // Square's card errors (declined, CVV, expired) arrive as thrown errors with
     // a structured body. Surface the code so checkout can show something better
@@ -176,16 +206,62 @@ export async function createSquarePayment(params: {
   }
 }
 
+export type CancelPaymentAttemptResult =
+  | { ok: true }
+  | { ok: false; code: string; message: string; ambiguous: true };
+
+/**
+ * Resolve a stale/unknown CreatePayment before freeing local reservations.
+ * Square treats both "canceled" and "no payment found for this key" as success.
+ * Any error leaves the remote state unknown and must keep the local holds.
+ */
+export async function cancelSquarePaymentAttempt(
+  idempotencyKey: string,
+): Promise<CancelPaymentAttemptResult> {
+  if (isDemoMode()) return { ok: true };
+
+  try {
+    await squareClient().payments.cancelByIdempotencyKey(
+      { idempotencyKey },
+      { timeoutInSeconds: PAYMENT_REQUEST_TIMEOUT_SECONDS, maxRetries: 0 },
+    );
+    return { ok: true };
+  } catch (cause) {
+    const detail = extractSquareError(cause);
+    console.error("[payments] cancel-by-idempotency-key failed:", detail);
+    return { ok: false, ...detail, ambiguous: true };
+  }
+}
+
 /** Refund a payment in full — used by cancellation. */
+export type RefundResult =
+  | {
+      ok: true;
+      refundId: string;
+      status: string | null;
+      disposition: RefundDisposition;
+    }
+  | {
+      ok: false;
+      code: string;
+      message: string;
+      certainty: "definitive" | "ambiguous";
+    };
+
 export async function refundSquarePayment(params: {
   paymentId: string;
   amountCents: number;
   currency: string;
   idempotencyKey: string;
   reason?: string;
-}): Promise<{ ok: true; refundId: string } | { ok: false; code: string; message: string }> {
+}): Promise<RefundResult> {
   if (isDemoMode()) {
-    return { ok: true, refundId: `DEMO_REFUND_${params.idempotencyKey}` };
+    return {
+      ok: true,
+      refundId: `DEMO_REFUND_${params.idempotencyKey}`,
+      status: "COMPLETED",
+      disposition: "completed",
+    };
   }
   try {
     const response = await squareClient().refunds.refundPayment({
@@ -200,14 +276,46 @@ export async function refundSquarePayment(params: {
 
     const refund = response.refund;
     if (!refund?.id) {
-      return { ok: false, code: "NO_REFUND", message: "Square did not return a refund" };
+      return {
+        ok: false,
+        code: "NO_REFUND",
+        message: "Square did not return a refund",
+        // A malformed 2xx response does not prove that Square failed to create
+        // the refund. Preserve the attempt key and reconcile before retrying.
+        certainty: "ambiguous",
+      };
     }
-    return { ok: true, refundId: refund.id };
+    const status = refund.status ?? null;
+    return {
+      ok: true,
+      refundId: refund.id,
+      status,
+      disposition: classifyRefundStatus(status),
+    };
   } catch (cause) {
     const detail = extractSquareError(cause);
     console.error("[refunds] refund failed:", detail);
-    return { ok: false, ...detail };
+    return {
+      ok: false,
+      ...detail,
+      certainty: isDefinitiveSquareRejection(cause) ? "definitive" : "ambiguous",
+    };
   }
+}
+
+/** A 4xx Square response proves the request was rejected before refund success. */
+function isDefinitiveSquareRejection(cause: unknown): boolean {
+  if (!cause || typeof cause !== "object" || !("statusCode" in cause)) return false;
+  const statusCode = (cause as { statusCode?: unknown }).statusCode;
+  return typeof statusCode === "number" &&
+    statusCode >= 400 &&
+    statusCode < 500 &&
+    // These responses can be emitted by an intermediary while the upstream
+    // request is still in flight. Reusing the attempt key is safer than risking
+    // a second refund.
+    statusCode !== 408 &&
+    statusCode !== 425 &&
+    statusCode !== 429;
 }
 
 function extractSquareError(cause: unknown): { code: string; message: string } {

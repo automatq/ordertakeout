@@ -1,5 +1,6 @@
 import type { CatalogObject } from "square";
 
+import { isAllowedProductImageSource } from "./image-policy";
 import type { CatalogProduct } from "./types";
 
 /** Token-coloured low-fi placeholder for remote Square/staff imagery. */
@@ -74,8 +75,14 @@ type ProductWithImages = {
 };
 
 export function productImages(product: ProductWithImages): string[] {
-  const images = product.heroImageUrl
-    ? [product.heroImageUrl, ...product.imageUrls]
+  // Validate again at the rendering boundary so a legacy row saved before the
+  // allowlist existed cannot make every `<Image>` consumer fail.
+  const heroImageUrl =
+    product.heroImageUrl && isAllowedProductImageSource(product.heroImageUrl)
+      ? product.heroImageUrl
+      : null;
+  const images = heroImageUrl
+    ? [heroImageUrl, ...product.imageUrls]
     : [...product.imageUrls];
 
   // A hero that is also the item's first Square image would otherwise appear

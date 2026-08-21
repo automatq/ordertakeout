@@ -7,12 +7,32 @@ import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { rateLimits } from "@/lib/db/schema";
 
-export async function requestFingerprint(extra = ""): Promise<string> {
+export async function requestFingerprint(): Promise<string> {
   const incoming = await headers();
-  const forwarded = incoming.get("x-forwarded-for")?.split(",")[0]?.trim();
-  const ip = forwarded || incoming.get("x-real-ip") || "unknown";
-  const agent = incoming.get("user-agent")?.slice(0, 160) || "unknown";
-  return `${ip}|${agent}|${extra.toLowerCase()}`;
+  return rateLimitFingerprint({
+    vercelForwardedFor: incoming.get("x-vercel-forwarded-for"),
+    forwardedFor: incoming.get("x-forwarded-for"),
+    realIp: incoming.get("x-real-ip"),
+  });
+}
+
+/**
+ * Build an IP-stable limiter key. User-Agent is deliberately excluded because
+ * it is caller-controlled and would let an attacker rotate buckets at will.
+ * Vercel's non-overridable forwarding header wins when it is present.
+ */
+export function rateLimitFingerprint(
+  input: {
+    vercelForwardedFor?: string | null;
+    forwardedFor?: string | null;
+    realIp?: string | null;
+  },
+): string {
+  const forwarded = (input.vercelForwardedFor || input.forwardedFor)
+    ?.split(",")[0]
+    ?.trim();
+  const ip = forwarded || input.realIp?.trim() || "unknown";
+  return ip;
 }
 
 export async function consumeRateLimit(

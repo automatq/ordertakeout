@@ -2,7 +2,7 @@
 
 import { useCallback, useSyncExternalStore } from "react";
 
-import { normalizeCart, type CartItem } from "@/lib/catalog/cart";
+import { normalizeCart, subtractCartItems, type CartItem } from "@/lib/catalog/cart";
 
 /**
  * Cart state, persisted to localStorage.
@@ -122,6 +122,7 @@ export interface Cart extends CartSnapshot {
   setQuantity: (variantId: string, quantity: number) => void;
   remove: (variantId: string) => void;
   clear: () => void;
+  consume: (purchasedItems: readonly CartItem[]) => void;
   reconcileLocation: (locationId: string, retainedItems: readonly CartItem[]) => void;
 }
 
@@ -145,6 +146,9 @@ export function useCart(): Cart {
   }, []);
 
   const clear = useCallback(() => commit([]), []);
+  const consume = useCallback((purchasedItems: readonly CartItem[]) => {
+    commit(subtractCartItems(snapshot.items, purchasedItems));
+  }, []);
   const reconcileLocation = useCallback((nextLocationId: string, retainedItems: readonly CartItem[]) => {
     commit([...retainedItems], { locationId: nextLocationId });
   }, []);
@@ -158,6 +162,7 @@ export function useCart(): Cart {
     setQuantity,
     remove,
     clear,
+    consume,
     reconcileLocation,
   };
 }

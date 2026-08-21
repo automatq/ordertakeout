@@ -1,10 +1,12 @@
 import { relations, sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   date,
   index,
   integer,
   jsonb,
+  primaryKey,
   pgEnum,
   pgTable,
   text,
@@ -159,7 +161,17 @@ export const orders = pgTable(
 
     squareOrderId: text("square_order_id"),
     squarePaymentId: text("square_payment_id"),
+    /** Durable key for the current Square payment attempt; rotated after a definitive failure. */
+    paymentAttemptKey: text("payment_attempt_key"),
+    /** Opaque Square token retained only so an ambiguous retry can replay the exact request. */
+    paymentAttemptSourceId: text("payment_attempt_source_id"),
+    /** Lease timestamp for exclusive ownership of the current payment attempt. */
+    paymentAttemptStartedAt: timestamp("payment_attempt_started_at", { withTimezone: true }),
     squareRefundId: text("square_refund_id"),
+    /** Durable key for the current Square refund attempt; rotated after a definitive failure. */
+    refundAttemptKey: text("refund_attempt_key"),
+    /** Lease timestamp for exclusive ownership of the current refund attempt. */
+    refundAttemptStartedAt: timestamp("refund_attempt_started_at", { withTimezone: true }),
     refundStatus: refundStatus("refund_status").notNull().default("not_required"),
     refundError: text("refund_error"),
     squareSyncError: text("square_sync_error"),
@@ -202,6 +214,7 @@ export const orders = pgTable(
   (t) => [
     uniqueIndex("orders_order_number_key").on(t.orderNumber),
     uniqueIndex("orders_square_order_id_key").on(t.squareOrderId),
+    uniqueIndex("orders_square_payment_id_key").on(t.squarePaymentId),
     // The dashboard's main query: "everything for this pickup day, by slot".
     index("orders_pickup_idx").on(t.squareLocationId, t.pickupDate, t.pickupTime),
     index("orders_status_idx").on(t.status),
@@ -252,6 +265,42 @@ export const slotHolds = pgTable(
   (t) => [
     index("slot_holds_slot_idx").on(t.squareLocationId, t.pickupDate, t.pickupTime),
     index("slot_holds_expires_at_idx").on(t.expiresAt),
+  ],
+);
+
+/**
+ * Short-lived claims on Square inventory while an online order is being paid.
+ *
+ * Square remains the raw inventory authority. These rows only represent units
+ * already promised to another checkout but not necessarily reflected in
+ * Square's count yet. The composite key makes a retry for the same order and
+ * variation idempotent, while location is part of every availability query.
+ */
+export const inventoryHolds = pgTable(
+  "inventory_holds",
+  {
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "cascade" }),
+    squareVariationId: text("square_variation_id").notNull(),
+    squareLocationId: text("square_location_id").notNull(),
+    quantity: integer("quantity").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({
+      columns: [t.orderId, t.squareVariationId],
+      name: "inventory_holds_order_variation_pk",
+    }),
+    check("inventory_holds_quantity_positive", sql`${t.quantity} > 0`),
+    index("inventory_holds_location_variation_expiry_idx").on(
+      t.squareLocationId,
+      t.squareVariationId,
+      t.expiresAt,
+    ),
+    index("inventory_holds_expires_at_idx").on(t.expiresAt),
   ],
 );
 
@@ -335,6 +384,7 @@ export const ordersRelations = relations(orders, ({ many }) => ({
   items: many(orderItems),
   notifications: many(notificationLog),
   holds: many(slotHolds),
+  inventoryHolds: many(inventoryHolds),
 }));
 
 export const orderItemsRelations = relations(orderItems, ({ one }) => ({
@@ -345,6 +395,10 @@ export const slotHoldsRelations = relations(slotHolds, ({ one }) => ({
   order: one(orders, { fields: [slotHolds.orderId], references: [orders.id] }),
 }));
 
+export const inventoryHoldsRelations = relations(inventoryHolds, ({ one }) => ({
+  order: one(orders, { fields: [inventoryHolds.orderId], references: [orders.id] }),
+}));
+
 export const notificationLogRelations = relations(notificationLog, ({ one }) => ({
   order: one(orders, { fields: [notificationLog.orderId], references: [orders.id] }),
 }));
@@ -352,5 +406,6 @@ export const notificationLogRelations = relations(notificationLog, ({ one }) => 
 export type Order = typeof orders.$inferSelect;
 export type NewOrder = typeof orders.$inferInsert;
 export type OrderItem = typeof orderItems.$inferSelect;
+export type InventoryHold = typeof inventoryHolds.$inferSelect;
 export type ProductConfig = typeof productsConfig.$inferSelect;
 export type OrderStatus = (typeof orderStatus.enumValues)[number];

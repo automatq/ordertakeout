@@ -5,19 +5,31 @@ import { and, inArray, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { notificationLog, orders, rateLimits, webhookEvents } from "@/lib/db/schema";
 import { serverEnv } from "@/lib/env";
+import { sweepExpiredInventoryHolds } from "@/lib/inventory/reservations";
 import { retryFailedNotifications } from "@/lib/notifications/dispatch";
+import { recoverStalePaymentAttempts } from "@/lib/orders/create";
 import { sweepExpiredHolds } from "@/lib/scheduling/queries";
 import { retrySquareOrderSync } from "@/lib/orders/transitions";
 
 export async function runMaintenance() {
-  const [holds, retries, squareRetries, operationalRows, anonymizedOrders] = await Promise.all([
+  const [holds, inventoryHolds, retries, squareRetries, paymentAttempts, operationalRows, anonymizedOrders] = await Promise.all([
     sweepExpiredHolds(),
+    sweepExpiredInventoryHolds(),
     retryFailedNotifications(),
     retrySquareSyncFailures(),
+    recoverStalePaymentAttempts(),
     pruneOperationalData(),
     anonymizeExpiredCustomerData(),
   ]);
-  return { holds, retries, squareRetries, operationalRows, anonymizedOrders };
+  return {
+    holds,
+    inventoryHolds,
+    retries,
+    squareRetries,
+    paymentAttempts,
+    operationalRows,
+    anonymizedOrders,
+  };
 }
 
 async function retrySquareSyncFailures(): Promise<number> {

@@ -1,5 +1,11 @@
 import type { NextConfig } from "next";
 
+import { SQUARE_PRODUCT_IMAGE_HOSTNAMES } from "./lib/catalog/image-policy";
+import {
+  buildContentSecurityPolicy,
+  type SquareWebPaymentsEnvironment,
+} from "./lib/security/content-security-policy";
+
 const nextConfig: NextConfig = {
   /**
    * Enables the `use cache` directive with cacheLife/cacheTag (Next 16's caching
@@ -13,30 +19,21 @@ const nextConfig: NextConfig = {
 
   images: {
     qualities: [75, 80],
-    remotePatterns: [
-      // Square Catalog serves product images from its own CDN.
-      { protocol: "https", hostname: "items-images-production.s3.us-west-2.amazonaws.com" },
-      { protocol: "https", hostname: "square-catalog-production.s3.amazonaws.com" },
-      { protocol: "https", hostname: "*.squarecdn.com" },
-    ],
+    // Square Catalog serves product images from its own CDN and S3 buckets.
+    // Query strings stay enabled because Square's image service accepts `?w=`.
+    remotePatterns: SQUARE_PRODUCT_IMAGE_HOSTNAMES.map((hostname) => ({
+      protocol: "https" as const,
+      hostname,
+      port: "",
+      pathname: "/**",
+    })),
   },
 
   async headers() {
     const production = process.env.NODE_ENV === "production";
-    const contentSecurityPolicy = [
-      "default-src 'self'",
-      "base-uri 'self'",
-      "object-src 'none'",
-      "frame-ancestors 'none'",
-      "form-action 'self'",
-      `script-src 'self' 'unsafe-inline'${production ? "" : " 'unsafe-eval'"} https://web.squarecdn.com https://sandbox.web.squarecdn.com`,
-      "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: blob: https://*.squarecdn.com https://*.amazonaws.com",
-      "font-src 'self' data:",
-      "connect-src 'self' https://*.squareup.com https://*.squarecdn.com",
-      "frame-src https://*.squareup.com https://*.squarecdn.com",
-      ...(production ? ["upgrade-insecure-requests"] : []),
-    ].join("; ");
+    const squareEnvironment: SquareWebPaymentsEnvironment =
+      process.env.NEXT_PUBLIC_SQUARE_ENVIRONMENT === "production" ? "production" : "sandbox";
+    const contentSecurityPolicy = buildContentSecurityPolicy({ production, squareEnvironment });
 
     return [{
       source: "/:path*",

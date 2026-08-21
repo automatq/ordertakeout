@@ -43,6 +43,20 @@
       "when": 1787174387883,
       "tag": "0005_notification_recipient_isolation",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787248800000,
+      "tag": "0006_inventory_reservations",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1787249700000,
+      "tag": "0007_payment_attempt_lease",
+      "breakpoints": true
     }
   ]
 }

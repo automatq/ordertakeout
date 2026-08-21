@@ -24,12 +24,14 @@ export function PaymentForm({
   locationId,
   amountLabel,
   disabled,
+  onProcessingChange,
   onToken,
 }: {
   applicationId: string;
   locationId: string;
   amountLabel: string;
   disabled?: boolean;
+  onProcessingChange?: (processing: boolean) => void;
   onToken: (token: string) => Promise<void>;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -76,6 +78,7 @@ export function PaymentForm({
     if (!card || submitting) return;
 
     setSubmitting(true);
+    onProcessingChange?.(true);
     setError(null);
 
     try {
@@ -97,8 +100,9 @@ export function PaymentForm({
       setError("We couldn't process that card. Please try again.");
     } finally {
       setSubmitting(false);
+      onProcessingChange?.(false);
     }
-  }, [onToken, submitting]);
+  }, [onProcessingChange, onToken, submitting]);
 
   if (status === "failed") {
     return (
@@ -114,6 +118,7 @@ export function PaymentForm({
               setStatus("loading");
               setAttempt((current) => current + 1);
             }}
+            disabled={disabled}
             className="btn btn-primary btn-sm rounded-full"
           >
             Try again

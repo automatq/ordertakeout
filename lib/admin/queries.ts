@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNotNull, lt, or, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { blackoutDates, notificationLog, orders, productsConfig, slotCapacity, webhookEvents } from "@/lib/db/schema";
@@ -10,11 +10,19 @@ import { normalizeTime, storeToday, type StoreDate, type StoreTime } from "@/lib
 /** Reads and writes behind the admin screens. */
 
 export async function listOperationalIssues() {
+  const staleRefundCutoff = new Date(Date.now() - 30 * 60_000);
   const [refunds, squareSync, notifications, webhooks] = await Promise.all([
     db()
-      .select({ orderNumber: orders.orderNumber, error: orders.refundError })
+      .select({
+        orderNumber: orders.orderNumber,
+        status: orders.refundStatus,
+        error: orders.refundError,
+      })
       .from(orders)
-      .where(eq(orders.refundStatus, "failed"))
+      .where(or(
+        eq(orders.refundStatus, "failed"),
+        and(eq(orders.refundStatus, "pending"), lt(orders.updatedAt, staleRefundCutoff)),
+      ))
       .orderBy(desc(orders.updatedAt))
       .limit(10),
     db()

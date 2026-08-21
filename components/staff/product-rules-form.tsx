@@ -189,9 +189,8 @@ export function ProductRulesForm({
       <Field
         label="Photo URL (optional)"
         name="heroImageUrl"
-        type="url"
         defaultValue={existing?.heroImageUrl ?? ""}
-        hint="Overrides the item's Square photo. Leave blank to use Square's."
+        hint="Use a Square image URL or a deployed /harina/ asset. Leave blank to use the item's Square photo."
         errors={errors?.["heroImageUrl"]}
       />
 

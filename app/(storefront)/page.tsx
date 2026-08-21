@@ -18,6 +18,7 @@ import { getOrderableProducts } from "@/lib/catalog/server";
 import { STORE_INFO } from "@/lib/store";
 import { getStoreLocationsSafe } from "@/lib/locations/server";
 import { formatPickupTime } from "@/lib/scheduling/time";
+import { serializeJsonLd } from "@/lib/security/serialize-json-ld";
 
 import freshlyBakedImage from "@/public/harina/freshly-baked.webp";
 import heroImage from "@/public/harina/hero.webp";
@@ -145,7 +146,7 @@ async function StructuredData() {
   return (
     <script
       type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }}
+      dangerouslySetInnerHTML={{ __html: serializeJsonLd(data) }}
     />
   );
 }

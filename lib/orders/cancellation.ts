@@ -13,6 +13,13 @@ export type CancellationEligibility =
 
 /** Customer cancellation closes at the earliest product production cutoff. */
 export async function customerCancellationEligibility(order: Order): Promise<CancellationEligibility> {
+  if (order.refundStatus === "pending") {
+    return {
+      allowed: false,
+      reason: "Square is processing your refund. This order is locked until the refund is confirmed.",
+    };
+  }
+
   if (order.status !== "paid" && order.status !== "preparing") {
     return { allowed: false, reason: "This order can no longer be cancelled online." };
   }
@@ -49,4 +56,3 @@ export async function customerCancellationEligibility(order: Order): Promise<Can
     ? { allowed: true, deadline }
     : { allowed: false, reason: "The online cancellation cutoff has passed. Please call the store.", deadline };
 }
-

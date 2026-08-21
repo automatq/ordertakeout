@@ -104,6 +104,30 @@ describe("productRulesSchema", () => {
   it("parses the explicit unchecked value as false", () => {
     expect(productRulesSchema.parse({ ...valid, isOrderable: "false" }).isOrderable).toBe(false);
   });
+
+  it("accepts only image sources that Next/Image and the page CSP can serve", () => {
+    for (const heroImageUrl of [
+      "/harina/custom-product.webp",
+      "https://items-images-production.s3.us-west-2.amazonaws.com/files/product/original.png",
+      "https://square-catalog-sandbox.s3.amazonaws.com/files/product/original.jpeg",
+      "https://items-images-production.s3.squarecdn.com/files/product/original.jpg?w=900",
+    ]) {
+      expect(productRulesSchema.safeParse({ ...valid, heroImageUrl }).success).toBe(true);
+    }
+  });
+
+  it("rejects image overrides outside the configured local and Square hosts", () => {
+    for (const heroImageUrl of [
+      "https://example.com/product.jpg",
+      "http://items-images-production.s3.us-west-2.amazonaws.com/product.jpg",
+      "https://squarecdn.com.evil.example/product.jpg",
+      "/other-assets/product.jpg",
+      "/harina/../private/product.jpg",
+      "/harina/product.svg",
+    ]) {
+      expect(productRulesSchema.safeParse({ ...valid, heroImageUrl }).success).toBe(false);
+    }
+  });
 });
 
 describe("warnAboutRules", () => {

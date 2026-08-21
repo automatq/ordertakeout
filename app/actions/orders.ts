@@ -92,5 +92,11 @@ export async function cancelCustomerOrder(input: unknown): Promise<{ ok: true } 
   const eligibility = await customerCancellationEligibility(order);
   if (!eligibility.allowed) return { ok: false, reason: eligibility.reason };
   const result = await advanceOrder(order.id, "canceled");
-  return result.ok ? { ok: true } : { ok: false, reason: result.reason };
+  if (result.ok && result.status === "canceled") return { ok: true };
+  return {
+    ok: false,
+    reason: result.ok
+      ? result.notice ?? "Your refund is still processing. The order remains active until Square confirms it."
+      : result.reason,
+  };
 }

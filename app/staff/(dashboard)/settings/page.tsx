@@ -149,7 +149,14 @@ function OperationalIssues({ issues }: { issues: Awaited<ReturnType<typeof listO
         <p className="panel p-4 text-sm text-success">No unresolved operational failures.</p>
       ) : (
         <div role="alert" className="panel border-danger/30 flex flex-col gap-3 p-4 text-sm">
-          {issues.refunds.map((issue) => <p key={`refund-${issue.orderNumber}`}><strong>{issue.orderNumber} refund:</strong> {issue.error}</p>)}
+          {issues.refunds.map((issue) => (
+            <p key={`refund-${issue.orderNumber}`}>
+              <strong>{issue.orderNumber} refund:</strong>{" "}
+              {issue.status === "pending"
+                ? "Still pending after 30 minutes; check the refund in Square."
+                : issue.error}
+            </p>
+          ))}
           {issues.squareSync.map((issue) => <p key={`square-${issue.orderNumber}`}><strong>{issue.orderNumber} Square sync:</strong> {issue.error}</p>)}
           {issues.notifications.map((issue) => <p key={`notification-${issue.orderId}-${issue.channel}-${issue.event}`}><strong>{issue.channel} alert ({issue.event}, attempt {issue.attempts}):</strong> {issue.error}</p>)}
           {issues.webhooks.map((issue, index) => <p key={`webhook-${issue.receivedAt.toISOString()}-${index}`}><strong>{issue.eventType} webhook:</strong> {issue.error}</p>)}

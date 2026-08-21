@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  classifyRefundStatus,
+  isActiveCancellationRefund,
+  isExpectedOrderPayment,
+  isFullOrderRefund,
   isPaymentCaptured,
+  isRefundCompleted,
   mapFulfillmentState,
   parseSquareEvent,
   shouldApplyStatus,
@@ -44,19 +49,34 @@ function paymentEvent(status: string, orderId: string | null = "SQ_ORDER_1") {
       type: "payment",
       id: "PAY_1",
       object: {
-        payment: { id: "PAY_1", order_id: orderId ?? undefined, status },
+        payment: {
+          id: "PAY_1",
+          order_id: orderId ?? undefined,
+          status,
+          amount_money: { amount: 2400, currency: "CAD" },
+          location_id: "TORONTO_WEST",
+          reference_id: "PT-1001",
+        },
       },
     },
   };
 }
 
-function refundEvent(status: string) {
+function refundEvent(status: string, amount = 2400, currency = "CAD") {
   return {
     type: "refund.updated",
     event_id: "evt_refund_1",
+    created_at: "2026-08-20T12:00:00Z",
     data: {
       object: {
-        refund: { id: "REFUND_1", payment_id: "PAY_1", status },
+        refund: {
+          id: "REFUND_1",
+          payment_id: "PAY_1",
+          order_id: "SQ_ORDER_1",
+          location_id: "TORONTO_WEST",
+          status,
+          amount_money: { amount, currency },
+        },
       },
     },
   };
@@ -107,6 +127,10 @@ describe("parseSquareEvent", () => {
         paymentId: "PAY_1",
         squareOrderId: "SQ_ORDER_1",
         status: "COMPLETED",
+        amountCents: 2400,
+        currency: "CAD",
+        locationId: "TORONTO_WEST",
+        referenceId: "PT-1001",
       },
     });
   });
@@ -123,9 +147,14 @@ describe("parseSquareEvent", () => {
         kind: "refund",
         eventId: "evt_refund_1",
         type: "refund.updated",
+        createdAt: "2026-08-20T12:00:00Z",
         refundId: "REFUND_1",
         paymentId: "PAY_1",
+        squareOrderId: "SQ_ORDER_1",
+        locationId: "TORONTO_WEST",
         status: "COMPLETED",
+        amountCents: 2400,
+        currency: "CAD",
       },
     });
   });
@@ -212,14 +241,86 @@ describe("shouldApplyStatus", () => {
 });
 
 describe("isPaymentCaptured", () => {
-  it("recognises captured payments", () => {
+  it("recognises only completed payments as captured", () => {
     expect(isPaymentCaptured("COMPLETED")).toBe(true);
-    expect(isPaymentCaptured("APPROVED")).toBe(true);
+    expect(isPaymentCaptured("APPROVED")).toBe(false);
   });
 
   it("does not treat pending or failed payments as money received", () => {
     for (const status of ["PENDING", "FAILED", "CANCELED", null, ""]) {
       expect(isPaymentCaptured(status)).toBe(false);
     }
+  });
+});
+
+describe("refund completion", () => {
+  it.each([
+    ["APPROVED", "completed"],
+    ["COMPLETED", "completed"],
+    ["PENDING", "pending"],
+    ["FAILED", "failed"],
+    ["REJECTED", "failed"],
+    ["SOMETHING_NEW", "unknown"],
+    [null, "unknown"],
+  ] as const)("classifies %s as %s", (status, expected) => {
+    expect(classifyRefundStatus(status)).toBe(expected);
+  });
+
+  it("supports Square's terminal refund labels but not pending acceptance", () => {
+    expect(isRefundCompleted("COMPLETED")).toBe(true);
+    expect(isRefundCompleted("APPROVED")).toBe(true);
+    expect(isRefundCompleted("PENDING")).toBe(false);
+    expect(isRefundCompleted("FAILED")).toBe(false);
+  });
+
+  it("requires an exact full refund in the order currency", () => {
+    expect(isFullOrderRefund(2400, "CAD", 2400, "cad")).toBe(true);
+    expect(isFullOrderRefund(1200, "CAD", 2400, "CAD")).toBe(false);
+    expect(isFullOrderRefund(2400, "USD", 2400, "CAD")).toBe(false);
+    expect(isFullOrderRefund(null, null, 2400, "CAD")).toBe(false);
+  });
+
+  it("correlates only the app's active full-order cancellation", () => {
+    const base = {
+      refundId: "REFUND_1",
+      amountCents: 2400,
+      currency: "CAD",
+      orderTotalCents: 2400,
+      orderCurrency: "CAD",
+      refundStatus: "pending" as const,
+      activeRefundId: "REFUND_1",
+    };
+    expect(isActiveCancellationRefund(base)).toBe(true);
+    expect(isActiveCancellationRefund({ ...base, amountCents: 1200 })).toBe(false);
+    expect(isActiveCancellationRefund({ ...base, activeRefundId: "OTHER" })).toBe(false);
+    expect(isActiveCancellationRefund({ ...base, refundStatus: "not_required" })).toBe(false);
+  });
+});
+
+describe("payment correlation", () => {
+  const expected = {
+    amountCents: 2400,
+    currency: "CAD",
+    locationId: "TORONTO_WEST",
+    referenceId: "PT-1001",
+    orderTotalCents: 2400,
+    orderCurrency: "CAD",
+    orderLocationId: "TORONTO_WEST",
+    orderNumber: "PT-1001",
+  };
+
+  it("requires amount, currency, location, and reference to match", () => {
+    expect(isExpectedOrderPayment(expected)).toBe(true);
+    expect(isExpectedOrderPayment({ ...expected, amountCents: 1200 })).toBe(false);
+    expect(isExpectedOrderPayment({ ...expected, currency: "USD" })).toBe(false);
+    expect(isExpectedOrderPayment({ ...expected, locationId: "LONDON" })).toBe(false);
+    expect(isExpectedOrderPayment({ ...expected, referenceId: "PT-OTHER" })).toBe(false);
+  });
+
+  it("fails closed when Square omits correlation fields", () => {
+    expect(isExpectedOrderPayment({ ...expected, amountCents: null })).toBe(false);
+    expect(isExpectedOrderPayment({ ...expected, currency: null })).toBe(false);
+    expect(isExpectedOrderPayment({ ...expected, locationId: null })).toBe(false);
+    expect(isExpectedOrderPayment({ ...expected, referenceId: null })).toBe(false);
   });
 });

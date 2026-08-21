@@ -109,23 +109,35 @@ describe("productImages", () => {
   it("leads with the staff hero override", () => {
     const images = productImages(
       storeProduct({
-        heroImageUrl: "https://cdn.example/hero.jpg",
+        heroImageUrl: "/harina/hero.jpg",
         imageUrls: ["https://cdn.example/1.jpg"],
       }),
     );
 
-    expect(images).toEqual(["https://cdn.example/hero.jpg", "https://cdn.example/1.jpg"]);
+    expect(images).toEqual(["/harina/hero.jpg", "https://cdn.example/1.jpg"]);
   });
 
   it("does not repeat a hero that is also a Square image", () => {
+    const squareImage = "https://items-images-production.s3.squarecdn.com/1.jpg";
     const images = productImages(
       storeProduct({
-        heroImageUrl: "https://cdn.example/1.jpg",
-        imageUrls: ["https://cdn.example/1.jpg", "https://cdn.example/2.jpg"],
+        heroImageUrl: squareImage,
+        imageUrls: [squareImage, "https://cdn.example/2.jpg"],
       }),
     );
 
-    expect(images).toEqual(["https://cdn.example/1.jpg", "https://cdn.example/2.jpg"]);
+    expect(images).toEqual([squareImage, "https://cdn.example/2.jpg"]);
+  });
+
+  it("ignores a legacy override that Next/Image cannot serve", () => {
+    const images = productImages(
+      storeProduct({
+        heroImageUrl: "https://unconfigured.example/hero.jpg",
+        imageUrls: ["https://cdn.example/square.jpg"],
+      }),
+    );
+
+    expect(images).toEqual(["https://cdn.example/square.jpg"]);
   });
 
   it("reports no primary image for a product without photography", () => {

@@ -22,8 +22,9 @@ export function ProductGrid({ products }: { products: StoreProduct[] }) {
       locationId,
       variantIds: products.flatMap((product) => product.variants.map((variant) => variant.id)),
     })
-      .then((availability) => {
-        if (!canceled) setState({ locationId, availability });
+      .then((result) => {
+        if (canceled) return;
+        setState(result.ok ? { locationId, availability: result.values } : null);
       })
       .catch(() => {
         // Availability is advisory on the grid; product/checkout checks remain authoritative.

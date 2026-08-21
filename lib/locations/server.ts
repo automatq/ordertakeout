@@ -1,11 +1,11 @@
 import "server-only";
 
 import { cacheLife, cacheTag } from "next/cache";
-import type { Square } from "square";
 
 import { isDemoMode } from "@/lib/demo/config";
 import { squareClient } from "@/lib/square/client";
 
+import { mapSquareLocation } from "./square";
 import type { LocationSnapshot, StoreLocation } from "./types";
 
 export const LOCATIONS_TAG = "square-locations";
@@ -24,35 +24,6 @@ function demoHours() {
   }));
 }
 
-function mapLocation(location: Square.Location): StoreLocation | null {
-  if (!location.id || location.status !== "ACTIVE") return null;
-  const address = location.address;
-  const addressLine = [address?.addressLine1, address?.addressLine2].filter(Boolean).join(", ");
-  return {
-    id: location.id,
-    name: location.name?.trim() || "Pickup location",
-    address: addressLine || "Address available at checkout",
-    city: [address?.locality, address?.administrativeDistrictLevel1, address?.postalCode]
-      .filter(Boolean)
-      .join(", ") || null,
-    timezone: location.timezone ?? null,
-    currency: location.currency ?? null,
-    phone: location.phoneNumber?.trim() || null,
-    businessHours: (location.businessHours?.periods ?? []).flatMap((period) =>
-      period.dayOfWeek && period.startLocalTime && period.endLocalTime
-        ? [{
-            dayOfWeek: period.dayOfWeek,
-            startTime: period.startLocalTime.slice(0, 5),
-            endTime: period.endLocalTime.slice(0, 5),
-          }]
-        : [],
-    ),
-    coordinates: location.coordinates?.latitude != null && location.coordinates.longitude != null
-      ? { latitude: location.coordinates.latitude, longitude: location.coordinates.longitude }
-      : null,
-  };
-}
-
 export async function getStoreLocations(): Promise<StoreLocation[]> {
   "use cache";
   cacheLife("hours");
@@ -61,7 +32,7 @@ export async function getStoreLocations(): Promise<StoreLocation[]> {
 
   const response = await squareClient().locations.list();
   return (response.locations ?? []).flatMap((location) => {
-    const mapped = mapLocation(location);
+    const mapped = mapSquareLocation(location);
     return mapped ? [mapped] : [];
   });
 }

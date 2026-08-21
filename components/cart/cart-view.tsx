@@ -15,7 +15,7 @@ import { resolveCart } from "@/lib/catalog/cart";
 import { primaryImage, sizedImage } from "@/lib/catalog/images";
 import type { CatalogProduct } from "@/lib/catalog/types";
 import { formatMoney } from "@/lib/square/money";
-import { getVariantInventory } from "@/app/actions/locations";
+import { reconcileCartForLocation } from "@/app/actions/locations";
 
 /**
  * The cart.
@@ -34,7 +34,7 @@ export function CartView({ products }: { products: CatalogProduct[] }) {
   const { locationId } = usePickupLocation();
   const [inventoryState, setInventoryState] = useState<{
     locationId: string;
-    values: Record<string, number>;
+    retainedVariantIds: string[];
   } | null>(null);
   const [inventoryErrorLocation, setInventoryErrorLocation] = useState<string | null>(null);
   const toast = useToast();
@@ -42,14 +42,19 @@ export function CartView({ products }: { products: CatalogProduct[] }) {
   useEffect(() => {
     if (!locationId || !items.length) return;
     let canceled = false;
-    void getVariantInventory({
+    void reconcileCartForLocation({
       locationId,
-      variantIds: items.map((item) => item.variantId),
+      items,
     })
-      .then((values) => {
+      .then((result) => {
         if (!canceled) {
-          setInventoryState({ locationId, values });
-          setInventoryErrorLocation(null);
+          if (result) {
+            setInventoryState({ locationId, retainedVariantIds: result.retainedVariantIds });
+            setInventoryErrorLocation(null);
+          } else {
+            setInventoryState(null);
+            setInventoryErrorLocation(locationId);
+          }
         }
       })
       .catch(() => {
@@ -97,7 +102,9 @@ export function CartView({ products }: { products: CatalogProduct[] }) {
   }
 
   const resolved = resolveCart(items, products);
-  const inventory = inventoryState?.locationId === locationId ? inventoryState.values : null;
+  const inventory = inventoryState?.locationId === locationId
+    ? new Set(inventoryState.retainedVariantIds)
+    : null;
   const inventoryError = inventoryErrorLocation === locationId;
 
   return (
@@ -125,7 +132,7 @@ export function CartView({ products }: { products: CatalogProduct[] }) {
       <ul className="flex flex-col gap-4">
         {resolved.lines.map((line) => {
           const image = primaryImage(line.product);
-          const available = inventory?.[line.variant.id];
+          const quantityAvailable = inventory?.has(line.variant.id);
 
           return (
             <li
@@ -169,13 +176,13 @@ export function CartView({ products }: { products: CatalogProduct[] }) {
                     size="sm"
                     label={`Quantity of ${line.product.name}, ${line.variant.name}`}
                     value={line.quantity}
-                    max={Math.max(1, Math.min(50, available ?? 50))}
+                    max={50}
                     onChange={(quantity) => setQuantity(line.variant.id, quantity)}
                   />
 
-                  {available != null && line.quantity > available ? (
+                  {quantityAvailable === false ? (
                     <span className="text-danger text-sm" role="alert">
-                      Only {available} available at this location
+                      Not enough stock for this quantity at this location
                     </span>
                   ) : null}
 
@@ -237,7 +244,7 @@ export function CartView({ products }: { products: CatalogProduct[] }) {
         <p role="status" className="panel p-4 text-sm text-ink-muted">
           Remove the unavailable {resolved.unknownVariantIds.length === 1 ? "item" : "items"} before checkout.
         </p>
-      ) : inventory && resolved.lines.some((line) => line.quantity > (inventory[line.variant.id] ?? 0)) ? (
+      ) : inventory && resolved.lines.some((line) => !inventory.has(line.variant.id)) ? (
         <p role="alert" className="panel border-danger/30 p-4 text-sm text-danger">
           Adjust or remove the items above before choosing a pickup time.
         </p>

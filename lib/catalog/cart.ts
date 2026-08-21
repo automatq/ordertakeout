@@ -100,3 +100,51 @@ export function normalizeCart(cart: readonly CartItem[]): CartItem[] {
     .filter(([, quantity]) => quantity > 0)
     .map(([variantId, quantity]) => ({ variantId, quantity }));
 }
+
+/**
+ * Apply the server's inventory reconciliation after a pickup-location switch.
+ * The browser receives only the ids that remain orderable; quantities are kept
+ * from the existing cart and normalized once so no unavailable line survives.
+ */
+export function retainCartVariants(
+  cart: readonly CartItem[],
+  retainedVariantIds: readonly string[],
+): CartItem[] {
+  const retained = new Set(retainedVariantIds);
+  return normalizeCart(cart.filter((item) => retained.has(item.variantId)));
+}
+
+/**
+ * Compare two cart snapshots by normalized variation quantities.
+ *
+ * Location reconciliation crosses a network boundary. A second tab can change
+ * the cart while that request is in flight, so its response may only be applied
+ * when the cart still matches the exact snapshot the server checked.
+ */
+export function cartSnapshotsMatch(
+  left: readonly CartItem[],
+  right: readonly CartItem[],
+): boolean {
+  const normalized = (items: readonly CartItem[]) => [...normalizeCart(items)]
+    .sort((a, b) => a.variantId.localeCompare(b.variantId));
+  const first = normalized(left);
+  const second = normalized(right);
+  return first.length === second.length && first.every((item, index) => (
+    item.variantId === second[index]?.variantId
+      && item.quantity === second[index]?.quantity
+  ));
+}
+
+/** Remove only the quantities paid for, preserving cart edits from other tabs. */
+export function subtractCartItems(
+  current: readonly CartItem[],
+  purchased: readonly CartItem[],
+): CartItem[] {
+  const purchasedQuantities = new Map(
+    normalizeCart(purchased).map((item) => [item.variantId, item.quantity]),
+  );
+  return normalizeCart(current).flatMap((item) => {
+    const quantity = item.quantity - (purchasedQuantities.get(item.variantId) ?? 0);
+    return quantity > 0 ? [{ ...item, quantity }] : [];
+  });
+}

@@ -16,9 +16,13 @@ import { useState } from "react";
  */
 export function DemoPaymentForm({
   amountLabel,
+  disabled,
+  onProcessingChange,
   onToken,
 }: {
   amountLabel: string;
+  disabled?: boolean;
+  onProcessingChange?: (processing: boolean) => void;
   onToken: (token: string) => Promise<void>;
 }) {
   const [decline, setDecline] = useState(false);
@@ -26,10 +30,12 @@ export function DemoPaymentForm({
 
   async function handlePay() {
     setSubmitting(true);
+    onProcessingChange?.(true);
     try {
       await onToken(decline ? "demo-source-decline" : "demo-source-ok");
     } finally {
       setSubmitting(false);
+      onProcessingChange?.(false);
     }
   }
 
@@ -59,7 +65,7 @@ export function DemoPaymentForm({
       <button
         type="button"
         onClick={handlePay}
-        disabled={submitting}
+        disabled={disabled || submitting}
         className="btn btn-primary btn-block rounded-full px-8"
       >
         {submitting ? (

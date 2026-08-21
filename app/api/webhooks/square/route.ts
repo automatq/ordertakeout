@@ -12,8 +12,9 @@ import { parseSquareEvent } from "@/lib/webhooks/events";
 /**
  * Square webhook endpoint.
  *
- * Subscribe to `payment.updated` and `order.fulfillment.updated` in the Square
- * Developer Console, pointed at this URL. The subscription URL must match
+ * Subscribe to `payment.updated`, `refund.created`, `refund.updated`, and
+ * `order.fulfillment.updated` in the Square Developer Console, pointed at this
+ * URL. The subscription URL must match
  * `SQUARE_WEBHOOK_NOTIFICATION_URL` character for character — it is part of the
  * signed payload, so even a trailing-slash difference fails verification.
  *
@@ -67,21 +68,31 @@ export async function POST(request: Request): Promise<Response> {
   // uncaught the caller gets a bare 500 with no log line explaining it, which is
   // a miserable thing to debug at 6am. Square retries on 5xx, which is the right
   // outcome here since an unreachable database is transient.
-  let alreadyProcessed: boolean;
+  let claim: Awaited<ReturnType<typeof claimEvent>>;
   try {
-    ({ alreadyProcessed } = await claimEvent(event.eventId, event.type, payload));
+    claim = await claimEvent(event.eventId, event.type, payload);
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
     console.error(`[webhooks] could not record ${event.type} (${event.eventId}):`, message);
     return new Response("Could not record event", { status: 503 });
   }
 
-  if (alreadyProcessed) {
+  if (claim.status === "processed") {
     return Response.json({ duplicate: true, eventId: event.eventId });
+  }
+  if (claim.status === "busy") {
+    // Do not acknowledge a still-running duplicate as complete: if the active
+    // worker fails, Square must retry instead of considering the event handled.
+    return new Response("Event is already processing", { status: 503 });
   }
 
   try {
     const outcome = await applySquareEvent(event);
+    if (outcome.retryable) {
+      await recordEventError(event.eventId, outcome.detail);
+      console.warn(`[webhooks] deferred ${event.type}: ${outcome.detail}`);
+      return new Response("Event is waiting for local reconciliation", { status: 503 });
+    }
     await markEventProcessed(event.eventId);
     console.info(`[webhooks] ${event.type}: ${outcome.detail}`);
     return Response.json({ handled: outcome.handled, detail: outcome.detail });

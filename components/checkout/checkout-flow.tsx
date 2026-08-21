@@ -5,15 +5,25 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 
-import { completeCheckout, getCartAvailability, startCheckout } from "@/app/actions/checkout";
+import {
+  abandonCheckout,
+  completeCheckout,
+  getCartAvailability,
+  startCheckout,
+} from "@/app/actions/checkout";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AlertIcon, BagIcon, ClockIcon, MapPinIcon } from "@/components/ui/icons";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCart } from "@/lib/cart/store";
-import { usePickupLocation } from "@/lib/locations/store";
+import {
+  acquirePickupLocationLock,
+  releasePickupLocationLock,
+  usePickupLocation,
+} from "@/lib/locations/store";
+import { checkoutLocationId } from "@/lib/locations/checkout";
 import { getPickupLocations } from "@/app/actions/locations";
 import type { StoreLocation } from "@/lib/locations/types";
-import { resolveCart, type ResolvedCartLine } from "@/lib/catalog/cart";
+import { resolveCart, type CartItem, type ResolvedCartLine } from "@/lib/catalog/cart";
 import { primaryImage, sizedImage } from "@/lib/catalog/images";
 import type { CatalogProduct } from "@/lib/catalog/types";
 import { isDemoModeClient } from "@/lib/demo/config";
@@ -97,10 +107,12 @@ export function CheckoutFlow({
   squareApplicationId: string;
 }) {
   const router = useRouter();
-  const { items, ready, clear } = useCart();
+  const { items, ready, consume } = useCart();
   const { locationId } = usePickupLocation();
   const [locations, setLocations] = useState<StoreLocation[]>([]);
   const [isPending, startTransition] = useTransition();
+  const [paymentBusy, setPaymentBusy] = useState(false);
+  const [paymentProtected, setPaymentProtected] = useState(false);
 
   const [days, setDays] = useState<DayAvailability[] | null>(null);
   const [availabilityProblem, setAvailabilityProblem] = useState<string | null>(null);
@@ -116,16 +128,26 @@ export function CheckoutFlow({
     taxCents: number;
     totalCents: number;
     currency: string;
+    /** Server-validated Square location that owns the order and slot hold. */
+    locationId: string;
     /** The authoritative expiry from the server-side slot claim. */
     expiresAt: number;
+    orderNumber: string;
+    reservationToken: string;
+    /** Exact cart/order presentation accepted by the server-bound request. */
+    cartSnapshot: CartItem[];
+    lines: ResolvedCartLine[];
   } | null>(null);
 
   const errorRef = useRef<HTMLDivElement | null>(null);
   const fieldRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const checkoutLocationLockRef = useRef<string | null>(null);
+  const paymentTokenRef = useRef<string | null>(null);
 
   const resolved = resolveCart(items, products);
-  const subtotalCents = resolved.subtotalCents;
+  const subtotalCents = reserved?.subtotalCents ?? resolved.subtotalCents;
   const currency = reserved?.currency ?? resolved.currency;
+  const effectiveLocationId = checkoutLocationId(locationId, reserved);
   const availabilityKey = locationId
     ? `${locationId}:${items.map((item) => `${item.variantId}:${item.quantity}`).join(",")}`
     : null;
@@ -133,7 +155,7 @@ export function CheckoutFlow({
   // Load availability whenever the cart changes — different products have
   // different lead times, so the offered dates depend on what's in the basket.
   useEffect(() => {
-    if (!ready || items.length === 0) return;
+    if (reserved || !ready || items.length === 0) return;
     let cancelled = false;
 
     if (!locationId) return;
@@ -170,10 +192,20 @@ export function CheckoutFlow({
     return () => {
       cancelled = true;
     };
-  }, [availabilityKey, items, ready, locationId, resolved.ok]);
+  }, [availabilityKey, items, ready, locationId, reserved, resolved.ok]);
 
-  useEffect(() => { void getPickupLocations().then(setLocations).catch(() => setLocations([])); }, []);
-  const location = locations.find((entry) => entry.id === locationId) ?? null;
+  useEffect(() => {
+    void getPickupLocations()
+      .then((result) => setLocations(result.ok ? result.locations : []))
+      .catch(() => setLocations([]));
+  }, []);
+
+  useEffect(() => () => {
+    const lockedLocationId = checkoutLocationLockRef.current;
+    if (lockedLocationId) releasePickupLocationLock(lockedLocationId);
+  }, []);
+
+  const location = locations.find((entry) => entry.id === effectiveLocationId) ?? null;
   const pickupProblem = !locationId
     ? "Choose a pickup location before choosing a time."
     : !resolved.ok
@@ -185,7 +217,7 @@ export function CheckoutFlow({
 
   if (!ready) return <CheckoutSkeleton />;
 
-  if (items.length === 0) {
+  if (!reserved && items.length === 0) {
     return (
       <EmptyState
         icon={<BagIcon className="h-6 w-6" />}
@@ -230,12 +262,25 @@ export function CheckoutFlow({
       return;
     }
     if (!validate() || !pickup) return;
+    if (!locationId) {
+      setError("Choose a pickup location before checkout.");
+      return;
+    }
+
+    const requestedLocationId = locationId;
+    if (!acquirePickupLocationLock(requestedLocationId)) {
+      setError("Another pickup location is already reserved in this checkout. Edit that reservation before changing stores.");
+      return;
+    }
+    checkoutLocationLockRef.current = requestedLocationId;
+    const cartSnapshot = items.map((item) => ({ ...item }));
+    const linesSnapshot = resolved.lines.map((line) => ({ ...line }));
 
     startTransition(async () => {
       try {
         const result = await startCheckout({
-          locationId,
-          cart: items,
+          locationId: requestedLocationId,
+          cart: cartSnapshot,
           pickup,
           customer,
           note: note || undefined,
@@ -243,16 +288,25 @@ export function CheckoutFlow({
         });
 
         if (result.ok) {
+          paymentTokenRef.current = null;
+          setPaymentProtected(false);
           setReserved({
             orderId: result.orderId,
             subtotalCents: result.subtotalCents,
             taxCents: result.taxCents,
             totalCents: result.totalCents,
             currency: result.currency,
+            locationId: result.locationId,
             expiresAt: result.holdExpiresAt.getTime(),
+            orderNumber: result.orderNumber,
+            reservationToken: result.reservationToken,
+            cartSnapshot,
+            lines: linesSnapshot,
           });
           return;
         }
+
+        releaseCheckoutLocationLock();
 
         if (result.failure.kind === "invalid_input") {
           const serverFieldErrors = result.failure.fieldErrors;
@@ -264,6 +318,7 @@ export function CheckoutFlow({
         setError(describeFailure(result.failure));
         errorRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
       } catch {
+        releaseCheckoutLocationLock();
         setError("We couldn't reserve that pickup time. Check your connection and try again.");
         errorRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
       }
@@ -272,23 +327,81 @@ export function CheckoutFlow({
 
   async function handleToken(token: string) {
     if (!reserved) return;
+    const reservation = reserved;
+    paymentTokenRef.current = token;
     let result;
     try {
-      result = await completeCheckout({ orderId: reserved.orderId, sourceId: token });
+      result = await completeCheckout({ orderId: reservation.orderId, sourceId: token });
     } catch {
-      setError("We couldn't reach payment services. Your card was not charged; please try again.");
+      // A lost browser response cannot tell us whether Square received the
+      // payment. Keep both reservations protected until an exact retry settles
+      // the same server-side attempt.
+      setPaymentProtected(true);
+      setError("We couldn't confirm the payment result. Your order is protected while we check it; you won't be charged twice.");
       return;
     }
 
     if (!result.ok) {
       setError(result.message);
-      // A lapsed reservation means the whole selection must be redone.
-      if (result.code === "HOLD_EXPIRED" || result.code === "STOCK_CHANGED") setReserved(null);
+      if (result.reservationProtected) {
+        setPaymentProtected(true);
+        return;
+      }
+      if (result.holdExpiresAt) {
+        paymentTokenRef.current = null;
+        setPaymentProtected(false);
+        setReserved((current) => current?.orderId === reservation.orderId
+          ? { ...current, expiresAt: result.holdExpiresAt!.getTime() }
+          : current);
+        return;
+      }
+      if (result.code !== "RATE_LIMITED" && result.code !== "INVALID_INPUT") {
+        await settleReservation(reservation, {
+          canceledMessage: result.message,
+          failureMessage: "We couldn't verify that the reservation was released. Please try again or call the store before placing another order.",
+        });
+      }
       return;
     }
 
-    clear();
+    releaseCheckoutLocationLock();
+    paymentTokenRef.current = null;
+    setPaymentProtected(false);
+    consume(reservation.cartSnapshot);
     router.push(`/orders/${result.orderNumber}?key=${encodeURIComponent(result.accessToken)}`);
+  }
+
+  function handleEditOrder() {
+    if (!reserved) return;
+    const reservation = reserved;
+    startTransition(async () => {
+      await settleReservation(reservation, {
+        canceledMessage: null,
+        failureMessage: "We couldn't release this reservation. Please try again before editing your order.",
+      });
+    });
+  }
+
+  function handleReservationExpiry() {
+    if (!reserved || paymentProtected) return;
+    const reservation = reserved;
+    startTransition(async () => {
+      await settleReservation(reservation, {
+        canceledMessage: "Your pickup-time hold expired. Please choose a time again.",
+        failureMessage: "Your hold expired, but we couldn't confirm its release. Please try again or call the store.",
+      });
+    });
+  }
+
+  async function checkPaymentStatus() {
+    const token = paymentTokenRef.current;
+    if (!token || paymentBusy) return;
+    setPaymentBusy(true);
+    try {
+      await handleToken(token);
+    } finally {
+      setPaymentBusy(false);
+    }
   }
 
   const step = reserved ? 3 : pickup ? 2 : 1;
@@ -297,7 +410,7 @@ export function CheckoutFlow({
     <div className="flex flex-col gap-8">
       <Steps current={step} />
 
-      {!resolved.ok ? (
+      {!reserved && !resolved.ok ? (
         <div
           role="alert"
           className="panel border-danger/30 flex flex-wrap items-center justify-between gap-3 rounded-[1.5rem] p-4 sm:px-6"
@@ -515,13 +628,17 @@ export function CheckoutFlow({
                     </h2>
                   </div>
                 </div>
-                <HoldCountdown
-                  expiresAt={reserved.expiresAt}
-                  onExpire={() => {
-                    setReserved(null);
-                    setError("Your pickup-time hold expired. Please choose a time again.");
-                  }}
-                />
+                {paymentProtected ? (
+                  <span className="tag tag-accent" role="status">
+                    <ClockIcon className="h-4 w-4" />
+                    Payment syncing
+                  </span>
+                ) : (
+                  <HoldCountdown
+                    expiresAt={reserved.expiresAt}
+                    onExpire={handleReservationExpiry}
+                  />
+                )}
               </div>
 
               {pickup ? (
@@ -530,19 +647,13 @@ export function CheckoutFlow({
                     <span className="text-ink-subtle">Collecting</span>{" "}
                     {formatStoreDate(pickup.date, "long")} at {formatPickupTime(pickup.time)}
                   </p>
-                  {/* Leaves the existing hold in place to expire on its own —
-                      the same outcome as abandoning the tab, and far better than
-                      trapping someone on a payment screen with a typo in their
-                      phone number and no way back. */}
                   <button
                     type="button"
-                    onClick={() => {
-                      setReserved(null);
-                      setError(null);
-                    }}
+                    onClick={handleEditOrder}
+                    disabled={isPending || paymentBusy || paymentProtected}
                     className="btn btn-ghost btn-sm rounded-full"
                   >
-                    Edit order details
+                    {isPending ? "Releasing reservation…" : "Edit order details"}
                   </button>
                 </div>
               ) : null}
@@ -553,16 +664,41 @@ export function CheckoutFlow({
                 </p>
               ) : null}
 
+              {paymentProtected ? (
+                <div className="panel border-accent/30 bg-accent-soft flex flex-col gap-3 p-5">
+                  <p className="text-ink text-sm">
+                    We&rsquo;re confirming this payment with Square. Your pickup time and items remain reserved, and retrying the status check cannot charge you twice.
+                  </p>
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={() => void checkPaymentStatus()}
+                      disabled={paymentBusy}
+                      className="btn btn-primary btn-sm rounded-full"
+                    >
+                      {paymentBusy ? "Checking…" : "Check payment status"}
+                    </button>
+                    <a href={STORE_INFO.phoneHref} className="btn btn-secondary btn-sm rounded-full">
+                      Call {STORE_INFO.phone}
+                    </a>
+                  </div>
+                </div>
+              ) : null}
+
               {isDemoModeClient() ? (
                 <DemoPaymentForm
                   amountLabel={formatMoney(reserved.totalCents, currency)}
+                  disabled={paymentProtected}
+                  onProcessingChange={setPaymentBusy}
                   onToken={handleToken}
                 />
               ) : (
                 <PaymentForm
                   applicationId={squareApplicationId}
-                  locationId={locationId ?? ""}
+                  locationId={reserved.locationId}
                   amountLabel={formatMoney(reserved.totalCents, currency)}
+                  disabled={paymentProtected}
+                  onProcessingChange={setPaymentBusy}
                   onToken={handleToken}
                 />
               )}
@@ -571,7 +707,7 @@ export function CheckoutFlow({
         </div>
 
         <OrderSummary
-          lines={resolved.ok ? resolved.lines : []}
+          lines={reserved?.lines ?? (resolved.ok ? resolved.lines : [])}
           subtotalCents={subtotalCents}
           taxCents={reserved?.taxCents ?? null}
           totalCents={reserved?.totalCents ?? subtotalCents}
@@ -582,6 +718,54 @@ export function CheckoutFlow({
       </div>
     </div>
   );
+
+  function releaseCheckoutLocationLock() {
+    const lockedLocationId = checkoutLocationLockRef.current;
+    if (!lockedLocationId) return;
+    releasePickupLocationLock(lockedLocationId);
+    checkoutLocationLockRef.current = null;
+  }
+
+  async function settleReservation(
+    reservation: NonNullable<typeof reserved>,
+    messages: { canceledMessage: string | null; failureMessage: string },
+  ): Promise<void> {
+    try {
+      const result = await abandonCheckout({
+        orderId: reservation.orderId,
+        orderNumber: reservation.orderNumber,
+        reservationToken: reservation.reservationToken,
+      });
+      if (!result.ok) {
+        setError(messages.failureMessage);
+        return;
+      }
+
+      if (result.outcome === "payment_in_progress") {
+        setPaymentProtected(true);
+        setError("This payment is already processing. Your order remains protected while Square confirms it.");
+        return;
+      }
+      if (result.outcome === "already_paid") {
+        releaseCheckoutLocationLock();
+        paymentTokenRef.current = null;
+        setPaymentProtected(false);
+        consume(reservation.cartSnapshot);
+        router.push(`/orders/${reservation.orderNumber}?key=${encodeURIComponent(reservation.reservationToken)}`);
+        return;
+      }
+
+      releaseCheckoutLocationLock();
+      paymentTokenRef.current = null;
+      setPaymentProtected(false);
+      setReserved((current) => current?.orderId === reservation.orderId ? null : current);
+      setError(result.outcome === "not_found"
+        ? "We couldn't find this reservation. Your order was not submitted; please review your cart before trying again."
+        : messages.canceledMessage);
+    } catch {
+      setError(messages.failureMessage);
+    }
+  }
 }
 
 function Steps({ current }: { current: 1 | 2 | 3 }) {
@@ -875,6 +1059,8 @@ function describeFailure(failure: { kind: string }): string {
       return "We don't have enough of an item at this pickup location. Please review the quantities in your order.";
     case "catalog_unavailable":
       return "We can't reach our menu right now. Please try again shortly or call the store.";
+    case "rate_limited":
+      return "Too many checkout attempts were started. Wait a few minutes, then try again.";
     default:
       return "We couldn't start checkout. Please try again.";
   }
