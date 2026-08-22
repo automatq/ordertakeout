@@ -78,6 +78,19 @@ npm run dev
 Notification channels are all optional; an unset channel is skipped by the dispatcher, so
 the store can enable one later without a code change.
 
+### Accounting handoff
+
+Square remains the sales, payment, refund, fee, and payout system of record; this app is
+not an ERP. Staff can open **Sales & orders** and choose **Accounting export** to download a
+private CSV that imports into any accounting package (QuickBooks, Xero, Wave, Sage, Zoho,
+FreshBooks, or a bookkeeper's worksheet). Each row is one payment or completed refund,
+dated at the pickup location and carrying the Square order/payment/refund references,
+location, currency, net sales, tax, and gross amount. It contains no customer data.
+
+Map the CSV's sales and refund columns to the business's chart of accounts and tax codes in
+the destination software. Import Square processing fees and payouts from Square's own
+connection or payout export, not from this CSV, so fees and deposits are never duplicated.
+
 ## Scripts
 
 | Command | Purpose |

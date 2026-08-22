@@ -36,6 +36,7 @@ const PLOT_HEIGHT = "h-44";
 export function SalesAnalytics({ data, locations, locationId }: { data: SalesAnalytics; locations: StoreLocation[]; locationId?: string }) {
   const { current, previous, currency } = data;
   const csvHref = `data:text/csv;charset=utf-8,${encodeURIComponent(salesAnalyticsCsv(data))}`;
+  const accountingHref = `/api/staff/accounting-export?from=${encodeURIComponent(data.from)}&to=${encodeURIComponent(data.to)}${locationId ? `&location=${encodeURIComponent(locationId)}` : ""}`;
 
   return (
     <div className="flex flex-col gap-8">
@@ -83,12 +84,18 @@ export function SalesAnalytics({ data, locations, locationId }: { data: SalesAna
         >
           Export CSV
         </a>
+        <a href={accountingHref} className="btn btn-ghost btn-sm">
+          Accounting export
+        </a>
       </form>
 
       <p className="text-ink-subtle -mt-4 text-sm">
         Pickups from {formatStoreDate(data.from, "medium")} to{" "}
         {formatStoreDate(data.to, "medium")}, compared with the previous{" "}
         {data.days === 1 ? "day" : `${data.days} days`}.
+      </p>
+      <p className="text-ink-subtle -mt-5 text-xs">
+        Accounting export is grouped by payment and completed-refund date, not pickup date. Import Square processing fees from Square payout data to avoid duplicate entries.
       </p>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
