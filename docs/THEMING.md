@@ -28,16 +28,15 @@ reference semantic utilities — `bg-surface`, `text-ink-muted`, `border-border`
 Two rules keep the swap cheap:
 
 1. **Token names describe purpose, not appearance.** `--color-surface`, not
-   `--color-white`. `--color-status-ready`, not `--color-green`. A literal name becomes a
+   `--color-white`. `--color-status-ready`, not a hue-specific name. A literal name becomes a
    lie the moment the brand changes, and then nobody dares touch it.
 
 2. **Components use tokens only.** No `bg-[#8B5CF6]`, and no stock Tailwind palette
    (`slate-*`, `purple-*`) either — those aren't swappable, which defeats the point.
 
-The current values are the storefront brand: a warm cream canvas with white cards floating
-on it, a rust red for primary actions that *brightens* on hover, and gold plus green as the
-two accents — gold for highlights and price flags, green for confirmation. Headings and
-prices are set in Bebas Neue, interface text in Poppins (both self-hosted by `next/font` in
+The current values come directly from the Harina logo: a warm cream canvas with white cards
+floating on it, rust and burgundy reds for actions and confirmations, and gold for highlights
+and price flags. Headings and prices are set in Bebas Neue, interface text in Poppins (both self-hosted by `next/font` in
 `app/layout.tsx`, which exposes them as `--font-poppins` / `--font-bebas-neue`). The house
 voice is light and tightly tracked, never heavy.
 

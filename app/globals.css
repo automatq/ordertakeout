@@ -18,7 +18,7 @@
    touching components.
 
    The palette is the storefront brand: a warm cream canvas with white cards, a
-   rust-red primary that brightens on hover, and gold + green as the two accents.
+   rust-red primary that brightens on hover, with gold as its supporting accent.
    Type is Bebas Neue for display and Poppins for interface text, set light and
    tightly tracked — the house look is airy and generous, never heavy.
 
@@ -26,7 +26,7 @@
 
      1. Token names are SEMANTIC (what it's for), never literal (what it looks
         like). `--color-surface`, not `--color-cream`. `--color-status-ready`,
-        not `--color-green`. A literal name becomes a lie the moment the brand
+        not a hue-specific name. A literal name becomes a lie the moment the brand
         changes, and then nobody dares touch it.
 
      2. Components use token utilities only — `bg-surface`, `text-ink`,
@@ -110,11 +110,11 @@
   --color-accent-soft: #fff3d4;
   --color-accent-ink: #805718;
 
-  /* Supporting storefront green from the original bakery theme. It is kept
-     separate from order-status green so decoration never changes semantics. */
-  --color-secondary: #1c7755;
-  --color-secondary-hover: #155e44;
-  --color-secondary-soft: #e3f2eb;
+  /* Supporting burgundy from the Harina logo. This keeps supporting surfaces,
+     pickup details and confirmations within the logo's red-and-gold palette. */
+  --color-secondary: #a8321c;
+  --color-secondary-hover: #ce3f23;
+  --color-secondary-soft: #fbe9e5;
   --color-secondary-ink: #ffffff;
 
   /* --- Order status ---------------------------------------------------------
@@ -127,8 +127,8 @@
   --color-status-new-soft: #fbe9e5;
   --color-status-preparing: #8a5a00;
   --color-status-preparing-soft: #fff3d4;
-  --color-status-ready: #1c7755;
-  --color-status-ready-soft: #e3f2eb;
+  --color-status-ready: #a8321c;
+  --color-status-ready-soft: #fbe9e5;
   --color-status-completed: #6b6157;
   --color-status-completed-soft: #f0ebe1;
   --color-status-canceled: #3a352f;
@@ -137,7 +137,7 @@
   /* --- Feedback -------------------------------------------------------------
      Danger sits deeper than --color-brand so a destructive action still reads
      as distinct from an ordinary primary button in this red-forward palette. */
-  --color-success: #1c7755;
+  --color-success: #a8321c;
   --color-warning: #8a5a00;
   --color-danger: #b3331b;
   --color-danger-soft: #fbe9e5;
@@ -1082,7 +1082,7 @@
   }
 
   /* Descriptive pill — NOT a status.
-     `.badge-*` carries order-lifecycle meaning (green = ready, amber =
+     `.badge-*` carries order-lifecycle meaning (rust = ready, gold =
      preparing). Reusing those for "Uber Eats" or a price flag makes the one
      thing staff must read at a glance ambiguous, so neutral labels get this
      instead. */
