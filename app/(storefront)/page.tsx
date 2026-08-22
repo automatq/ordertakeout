@@ -390,7 +390,7 @@ function FreshlyBaked() {
             fill
             placeholder="blur"
             sizes="(max-width: 1024px) 100vw, 50vw"
-            className="object-cover"
+            className="home-editorial-image home-editorial-image--fresh object-cover"
           />
         </div>
 
@@ -530,7 +530,7 @@ async function Visit() {
             fill
             placeholder="blur"
             sizes="(max-width: 1024px) 100vw, 50vw"
-            className="object-cover"
+            className="home-editorial-image home-editorial-image--visit object-cover"
           />
         </div>
 

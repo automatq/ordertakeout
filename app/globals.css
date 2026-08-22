@@ -561,6 +561,19 @@
     border-radius: 2.5rem;
     background: var(--color-surface);
   }
+
+  /* These two source photos are portrait social images with decorative framing
+     baked into their edges. The homepage presents them as wide editorial
+     frames, so use deliberate focal crops rather than showing a sliver of the
+     source artwork beside the bread. */
+  .home-editorial-image--fresh {
+    transform: scale(1.32);
+    transform-origin: right center;
+  }
+  .home-editorial-image--visit {
+    transform: scale(1.52);
+    transform-origin: left center;
+  }
   .storefront-hero-pickup {
     min-height: 5rem;
     border-radius: 1.5rem;
