@@ -87,6 +87,8 @@ async function main() {
         isOrderable: true,
         sortOrder: rule.sortOrder,
         descriptionMd: product?.description ?? null,
+        allergens: [...rule.allergens],
+        dietaryTags: [...rule.dietaryTags],
         updatedAt: new Date(),
       };
 

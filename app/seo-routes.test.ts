@@ -56,6 +56,7 @@ describe("sitemap", () => {
     const urls = (await sitemap()).map((entry) => entry.url);
     expect(urls).toEqual([
       "https://harinabakeshoppe.com/",
+      "https://harinabakeshoppe.com/menu",
       "https://harinabakeshoppe.com/privacy",
       "https://harinabakeshoppe.com/terms",
       "https://harinabakeshoppe.com/refund-policy",
@@ -68,7 +69,7 @@ describe("sitemap", () => {
     mocks.storePublicUrl = "https://harinabakeshoppe.com/";
     const urls = (await sitemap()).map((entry) => entry.url);
     expect(urls[0]).toBe("https://harinabakeshoppe.com/");
-    expect(urls[1]).toBe("https://harinabakeshoppe.com/privacy");
+    expect(urls[1]).toBe("https://harinabakeshoppe.com/menu");
   });
 
   it("is empty without a public URL and on sandbox deployments", async () => {
@@ -85,6 +86,7 @@ describe("sitemap", () => {
     const urls = (await sitemap()).map((entry) => entry.url);
     expect(urls).toEqual([
       "https://harinabakeshoppe.com/",
+      "https://harinabakeshoppe.com/menu",
       "https://harinabakeshoppe.com/privacy",
       "https://harinabakeshoppe.com/terms",
       "https://harinabakeshoppe.com/refund-policy",

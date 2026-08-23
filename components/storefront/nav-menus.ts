@@ -115,4 +115,7 @@ const visitMenu: MegaMenu = {
 export const megaMenus: MegaMenu[] = [orderMenu, visitMenu];
 
 /** Plain links shown to the right of the megamenu triggers. */
-export const plainNavLinks: PlainNavLink[] = [{ href: "/orders", label: "Track order" }];
+export const plainNavLinks: PlainNavLink[] = [
+  { href: "/menu", label: "Menu" },
+  { href: "/orders", label: "Track order" },
+];

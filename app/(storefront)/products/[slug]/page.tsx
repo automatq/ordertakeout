@@ -6,6 +6,7 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 
 import { AddToCart } from "@/components/cart/add-to-cart";
+import { DietaryInfo } from "@/components/catalog/dietary-info";
 import { ProductGrid } from "@/components/product-grid";
 import { ArrowLeftIcon, ClockIcon, LoafIcon, MapPinIcon } from "@/components/ui/icons";
 import { productImages, sizedImage } from "@/lib/catalog/images";
@@ -87,6 +88,8 @@ export default async function ProductPage({ params }: PageProps) {
               biggest constraint on this purchase, and customers were choosing a
               size before finding out the tray needs a day's notice. */}
           <OrderingRules product={product} />
+
+          <DietaryInfo allergens={product.allergens} dietaryTags={product.dietaryTags} />
 
           <AddToCart
             variants={product.variants}

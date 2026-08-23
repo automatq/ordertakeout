@@ -81,6 +81,8 @@ export async function saveProductRulesAction(formData: FormData): Promise<AdminR
     isOrderable: parsed.data.isOrderable,
     descriptionMd: parsed.data.descriptionMd ?? null,
     heroImageUrl: parsed.data.heroImageUrl ?? null,
+    allergens: parsed.data.allergens,
+    dietaryTags: parsed.data.dietaryTags,
   });
 
   updateTag(PRODUCT_CONFIG_TAG);

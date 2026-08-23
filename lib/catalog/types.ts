@@ -1,3 +1,4 @@
+import type { Allergen, DietaryTag } from "@/lib/catalog/dietary";
 import type { ProductRule } from "@/lib/scheduling/availability";
 
 /**
@@ -58,6 +59,9 @@ export interface StoreProduct extends CatalogProduct {
   heroImageUrl: string | null;
   descriptionMd: string | null;
   sortOrder: number;
+  /** From lib/catalog/dietary.ts's fixed vocabulary. Empty = not stated, never "free from". */
+  allergens: Allergen[];
+  dietaryTags: DietaryTag[];
 }
 
 export type SkipReason =

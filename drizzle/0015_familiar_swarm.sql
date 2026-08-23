@@ -1,0 +1,2 @@
+ALTER TABLE "products_config" ADD COLUMN "allergens" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "products_config" ADD COLUMN "dietary_tags" jsonb DEFAULT '[]'::jsonb NOT NULL;

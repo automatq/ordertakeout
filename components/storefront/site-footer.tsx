@@ -69,6 +69,12 @@ export function SiteFooter({ locations = [] }: { locations?: StoreLocation[] }) 
           <div className="bg-canvas/5 border-canvas/10 flex flex-col gap-2 rounded-[1.5rem] border p-5">
             <h3 className="font-display text-accent text-2xl font-normal uppercase">Orders</h3>
             <Link
+              href="/menu"
+              className="text-canvas/75 hover:text-accent flex min-h-11 items-center text-sm transition-colors"
+            >
+              Menu
+            </Link>
+            <Link
               href="/#trays"
               className="text-canvas/75 hover:text-accent flex min-h-11 items-center text-sm transition-colors"
             >

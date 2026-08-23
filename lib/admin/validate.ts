@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { validateAllergens, validateDietaryTags } from "@/lib/catalog/dietary";
 import { isAllowedProductImageSource } from "@/lib/catalog/image-policy";
 import { compareTimes, normalizeTime, type StoreTime } from "@/lib/scheduling/time";
 
@@ -95,7 +96,33 @@ export const productRulesSchema = z.object({
     )
     .optional()
     .transform((value) => (value ? value : null)),
+  /**
+   * Comma-separated tokens from the chip pickers — same transport as
+   * pickupTimes. The fixed vocabulary lives in lib/catalog/dietary.ts; unknown
+   * tokens are a hard validation error because a chip UI can only produce them
+   * via a forged request, and this is a health-claim surface.
+   */
+  allergens: dietaryTokenField(validateAllergens, (result) => result.ok ? result.allergens : null),
+  dietaryTags: dietaryTokenField(validateDietaryTags, (result) => result.ok ? result.tags : null),
 });
+
+function dietaryTokenField<Result extends { ok: boolean }, Value>(
+  validate: (values: readonly string[]) => Result,
+  extract: (result: Result) => Value | null,
+) {
+  return z
+    .string()
+    .optional()
+    .transform((raw, ctx) => {
+      const tokens = (raw ?? "").split(",").map((token) => token.trim()).filter(Boolean);
+      const value = extract(validate(tokens));
+      if (value === null) {
+        ctx.addIssue({ code: "custom", message: "Pick from the listed options only" });
+        return z.NEVER;
+      }
+      return value;
+    });
+}
 
 export type ProductRulesInput = z.input<typeof productRulesSchema>;
 

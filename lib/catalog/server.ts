@@ -15,6 +15,7 @@ import { squareClient } from "@/lib/square/client";
 import { getInStockVariationIds } from "@/lib/inventory/server";
 import { getStoreLocation } from "@/lib/locations/server";
 
+import { parseAllergens, parseDietaryTags, type Allergen, type DietaryTag } from "./dietary";
 import { attachImageUrls, collectImageIds, extractImageUrls } from "./images";
 import { mapCatalogItems } from "./map";
 import type { CatalogProduct, SkippedCatalogObject, StoreProduct } from "./types";
@@ -133,6 +134,8 @@ interface ProductConfigRow {
   sortOrder: number;
   heroImageUrl: string | null;
   descriptionMd: string | null;
+  allergens: Allergen[];
+  dietaryTags: DietaryTag[];
 }
 
 /**
@@ -161,6 +164,8 @@ async function fetchProductConfig(): Promise<{ rows: ProductConfigRow[]; error?:
         sortOrder: row.sortOrder,
         heroImageUrl: row.heroImageUrl,
         descriptionMd: row.descriptionMd,
+        allergens: parseAllergens(row.allergens),
+        dietaryTags: parseDietaryTags(row.dietaryTags),
       })),
     };
   } catch (cause) {
@@ -216,6 +221,8 @@ export async function getStoreCatalog(): Promise<StoreCatalog> {
       heroImageUrl: rules.heroImageUrl,
       descriptionMd: rules.descriptionMd,
       sortOrder: rules.sortOrder,
+      allergens: rules.allergens,
+      dietaryTags: rules.dietaryTags,
       rule: {
         productId: rules.productId,
         leadTimeDays: rules.leadTimeDays,

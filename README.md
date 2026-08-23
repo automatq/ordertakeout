@@ -289,8 +289,10 @@ phases in [`docs/SCOPE.md`](docs/SCOPE.md).
 ## Admin
 
 `/staff/settings`. Staff can set each product's lead time, cutoff, pickup times and daily
-tray cap; add closure dates; cap or close individual pickup slots; and pull item names and
-prices from Square on demand.
+tray cap; pick its allergens and dietary notes from a fixed vocabulary
+(`lib/catalog/dietary.ts` — chips, never free text, because it's a health-claim surface);
+add closure dates; cap or close individual pickup slots; and pull item names and prices
+from Square on demand.
 
 - **Products Square knows about but we have no rules for are listed first**, flagged as not
   yet orderable. They can't be sold without a cutoff — that would mean promising a pickup

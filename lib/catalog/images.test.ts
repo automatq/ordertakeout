@@ -30,6 +30,8 @@ function storeProduct(overrides: Partial<StoreProduct> = {}): StoreProduct {
     heroImageUrl: null,
     descriptionMd: null,
     sortOrder: 0,
+    allergens: [],
+    dietaryTags: [],
     rule: {
       productId: "ITEM_1",
       leadTimeDays: 1,

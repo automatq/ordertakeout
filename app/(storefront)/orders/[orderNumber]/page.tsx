@@ -8,6 +8,7 @@ import { OrderProgress } from "@/components/orders/order-progress";
 import { OrderRefresher } from "@/components/orders/order-refresher";
 import { AlertIcon, CalendarIcon, ClockIcon, LoafIcon, MapPinIcon, PhoneIcon } from "@/components/ui/icons";
 import { LoadingRegion, Skeleton } from "@/components/ui/skeleton";
+import { ALLERGEN_DISCLAIMER, ALLERGEN_LABELS } from "@/lib/catalog/dietary";
 import { googleCalendarUrl } from "@/lib/orders/calendar-link";
 import { getOrderByNumber } from "@/lib/orders/lookup";
 import { formatPickupTime, formatStoreDate } from "@/lib/scheduling/time";
@@ -288,8 +289,17 @@ async function OrderDetail({ params, searchParams }: PageProps) {
                     <LoafIcon className="h-6 w-6" />
                   )}
                 </span>
-                <span className="text-ink min-w-0 flex-1">
-                  {item.quantity} &times; {item.nameSnapshot}
+                <span className="min-w-0 flex-1">
+                  <span className="text-ink block">
+                    {item.quantity} &times; {item.nameSnapshot}
+                  </span>
+                  {/* Live catalog values, not an order-time snapshot: a recipe
+                      change should update what the customer sees. */}
+                  {product && product.allergens.length > 0 ? (
+                    <span className="text-ink-subtle block text-xs">
+                      Contains {product.allergens.map((allergen) => ALLERGEN_LABELS[allergen].toLowerCase()).join(", ")}
+                    </span>
+                  ) : null}
                 </span>
                 <span className="text-ink shrink-0 font-semibold tabular-nums">
                   {formatMoney(item.totalPriceCents, order.currency)}
@@ -298,6 +308,13 @@ async function OrderDetail({ params, searchParams }: PageProps) {
             );
           })}
         </ul>
+
+        {order.items.some((item) => {
+          const product = item.squareProductId ? productsById.get(item.squareProductId) : null;
+          return product ? product.allergens.length > 0 : false;
+        }) ? (
+          <p className="text-ink-subtle text-xs">{ALLERGEN_DISCLAIMER}</p>
+        ) : null}
 
         <dl className="flex flex-col gap-2">
           <div className="text-ink-muted flex items-baseline justify-between text-sm">

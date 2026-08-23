@@ -123,6 +123,14 @@ export const productsConfig = pgTable(
     heroImageUrl: text("hero_image_url"),
     descriptionMd: text("description_md"),
 
+    /**
+     * Tokens from lib/catalog/dietary.ts's fixed vocabulary — free text is
+     * rejected at the action layer, and unknown stored tokens are filtered on
+     * read. Empty means "not stated", never "free from".
+     */
+    allergens: jsonb("allergens").$type<string[]>().notNull().default([]),
+    dietaryTags: jsonb("dietary_tags").$type<string[]>().notNull().default([]),
+
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

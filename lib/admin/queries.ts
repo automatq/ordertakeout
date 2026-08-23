@@ -2,6 +2,7 @@ import "server-only";
 
 import { and, asc, desc, eq, gte, isNotNull, lt, or, sql } from "drizzle-orm";
 
+import { parseAllergens, parseDietaryTags, type Allergen, type DietaryTag } from "@/lib/catalog/dietary";
 import { db } from "@/lib/db";
 import { blackoutDates, notificationLog, orders, productAvailabilityOverrides, productsConfig, slotCapacity, webhookEvents } from "@/lib/db/schema";
 import { serverEnv } from "@/lib/env";
@@ -58,6 +59,8 @@ export interface ProductRuleRow {
   sortOrder: number;
   descriptionMd: string | null;
   heroImageUrl: string | null;
+  allergens: Allergen[];
+  dietaryTags: DietaryTag[];
 }
 
 export async function listProductRules(): Promise<ProductRuleRow[]> {
@@ -77,6 +80,8 @@ export async function listProductRules(): Promise<ProductRuleRow[]> {
     sortOrder: row.sortOrder,
     descriptionMd: row.descriptionMd,
     heroImageUrl: row.heroImageUrl,
+    allergens: parseAllergens(row.allergens),
+    dietaryTags: parseDietaryTags(row.dietaryTags),
   }));
 }
 
@@ -96,6 +101,8 @@ export async function saveProductRules(input: {
   isOrderable: boolean;
   descriptionMd: string | null;
   heroImageUrl: string | null;
+  allergens: Allergen[];
+  dietaryTags: DietaryTag[];
 }): Promise<void> {
   const values = {
     squareCatalogObjectId: input.productId,
@@ -107,6 +114,8 @@ export async function saveProductRules(input: {
     isOrderable: input.isOrderable,
     descriptionMd: input.descriptionMd,
     heroImageUrl: input.heroImageUrl,
+    allergens: input.allergens,
+    dietaryTags: input.dietaryTags,
     updatedAt: new Date(),
   };
 
