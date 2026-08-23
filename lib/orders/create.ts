@@ -7,7 +7,8 @@ import { and, eq, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { resolveCart, toSchedulingCart, type CartItem } from "@/lib/catalog/cart";
 import { getOrderableProducts } from "@/lib/catalog/server";
 import { db } from "@/lib/db";
-import { orderItems, orders, slotHolds } from "@/lib/db/schema";
+import { customerAccounts, loyaltyEntries, orderItems, orders, slotHolds } from "@/lib/db/schema";
+import { REWARD_DISCOUNT_CENTS, REWARD_POINTS } from "@/lib/accounts/loyalty";
 import { reserveSlotWithin } from "@/lib/scheduling/queries";
 import { slotKey, type SelectionRejection } from "@/lib/scheduling/availability";
 import { normalizeTime, type StoreDate, type StoreTime } from "@/lib/scheduling/time";
@@ -99,7 +100,8 @@ export type CreateOrderFailure =
       kind: "price_changed";
       shownCents: number;
       actualCents: number;
-    };
+    }
+  | { kind: "reward_unavailable" };
 
 export type CreateOrderResult =
   | {
@@ -124,6 +126,9 @@ export async function createPendingOrder(input: {
   note?: string;
   /** Total shown to the customer, in cents — compared against Square's own. */
   expectedTotalCents: number;
+  /** Set only when this signed-in account has chosen an available reward. */
+  accountId?: string;
+  redeemReward?: boolean;
 }): Promise<CreateOrderResult> {
   if (input.cart.length === 0) {
     return { ok: false, failure: { kind: "empty_cart" } };
@@ -175,6 +180,10 @@ export async function createPendingOrder(input: {
 
   const pickup = { date: input.pickup.date, time: normalizeTime(input.pickup.time) };
   const schedulingCart = toSchedulingCart(resolved.lines);
+  const rewardDiscountCents = input.redeemReward ? REWARD_DISCOUNT_CENTS : 0;
+  if (rewardDiscountCents && (!input.accountId || resolved.subtotalCents < rewardDiscountCents)) {
+    return { ok: false, failure: { kind: "reward_unavailable" } };
+  }
   let orderNumber: string | undefined;
   let created: { orderId: string; expiresAt: Date } | undefined;
 
@@ -186,6 +195,15 @@ export async function createPendingOrder(input: {
 
     try {
       created = await db().transaction(async (tx) => {
+        if (input.redeemReward && input.accountId) {
+          // Serialize redemptions for this account. A balance check outside this
+          // lock would let two tabs spend the same 100 points.
+          await tx.execute(sql`select id from ${customerAccounts} where ${customerAccounts.id} = ${input.accountId} for update`);
+          const [balance] = await tx.select({
+            points: sql<number>`coalesce(sum(${loyaltyEntries.points}), 0)`,
+          }).from(loyaltyEntries).where(eq(loyaltyEntries.customerAccountId, input.accountId));
+          if (Number(balance?.points ?? 0) < REWARD_POINTS) throw new RewardUnavailableError();
+        }
         const [order] = await tx
           .insert(orders)
           .values({
@@ -193,6 +211,7 @@ export async function createPendingOrder(input: {
             customerName: input.customer.name,
             customerEmail: input.customer.email,
             customerPhone: input.customer.phone,
+            customerAccountId: input.accountId ?? null,
             squareLocationId: location.id,
             ...{
               pickupLocationName: location.name,
@@ -249,11 +268,23 @@ export async function createPendingOrder(input: {
           throw new InventoryRejectedError(inventoryClaim.shortages);
         }
 
+        if (input.redeemReward && input.accountId) {
+          await tx.insert(loyaltyEntries).values({
+            customerAccountId: input.accountId,
+            orderId: order.id,
+            kind: "redeemed",
+            points: -REWARD_POINTS,
+          });
+        }
+
         return { orderId: order.id, expiresAt: claim.expiresAt };
       });
       orderNumber = candidateOrderNumber;
       break;
     } catch (cause) {
+      if (cause instanceof RewardUnavailableError) {
+        return { ok: false, failure: { kind: "reward_unavailable" } };
+      }
       if (cause instanceof SlotRejectedError) {
         return { ok: false, failure: { kind: "slot_rejected", rejection: cause.rejection } };
       }
@@ -293,6 +324,7 @@ export async function createPendingOrder(input: {
       customer: input.customer,
       note: input.note ?? null,
       timeZone: location.timezone ?? undefined,
+      rewardDiscountCents,
     });
   } catch (cause) {
     // A failed Square/network call must not leave a live hold consuming this
@@ -364,6 +396,13 @@ class InventoryRejectedError extends Error {
   constructor(readonly shortages: InventoryShortage[]) {
     super("Location inventory was claimed by another checkout");
     this.name = "InventoryRejectedError";
+  }
+}
+
+class RewardUnavailableError extends Error {
+  constructor() {
+    super("Reward is no longer available");
+    this.name = "RewardUnavailableError";
   }
 }
 

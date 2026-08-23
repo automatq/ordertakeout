@@ -31,6 +31,8 @@ export interface SquareOrderInput {
   customer: { name: string; email: string; phone: string };
   note?: string | null;
   timeZone?: string;
+  /** Optional account reward applied as an order-level fixed discount. */
+  rewardDiscountCents?: number;
 }
 
 export interface SquareDraftOrder {
@@ -64,7 +66,7 @@ export async function createSquareDraftOrder(
   // Demo mode prices the order from our own resolved lines. In production Square
   // is the pricing authority — see the total comparison in createPendingOrder.
   if (isDemoMode()) {
-    const subtotal = input.lines.reduce((sum, line) => sum + line.lineTotalCents, 0);
+    const subtotal = Math.max(0, input.lines.reduce((sum, line) => sum + line.lineTotalCents, 0) - (input.rewardDiscountCents ?? 0));
     return {
       squareOrderId: `DEMO_ORDER_${input.orderNumber}`,
       totalCents: subtotal,
@@ -100,6 +102,14 @@ export async function createSquareDraftOrder(
         catalogObjectId: line.variant.id,
         quantity: String(line.quantity),
       })),
+      ...(input.rewardDiscountCents ? {
+        discounts: [{
+          name: "Rewards reward",
+          type: "FIXED_AMOUNT" as const,
+          amountMoney: { amount: toSquareAmount(input.rewardDiscountCents), currency: input.lines[0]?.variant.currency as Square.Currency },
+          scope: "ORDER" as const,
+        }],
+      } : {}),
       fulfillments: [fulfillment],
     },
   });

@@ -147,6 +147,13 @@ export function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-2 sm:gap-4">
+          <Link
+            href="/account"
+            onMouseEnter={cancelTimers}
+            className="text-ink-muted hover:text-brand hidden min-h-11 items-center text-sm font-medium transition-colors sm:inline-flex"
+          >
+            My account
+          </Link>
           <a
             href={STORE_INFO.phoneHref}
             onMouseEnter={cancelTimers}
@@ -245,6 +252,10 @@ export function SiteHeader() {
                 {link.label}
               </Link>
             ))}
+
+            <Link href="/account" onClick={closeMobile} className="border-border font-display border-b py-4 text-2xl font-normal uppercase text-ink">
+              My account
+            </Link>
 
             <a
               href={STORE_INFO.phoneHref}

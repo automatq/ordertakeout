@@ -20,6 +20,7 @@ import { getStoreLocation } from "@/lib/locations/server";
 import { inventoryShortages } from "@/lib/inventory/map";
 import { getInventoryQuantities } from "@/lib/inventory/server";
 import { consumeRateLimit, requestFingerprint } from "@/lib/security/rate-limit";
+import { getCurrentCustomerAccount } from "@/lib/accounts/loyalty";
 
 /**
  * Checkout server actions.
@@ -69,6 +70,7 @@ const checkoutSchema = z.object({
   customer: customerSchema,
   note: z.string().trim().max(500).optional(),
   expectedTotalCents: z.number().int().min(0),
+  redeemReward: z.boolean().optional(),
 });
 
 export type CheckoutInput = z.infer<typeof checkoutSchema>;
@@ -181,11 +183,23 @@ export async function startCheckout(input: unknown): Promise<StartCheckoutResult
     customer: parsed.data.customer,
     note: parsed.data.note,
     expectedTotalCents: parsed.data.expectedTotalCents,
+    // Never accept an account id from the browser. A reward may be attached
+    // only to this device's signed-in account and its matching checkout email.
+    ...(await accountForCheckout(parsed.data.customer.email, parsed.data.redeemReward)),
   });
   if (result.ok) return { ...result, locationId: parsed.data.locationId };
   return result.failure.kind === "insufficient_stock"
     ? { ok: false, failure: { kind: "insufficient_stock" } }
     : result;
+}
+
+async function accountForCheckout(email: string, redeemReward?: boolean) {
+  // Preserve the entirely cookie-free guest checkout path. Besides reducing
+  // work on the hot path, this keeps the action usable in isolated tests.
+  if (!redeemReward) return {};
+  const account = await getCurrentCustomerAccount();
+  if (!account || account.email !== email.trim().toLowerCase()) return {};
+  return { accountId: account.id, redeemReward: Boolean(redeemReward) };
 }
 
 const paySchema = z.object({

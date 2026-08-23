@@ -102,9 +102,11 @@ const FIELDS = [
 export function CheckoutFlow({
   products,
   squareApplicationId,
+  account,
 }: {
   products: CatalogProduct[];
   squareApplicationId: string;
+  account: { name: string; email: string; phone: string; points: number } | null;
 }) {
   const router = useRouter();
   const { items, ready, consume } = useCart();
@@ -118,7 +120,10 @@ export function CheckoutFlow({
   const [availabilityProblem, setAvailabilityProblem] = useState<string | null>(null);
   const [availabilityFor, setAvailabilityFor] = useState<string | null>(null);
   const [pickup, setPickup] = useState<PickupSelection | null>(null);
-  const [customer, setCustomer] = useState<Customer>({ name: "", email: "", phone: "" });
+  const [customer, setCustomer] = useState<Customer>(() => account
+    ? { name: account.name, email: account.email, phone: account.phone }
+    : { name: "", email: "", phone: "" });
+  const [redeemReward, setRedeemReward] = useState(false);
   const [note, setNote] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const [error, setError] = useState<string | null>(null);
@@ -145,7 +150,9 @@ export function CheckoutFlow({
   const paymentTokenRef = useRef<string | null>(null);
 
   const resolved = resolveCart(items, products);
-  const subtotalCents = reserved?.subtotalCents ?? resolved.subtotalCents;
+  const rewardEligible = Boolean(account && account.points >= 100 && resolved.ok && resolved.subtotalCents >= 1_000);
+  const rewardDiscountCents = !reserved && redeemReward && rewardEligible ? 1_000 : 0;
+  const subtotalCents = reserved?.subtotalCents ?? Math.max(0, resolved.subtotalCents - rewardDiscountCents);
   const currency = reserved?.currency ?? resolved.currency;
   const effectiveLocationId = checkoutLocationId(locationId, reserved);
   const availabilityKey = locationId
@@ -285,6 +292,7 @@ export function CheckoutFlow({
           customer,
           note: note || undefined,
           expectedTotalCents: subtotalCents,
+          redeemReward: rewardDiscountCents > 0,
         });
 
         if (result.ok) {
@@ -560,6 +568,20 @@ export function CheckoutFlow({
                   />
                 ))}
 
+                {account ? (
+                  <div className="border-secondary/20 bg-secondary-soft rounded-[1.25rem] border p-4">
+                    <p className="text-secondary text-xs font-semibold tracking-[0.14em] uppercase">Rewards</p>
+                    {rewardEligible ? (
+                      <label className="mt-2 flex cursor-pointer items-start gap-3 text-sm">
+                        <input type="checkbox" checked={redeemReward} onChange={(event) => setRedeemReward(event.target.checked)} className="mt-0.5 size-4 accent-current" />
+                        <span><strong className="text-ink">Use 100 points for $10 off</strong><br /><span className="text-ink-muted">You have {account.points} points. Points are added only after verified pickup.</span></span>
+                      </label>
+                    ) : (
+                      <p className="text-ink-muted mt-1 text-sm">You have {account.points} points. Earn one point per dollar after verified pickup; 100 points unlock $10 off.</p>
+                    )}
+                  </div>
+                ) : null}
+
                 <label htmlFor="checkout-note" className="flex flex-col gap-1.5">
                   <span className="text-ink-subtle text-sm font-medium">
                     Notes for the store (optional)
@@ -714,6 +736,7 @@ export function CheckoutFlow({
           currency={currency}
           pickup={pickup}
           location={location}
+          rewardDiscountCents={rewardDiscountCents}
         />
       </div>
     </div>
@@ -871,6 +894,7 @@ function OrderSummary({
   currency,
   pickup,
   location,
+  rewardDiscountCents,
 }: {
   lines: ResolvedCartLine[];
   subtotalCents: number;
@@ -879,6 +903,7 @@ function OrderSummary({
   currency: string;
   pickup: PickupSelection | null;
   location: StoreLocation | null;
+  rewardDiscountCents: number;
 }) {
   return (
     <aside
@@ -931,9 +956,10 @@ function OrderSummary({
 
         <div className="flex flex-col gap-2">
           <div className="text-ink-muted flex items-baseline justify-between text-sm">
-            <span>Subtotal</span>
+            <span>{rewardDiscountCents ? "Subtotal after rewards" : "Subtotal"}</span>
             <span className="tabular-nums">{formatMoney(subtotalCents, currency)}</span>
           </div>
+          {rewardDiscountCents ? <p className="text-brand text-xs">100 reward points applied — $10 off</p> : null}
           <div className="text-ink-muted flex items-baseline justify-between text-sm">
             <span>Taxes</span>
             <span className="tabular-nums">
@@ -1061,6 +1087,8 @@ function describeFailure(failure: { kind: string }): string {
       return "We can't reach our menu right now. Please try again shortly or call the store.";
     case "rate_limited":
       return "Too many checkout attempts were started. Wait a few minutes, then try again.";
+    case "reward_unavailable":
+      return "That reward is no longer available. Your points were not used; refresh your account and try again.";
     default:
       return "We couldn't start checkout. Please try again.";
   }

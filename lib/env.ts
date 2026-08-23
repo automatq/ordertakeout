@@ -66,6 +66,8 @@ const serverSchema = z.object({
   STAFF_DASHBOARD_PASSWORD: z.string().min(8),
   /** Stable HMAC key for customer tracking links. Falls back to staff password. */
   ORDER_ACCESS_SECRET: optional(z.string().min(32)),
+  /** Separate HMAC key for optional customer-account sessions. */
+  CUSTOMER_ACCOUNT_SECRET: optional(z.string().min(32)),
 
   // --- Notification channels. All optional: an unset channel is simply skipped
   // by the dispatcher, so the store can turn one on later without a code change.
