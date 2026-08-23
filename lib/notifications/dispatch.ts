@@ -1,5 +1,7 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
+
 import { and, eq, lt, lte, or, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
@@ -210,6 +212,56 @@ export async function notifyOrder(
   } catch (cause) {
     reportError("notifications", "dispatch failed", cause);
   }
+}
+
+/**
+ * Staff-triggered re-send of the customer's confirmation email.
+ *
+ * Each click is its own dedupe unit (random suffix), capped at three per
+ * 24 hours so a wrong address can't be hammered; only the customer email
+ * channel fires — the store was already notified the first time.
+ */
+export async function resendCustomerConfirmation(
+  orderId: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const [order] = await db().select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (!order) return { ok: false, reason: "Order not found." };
+  if (!["paid", "preparing", "ready", "completed"].includes(order.status)) {
+    return { ok: false, reason: "Only paid orders can have their confirmation re-sent." };
+  }
+  if (order.customerEmail === "deleted@invalid.example") {
+    return { ok: false, reason: "This order's customer details were anonymized under the retention policy." };
+  }
+
+  const [countRow] = await db()
+    .select({ count: sql<string>`count(*)` })
+    .from(notificationLog)
+    .where(and(
+      eq(notificationLog.orderId, orderId),
+      sql`${notificationLog.event} LIKE 'order_paid_resend:%'`,
+      sql`${notificationLog.createdAt} > now() - interval '24 hours'`,
+    ));
+  if (Number(countRow?.count ?? 0) >= 3) {
+    return { ok: false, reason: "Already re-sent three times today. Confirm the email address with the customer instead." };
+  }
+
+  const notification = await buildOrderNotification(orderId);
+  if (!notification) return { ok: false, reason: "Order not found." };
+
+  const results = await dispatch({
+    kind: "order_paid",
+    order: notification,
+    dedupeKey: `order_paid_resend:${randomUUID().slice(0, 8)}`,
+    channels: ["email_customer"],
+  });
+  const email = results.find((result) => result.channel === "email_customer");
+  if (!email || email.skipped) {
+    return { ok: false, reason: "Customer email isn't configured on this deployment." };
+  }
+  if (!email.ok) {
+    return { ok: false, reason: `The email didn't send: ${email.error ?? "unknown error"}.` };
+  }
+  return { ok: true };
 }
 
 /**

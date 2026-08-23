@@ -19,6 +19,7 @@ import {
   type PickupVerificationPreview,
   type PickupVerificationResult,
 } from "@/lib/orders/pickup-verification";
+import { resendCustomerConfirmation } from "@/lib/notifications/dispatch";
 import { serverEnv } from "@/lib/env";
 import { consumeRateLimit, requestFingerprint } from "@/lib/security/rate-limit";
 
@@ -108,4 +109,22 @@ export async function confirmPickup(input: unknown): Promise<PickupVerificationR
   const parsed = confirmPickupSchema.safeParse(input);
   if (!parsed.success) return { ok: false, reason: "Enter the pickup details and staff initials." };
   return verifyPickup(parsed.data);
+}
+
+const resendSchema = z.object({ orderId: z.uuid() });
+
+/** Re-send the customer's confirmation email from the closed-orders screen. */
+export async function resendOrderConfirmation(
+  input: unknown,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  await requireStaffSession();
+  const limit = await consumeRateLimit("staff-resend-email", await requestFingerprint(), {
+    attempts: 5,
+    windowMs: 10 * 60_000,
+  });
+  if (!limit.allowed) return { ok: false, reason: "Too many re-sends. Wait a few minutes and try again." };
+
+  const parsed = resendSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, reason: "Order not found." };
+  return resendCustomerConfirmation(parsed.data.orderId);
 }

@@ -5,8 +5,9 @@ import { Suspense } from "react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PhoneIcon, SearchIcon } from "@/components/ui/icons";
 import { RefundButton } from "@/components/staff/refund-dialog";
+import { ResendEmailButton } from "@/components/staff/resend-email-button";
 import { ListSkeleton } from "@/components/ui/skeleton";
-import { searchClosedOrders } from "@/lib/orders/dashboard";
+import { countClosedOrders, searchClosedOrders } from "@/lib/orders/dashboard";
 import { formatPickupTime, formatStoreDate, isStoreDate } from "@/lib/scheduling/time";
 import { formatMoney } from "@/lib/square/money";
 import { getStoreLocationsSafe } from "@/lib/locations/server";
@@ -63,19 +64,30 @@ async function ClosedList({ searchParams }: PageProps) {
   const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
   const offset = (page - 1) * RESULT_LIMIT;
 
-  const result = await searchClosedOrders({
-    search,
-    status,
-    from,
-    to,
-    locationId,
-    limit: RESULT_LIMIT + 1,
-    offset,
-  });
+  const [result, totalCount] = await Promise.all([
+    searchClosedOrders({
+      search,
+      status,
+      from,
+      to,
+      locationId,
+      limit: RESULT_LIMIT + 1,
+      offset,
+    }),
+    countClosedOrders({ search, status, from, to, locationId }),
+  ]);
   const hasNext = result.length > RESULT_LIMIT;
   const orders = result.slice(0, RESULT_LIMIT);
+  const pageCount = Math.max(1, Math.ceil(totalCount / RESULT_LIMIT));
 
   const filtered = Boolean(search || status || from || to || locationId);
+  const exportQuery = new URLSearchParams();
+  if (search) exportQuery.set("q", search);
+  if (status) exportQuery.set("status", status);
+  if (from) exportQuery.set("from", from);
+  if (to) exportQuery.set("to", to);
+  if (locationId) exportQuery.set("location", locationId);
+  const exportHref = `/api/staff/closed-export${exportQuery.size ? `?${exportQuery}` : ""}`;
 
   return (
     <>
@@ -157,9 +169,15 @@ async function ClosedList({ searchParams }: PageProps) {
         />
       ) : (
         <>
-          <p className="text-ink-subtle text-sm" aria-live="polite">
-            Showing {offset + 1}–{offset + orders.length}
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-ink-subtle text-sm" aria-live="polite">
+              {totalCount} result{totalCount === 1 ? "" : "s"} &middot; showing {offset + 1}–
+              {offset + orders.length} &middot; page {page} of {pageCount}
+            </p>
+            <a href={exportHref} className="btn btn-ghost btn-sm">
+              Export CSV
+            </a>
+          </div>
 
           <ul className="flex flex-col gap-2">
             {orders.map((order) => (
@@ -247,6 +265,9 @@ async function ClosedList({ searchParams }: PageProps) {
                           refundedTotalCents={order.refundedTotalCents}
                           currency={order.currency}
                         />
+                      ) : null}
+                      {order.status === "completed" ? (
+                        <ResendEmailButton orderId={order.id} />
                       ) : null}
                       <a
                         href={`tel:${order.customerPhone}`}

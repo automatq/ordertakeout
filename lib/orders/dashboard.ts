@@ -338,11 +338,9 @@ export interface ClosedOrderQuery {
  * Filtering happens in SQL rather than in the page so the query stays cheap as
  * order history grows.
  */
-export async function searchClosedOrders(
-  query: ClosedOrderQuery = {},
-): Promise<DashboardOrder[]> {
-  const { search, status, from, to, locationId, limit = 25, offset = 0 } = query;
-
+/** The one condition builder both the list and its count share — they must never drift. */
+function closedOrderConditions(query: ClosedOrderQuery) {
+  const { search, status, from, to, locationId } = query;
   const conditions = [
     status
       ? inArray(orders.status, [status])
@@ -360,11 +358,26 @@ export async function searchClosedOrders(
   if (from) conditions.push(gte(orders.pickupDate, from));
   if (to) conditions.push(lte(orders.pickupDate, to));
   if (locationId) conditions.push(sql`${orders.squareLocationId} = ${locationId}`);
+  return conditions;
+}
+
+export async function countClosedOrders(query: ClosedOrderQuery = {}): Promise<number> {
+  const [row] = await db()
+    .select({ count: sql<string>`count(*)` })
+    .from(orders)
+    .where(and(...closedOrderConditions(query)));
+  return Number(row?.count ?? 0);
+}
+
+export async function searchClosedOrders(
+  query: ClosedOrderQuery = {},
+): Promise<DashboardOrder[]> {
+  const { limit = 25, offset = 0 } = query;
 
   const rows = await db()
     .select()
     .from(orders)
-    .where(and(...conditions))
+    .where(and(...closedOrderConditions(query)))
     .orderBy(desc(orders.updatedAt))
     .limit(Math.max(1, limit))
     .offset(Math.max(0, offset));
