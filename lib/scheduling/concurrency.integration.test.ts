@@ -76,7 +76,11 @@ describeIfDb("slot reservation under concurrency", () => {
       .insert(schema.productsConfig)
       .values({
         squareCatalogObjectId: PRODUCT_ID,
-        slug: "ensaymada-tray",
+        // Unique test slug: on a shared database the real catalog may already
+        // own "ensaymada-tray", and a slug conflict would make the
+        // onConflictDoNothing insert a silent no-op — every claim would then be
+        // rejected on missing rules instead of exercising the race.
+        slug: "test-race-ensaymada-tray",
         leadTimeDays: 1,
         orderCutoffTime: "18:00",
         allowedPickupTimes: ["16:00", "17:00", "18:00", "19:00", "20:00"],
