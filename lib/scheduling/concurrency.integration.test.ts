@@ -1,7 +1,18 @@
 import { sql } from "drizzle-orm";
 
 import { addCalendarDays, storeToday } from "./time";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+/**
+ * The reservation path resolves the location's timezone through the
+ * Square-backed locations module. This suite tests the database race, not
+ * Square, and CI has no Square credentials — so resolve the test locations
+ * locally. `null` timezone falls back to STORE_TIMEZONE, same as a legacy
+ * order.
+ */
+vi.mock("@/lib/locations/server", () => ({
+  getStoreLocation: async () => null,
+}));
 
 /**
  * The overbooking race, against a real Postgres.

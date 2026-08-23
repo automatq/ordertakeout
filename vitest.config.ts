@@ -36,6 +36,15 @@ export default defineConfig({
        * the same one Next uses via the `react-server` condition.
        */
       "server-only": path.resolve(import.meta.dirname, "node_modules/server-only/empty.js"),
+      /**
+       * `next/cache`'s cacheLife()/cacheTag() throw outside a Next server with
+       * cacheComponents enabled, so any test that reaches a `"use cache"`
+       * function body (the slot-reservation integration suite does, via
+       * location validation) would fail on Next's runtime guard rather than on
+       * the behaviour under test. Caching semantics belong to Next; the stub
+       * keeps the function bodies runnable.
+       */
+      "next/cache": path.resolve(import.meta.dirname, "lib/testing/next-cache-stub.ts"),
     },
   },
 });
