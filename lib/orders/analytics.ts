@@ -1,9 +1,9 @@
 import "server-only";
 
-import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { orderItems, orders } from "@/lib/db/schema";
+import { loyaltyEntries, orderItems, orders } from "@/lib/db/schema";
 import { serverEnv } from "@/lib/env";
 import { addCalendarDays, storeToday, type StoreDate } from "@/lib/scheduling/time";
 
@@ -24,6 +24,9 @@ import { addCalendarDays, storeToday, type StoreDate } from "@/lib/scheduling/ti
 
 /** Money is only real once it's paid. Abandoned checkouts and cancellations are not sales. */
 const REVENUE_STATUSES = ["paid", "preparing", "ready", "completed"] as const;
+
+/** The current DoorDash/Uber Eats uplift the owner asked us to compare against. */
+export const MARKETPLACE_FEE_RATE = 0.15;
 
 export const RANGES = [
   { days: 1, label: "Today" },
@@ -74,6 +77,16 @@ export interface SalesAnalytics {
   previousByDay: DayPoint[];
   topItems: TopItem[];
   upcoming: { revenueCents: number; orderCount: number };
+  direct: {
+    /** Direct pickup gross revenue in the selected window. */
+    retainedRevenueCents: number;
+    /** What this same direct revenue would have cost at the stated marketplace rate. */
+    estimatedMarketplaceFeesCents: number;
+    memberOrderCount: number;
+    repeatMemberOrderCount: number;
+    pointsEarned: number;
+    rewardsRedeemed: number;
+  };
 }
 
 /** Postgres returns sums and counts as strings; everything downstream wants numbers. */
@@ -88,7 +101,7 @@ export async function getSalesAnalytics(days: RangeDays, locationId?: string): P
 
   // One grouped query spans both windows: the previous period is just a
   // different slice of the same rows, so there's no reason to ask twice.
-  const [revenueRows, canceledRows, topItemRows, upcomingRows] = await Promise.all([
+  const [revenueRows, canceledRows, topItemRows, upcomingRows, memberOrderRows] = await Promise.all([
     db()
       .select({
         date: orders.pickupDate,
@@ -153,6 +166,44 @@ export async function getSalesAnalytics(days: RangeDays, locationId?: string): P
           locationId ? eq(orders.squareLocationId, locationId) : undefined,
         ),
       ),
+
+    // Account-linked orders show whether the direct channel is becoming a
+    // repeat relationship, not merely a one-time pickup form.
+    db()
+      .select({ customerAccountId: orders.customerAccountId, orderCount: sql<string>`count(*)` })
+      .from(orders)
+      .where(and(
+        inArray(orders.status, [...REVENUE_STATUSES]),
+        isNotNull(orders.customerAccountId),
+        gte(orders.pickupDate, from),
+        lte(orders.pickupDate, to),
+        locationId ? eq(orders.squareLocationId, locationId) : undefined,
+      ))
+      .groupBy(orders.customerAccountId),
+  ]);
+
+  const accountIds = memberOrderRows.flatMap((row) => row.customerAccountId ? [row.customerAccountId] : []);
+  const [memberHistoryRows, loyaltyRows] = await Promise.all([
+    accountIds.length
+      ? db().select({ customerAccountId: orders.customerAccountId, orderCount: sql<string>`count(*)` })
+        .from(orders)
+        .where(and(
+          inArray(orders.status, [...REVENUE_STATUSES]),
+          inArray(orders.customerAccountId, accountIds),
+          lte(orders.pickupDate, to),
+        ))
+        .groupBy(orders.customerAccountId)
+      : Promise.resolve([]),
+    db().select({ kind: loyaltyEntries.kind, points: sql<string>`coalesce(sum(${loyaltyEntries.points}), 0)`, count: sql<string>`count(*)` })
+      .from(loyaltyEntries)
+      .innerJoin(orders, eq(loyaltyEntries.orderId, orders.id))
+      .where(and(
+        inArray(orders.status, [...REVENUE_STATUSES]),
+        gte(orders.pickupDate, from),
+        lte(orders.pickupDate, to),
+        locationId ? eq(orders.squareLocationId, locationId) : undefined,
+      ))
+      .groupBy(loyaltyEntries.kind),
   ]);
 
   const revenueByDate = new Map(revenueRows.map((r) => [r.date, r]));
@@ -180,6 +231,12 @@ export async function getSalesAnalytics(days: RangeDays, locationId?: string): P
       canceledCount,
     };
   };
+
+  const historyByAccount = new Map(memberHistoryRows.map((row) => [row.customerAccountId, toNumber(row.orderCount)]));
+  const loyaltyByKind = new Map(loyaltyRows.map((row) => [row.kind, row]));
+  const memberOrderCount = memberOrderRows.reduce((total, row) => total + toNumber(row.orderCount), 0);
+  const repeatMemberOrderCount = memberOrderRows.reduce((total, row) =>
+    total + ((historyByAccount.get(row.customerAccountId) ?? 0) > 1 ? toNumber(row.orderCount) : 0), 0);
 
   // Every day in the window, including the empty ones — a chart that silently
   // drops zero-revenue days misreads as "we were busy all week".
@@ -223,6 +280,14 @@ export async function getSalesAnalytics(days: RangeDays, locationId?: string): P
     upcoming: {
       revenueCents: toNumber(upcomingRows[0]?.revenueCents ?? 0),
       orderCount: toNumber(upcomingRows[0]?.orderCount ?? 0),
+    },
+    direct: {
+      retainedRevenueCents: totalsFor(from, to).revenueCents,
+      estimatedMarketplaceFeesCents: Math.round(totalsFor(from, to).revenueCents * MARKETPLACE_FEE_RATE),
+      memberOrderCount,
+      repeatMemberOrderCount,
+      pointsEarned: toNumber(loyaltyByKind.get("earned")?.points ?? 0),
+      rewardsRedeemed: toNumber(loyaltyByKind.get("redeemed")?.count ?? 0),
     },
   };
 }

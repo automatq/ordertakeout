@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { RANGES, type SalesAnalytics } from "@/lib/orders/analytics";
+import { MARKETPLACE_FEE_RATE, RANGES, type SalesAnalytics } from "@/lib/orders/analytics";
 import { salesAnalyticsCsv } from "@/lib/orders/analytics-export";
 import { formatStoreDate } from "@/lib/scheduling/time";
 import { formatMoney } from "@/lib/square/money";
@@ -122,6 +122,8 @@ export function SalesAnalytics({ data, locations, locationId }: { data: SalesAna
         />
       </div>
 
+      <DirectChannel data={data} />
+
       <RevenueChart data={data} />
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -130,6 +132,33 @@ export function SalesAnalytics({ data, locations, locationId }: { data: SalesAna
       </div>
     </div>
   );
+}
+
+/** Owner-facing proof that direct pickup is retaining value, not just taking orders. */
+function DirectChannel({ data }: { data: SalesAnalytics }) {
+  const { direct, currency } = data;
+  return (
+    <section className="bg-secondary text-secondary-ink flex flex-col gap-4 rounded-[1.5rem] p-5" aria-labelledby="direct-channel-heading">
+      <div>
+        <p className="text-accent text-xs font-semibold tracking-[0.14em] uppercase">Direct pickup channel</p>
+        <h2 id="direct-channel-heading" className="font-display mt-1 text-3xl font-normal uppercase">What direct ordering retained</h2>
+        <p className="text-secondary-ink/75 mt-1 text-sm">Estimated against a {(MARKETPLACE_FEE_RATE * 100).toFixed(0)}% delivery-marketplace fee. This is not a payment-processor fee calculation.</p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <DirectStat label="Direct pickup sales" value={formatMoney(direct.retainedRevenueCents, currency)} />
+        <DirectStat label="Est. fees avoided" value={formatMoney(direct.estimatedMarketplaceFeesCents, currency)} emphasis />
+        <DirectStat label="Repeat member orders" value={`${direct.repeatMemberOrderCount} of ${direct.memberOrderCount || 0}`} />
+        <DirectStat label="Rewards activity" value={`${direct.pointsEarned} earned · ${direct.rewardsRedeemed} used`} />
+      </div>
+    </section>
+  );
+}
+
+function DirectStat({ label, value, emphasis = false }: { label: string; value: string; emphasis?: boolean }) {
+  return <div className={`rounded-[1.25rem] p-4 ${emphasis ? "bg-accent text-ink" : "bg-secondary-ink/10"}`}>
+    <p className="text-xs font-semibold tracking-wide uppercase">{label}</p>
+    <p className="font-display mt-1 text-2xl font-normal tabular-nums">{value}</p>
+  </div>;
 }
 
 /** Percentage change, or null when there's no baseline to compare against. */
