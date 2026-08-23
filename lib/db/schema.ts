@@ -62,6 +62,15 @@ export const refundStatus = pgEnum("refund_status", [
   "failed",
 ]);
 
+/** How staff established that an order was collected at the counter. */
+export const pickupVerificationMethod = pgEnum("pickup_verification_method", [
+  "qr",
+  "manual",
+]);
+
+/** A ledger is used instead of a mutable points balance so every change is explainable. */
+export const loyaltyEntryKind = pgEnum("loyalty_entry_kind", ["earned", "redeemed", "reversed"]);
+
 /* -------------------------------------------------------------------------- */
 /* Catalog overlay                                                            */
 /* -------------------------------------------------------------------------- */
@@ -152,6 +161,24 @@ export const blackoutDates = pgTable(
 /* Orders                                                                     */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Optional, passwordless customer identity. Guest ordering remains supported;
+ * this record is created only from a signed order-confirmation page.
+ */
+export const customerAccounts = pgTable(
+  "customer_accounts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Always normalized to lowercase before persistence. */
+    email: text("email").notNull(),
+    name: text("name").notNull(),
+    phone: text("phone").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("customer_accounts_email_key").on(t.email)],
+);
+
 export const orders = pgTable(
   "orders",
   {
@@ -179,6 +206,9 @@ export const orders = pgTable(
     customerName: text("customer_name").notNull(),
     customerEmail: text("customer_email").notNull(),
     customerPhone: text("customer_phone").notNull(),
+    customerAccountId: uuid("customer_account_id").references(() => customerAccounts.id, {
+      onDelete: "set null",
+    }),
     /** Square location chosen at checkout; never inferred later from the current store list. */
     squareLocationId: text("square_location_id"),
     pickupLocationName: text("pickup_location_name"),
@@ -241,6 +271,50 @@ export const orderItems = pgTable(
     totalPriceCents: integer("total_price_cents").notNull(),
   },
   (t) => [index("order_items_order_id_idx").on(t.orderId)],
+);
+
+/**
+ * Immutable counter record for an order collection.
+ *
+ * An order can only be collected once, so this is deliberately a one-to-one
+ * row rather than a mutable field on `orders`. It preserves the proof used at
+ * the counter independently from the order's lifecycle timestamps.
+ */
+export const pickupVerifications = pgTable(
+  "pickup_verifications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "cascade" }),
+    method: pickupVerificationMethod("method").notNull(),
+    /** Operational attribution while staff authentication remains shared. */
+    staffInitials: text("staff_initials").notNull(),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("pickup_verifications_order_id_key").on(t.orderId)],
+);
+
+/** One immutable entry per order action; points are never edited in place. */
+export const loyaltyEntries = pgTable(
+  "loyalty_entries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    customerAccountId: uuid("customer_account_id")
+      .notNull()
+      .references(() => customerAccounts.id, { onDelete: "cascade" }),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "cascade" }),
+    kind: loyaltyEntryKind("kind").notNull(),
+    /** Positive for earned/reversed points and negative for redemptions. */
+    points: integer("points").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("loyalty_entries_order_kind_key").on(t.orderId, t.kind),
+    index("loyalty_entries_account_created_idx").on(t.customerAccountId, t.createdAt),
+  ],
 );
 
 /**
@@ -380,15 +454,38 @@ export const appSettings = pgTable("app_settings", {
 /* Relations                                                                  */
 /* -------------------------------------------------------------------------- */
 
-export const ordersRelations = relations(orders, ({ many }) => ({
+export const ordersRelations = relations(orders, ({ one, many }) => ({
+  customerAccount: one(customerAccounts, {
+    fields: [orders.customerAccountId],
+    references: [customerAccounts.id],
+  }),
   items: many(orderItems),
+  pickupVerifications: many(pickupVerifications),
   notifications: many(notificationLog),
   holds: many(slotHolds),
   inventoryHolds: many(inventoryHolds),
+  loyaltyEntries: many(loyaltyEntries),
+}));
+
+export const customerAccountsRelations = relations(customerAccounts, ({ many }) => ({
+  orders: many(orders),
+  loyaltyEntries: many(loyaltyEntries),
 }));
 
 export const orderItemsRelations = relations(orderItems, ({ one }) => ({
   order: one(orders, { fields: [orderItems.orderId], references: [orders.id] }),
+}));
+
+export const pickupVerificationsRelations = relations(pickupVerifications, ({ one }) => ({
+  order: one(orders, { fields: [pickupVerifications.orderId], references: [orders.id] }),
+}));
+
+export const loyaltyEntriesRelations = relations(loyaltyEntries, ({ one }) => ({
+  customerAccount: one(customerAccounts, {
+    fields: [loyaltyEntries.customerAccountId],
+    references: [customerAccounts.id],
+  }),
+  order: one(orders, { fields: [loyaltyEntries.orderId], references: [orders.id] }),
 }));
 
 export const slotHoldsRelations = relations(slotHolds, ({ one }) => ({
@@ -406,6 +503,9 @@ export const notificationLogRelations = relations(notificationLog, ({ one }) => 
 export type Order = typeof orders.$inferSelect;
 export type NewOrder = typeof orders.$inferInsert;
 export type OrderItem = typeof orderItems.$inferSelect;
+export type PickupVerification = typeof pickupVerifications.$inferSelect;
+export type CustomerAccount = typeof customerAccounts.$inferSelect;
+export type LoyaltyEntry = typeof loyaltyEntries.$inferSelect;
 export type InventoryHold = typeof inventoryHolds.$inferSelect;
 export type ProductConfig = typeof productsConfig.$inferSelect;
 export type OrderStatus = (typeof orderStatus.enumValues)[number];
