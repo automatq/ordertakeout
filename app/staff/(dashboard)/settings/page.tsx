@@ -12,8 +12,12 @@ import {
 } from "@/components/staff/schedule-settings";
 import { AlertIcon } from "@/components/ui/icons";
 import { FormSkeleton } from "@/components/ui/skeleton";
+import Link from "next/link";
+
 import { listAvailabilityOverrides, listBlackoutDates, listOperationalIssues, listProductRules, listSlotCapacity } from "@/lib/admin/queries";
 import { SoldOutList } from "@/components/staff/sold-out-list";
+import { StaffRoster } from "@/components/staff/staff-roster";
+import { listStaffMembers } from "@/lib/staff/roster";
 import { getStoreCatalog } from "@/lib/catalog/server";
 import { primaryImage } from "@/lib/catalog/images";
 import { getStoreLocationsSafe } from "@/lib/locations/server";
@@ -29,6 +33,7 @@ const SECTIONS = [
   { id: "soldout", label: "Sold out today" },
   { id: "closures", label: "Closures" },
   { id: "capacity", label: "Slot capacity" },
+  { id: "staff", label: "Staff" },
 ] as const;
 
 export default function SettingsPage() {
@@ -58,7 +63,7 @@ export default function SettingsPage() {
 async function Settings() {
   await connection();
 
-  const [catalog, rules, blackouts, slots, locations, issues, soldOut] = await Promise.all([
+  const [catalog, rules, blackouts, slots, locations, issues, soldOut, roster] = await Promise.all([
     getStoreCatalog(),
     listProductRules(),
     listBlackoutDates(),
@@ -66,6 +71,7 @@ async function Settings() {
     getStoreLocationsSafe(),
     listOperationalIssues(),
     listAvailabilityOverrides(),
+    listStaffMembers(),
   ]);
 
   const productNames = new Map([
@@ -161,6 +167,16 @@ async function Settings() {
 
       <section id="capacity" className="scroll-mt-24">
         <SlotCapacity slots={slots} defaultCap={DEFAULT_MAX_ORDERS_PER_SLOT} locations={locations} />
+      </section>
+
+      <section id="staff" className="flex scroll-mt-24 flex-col gap-4">
+        <div>
+          <h2 className="text-ink text-lg font-semibold">Staff roster</h2>
+          <p className="text-ink-muted text-sm">
+            Who the initials on pickups, refunds, and the <Link href="/staff/audit" className="underline">activity log</Link> belong to.
+          </p>
+        </div>
+        <StaffRoster members={roster} />
       </section>
     </div>
   );

@@ -23,6 +23,7 @@ import {
 import { CATALOG_TAG, PRODUCT_CONFIG_TAG } from "@/lib/catalog/server";
 import { getStoreLocation } from "@/lib/locations/server";
 import { recordAudit } from "@/lib/audit/log";
+import { saveStaffMember, setStaffMemberActive } from "@/lib/staff/roster";
 import { serverEnv } from "@/lib/env";
 import { storeToday } from "@/lib/scheduling/time";
 import { setOrderingPause } from "@/lib/settings/pause";
@@ -268,6 +269,57 @@ export async function remove86Action(input: unknown): Promise<AdminResult> {
     actorInitials: parsed.data.staffInitials?.trim().toUpperCase() || null,
     action: "product.86_removed",
     entityType: "product",
+    entityId: parsed.data.id,
+  });
+  return { ok: true };
+}
+
+const staffMemberSchema = z.object({
+  id: z.uuid().optional(),
+  name: z.string().trim().min(1).max(80),
+  initials: z.string().trim().min(2).max(6),
+  /** Empty string = leave unchanged; "clear" = remove; 4 digits = set. */
+  pin: z.union([z.literal(""), z.literal("clear"), z.string().regex(/^\d{4}$/)]).optional(),
+  active: z.boolean().optional(),
+});
+
+export async function saveStaffMemberAction(input: unknown): Promise<AdminResult> {
+  await requireStaffSession();
+  const parsed = staffMemberSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Check the name, initials, and PIN." };
+
+  const { id, name, initials, pin, active } = parsed.data;
+  const result = await saveStaffMember({
+    id,
+    name,
+    initials,
+    pin: pin === "" || pin === undefined ? undefined : pin === "clear" ? null : pin,
+    active,
+  });
+  if (!result.ok) return { ok: false, error: result.message };
+
+  await recordAudit({
+    actorType: "staff",
+    actorInitials: null,
+    action: id ? "staff.updated" : "staff.added",
+    entityType: "staff_member",
+    entityId: result.id,
+    metadata: { name, initials: initials.toUpperCase(), pinChanged: pin !== undefined && pin !== "" },
+  });
+  return { ok: true };
+}
+
+export async function setStaffMemberActiveAction(input: unknown): Promise<AdminResult> {
+  await requireStaffSession();
+  const parsed = z.object({ id: z.uuid(), active: z.boolean() }).safeParse(input);
+  if (!parsed.success) return { ok: false, error: "That staff member no longer exists." };
+
+  await setStaffMemberActive(parsed.data.id, parsed.data.active);
+  await recordAudit({
+    actorType: "staff",
+    actorInitials: null,
+    action: parsed.data.active ? "staff.reactivated" : "staff.deactivated",
+    entityType: "staff_member",
     entityId: parsed.data.id,
   });
   return { ok: true };
