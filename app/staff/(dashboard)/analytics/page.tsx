@@ -3,12 +3,16 @@ import { Suspense } from "react";
 
 import { SalesAnalytics } from "@/components/staff/sales-analytics";
 import { LoadingRegion, Skeleton } from "@/components/ui/skeleton";
-import { getSalesAnalytics, parseRange } from "@/lib/orders/analytics";
+import { getSalesAnalytics, parseAnalyticsWindow } from "@/lib/orders/analytics";
 import { getStoreLocationsSafe } from "@/lib/locations/server";
+import { serverEnv } from "@/lib/env";
+import { storeToday } from "@/lib/scheduling/time";
 
 export const metadata = { title: "Sales — Staff" };
 
-type PageProps = { searchParams: Promise<{ range?: string; location?: string }> };
+type PageProps = {
+  searchParams: Promise<{ range?: string; from?: string; to?: string; location?: string }>;
+};
 
 export default function SalesAnalyticsPage({ searchParams }: PageProps) {
   return (
@@ -24,12 +28,13 @@ async function Report({ searchParams }: PageProps) {
   // Aggregates over live order data: render at request time, never prerender.
   await connection();
 
-  const { range, location: requestedLocationId } = await searchParams;
+  const { range, from, to, location: requestedLocationId } = await searchParams;
   const locations = await getStoreLocationsSafe();
   const locationId = locations.some((location) => location.id === requestedLocationId)
     ? requestedLocationId
     : undefined;
-  const data = await getSalesAnalytics(parseRange(range), locationId);
+  const today = storeToday(new Date(), serverEnv().STORE_TIMEZONE);
+  const data = await getSalesAnalytics(parseAnalyticsWindow({ range, from, to, today }), locationId);
   return <SalesAnalytics data={data} locations={locations} locationId={locationId} />;
 }
 
