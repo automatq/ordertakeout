@@ -61,10 +61,12 @@ export async function signOut(): Promise<void> {
   redirect("/staff/login");
 }
 
-/** Polled by the order screen. */
-export async function refreshDashboard(): Promise<DashboardData> {
+/** Polled by the order screen. Filtering server-side keeps a busy two-location
+ * shop from shipping every branch's orders to every tablet on every poll. */
+export async function refreshDashboard(locationId?: unknown): Promise<DashboardData> {
   await requireStaffSession();
-  return getDashboardData();
+  const parsed = z.string().min(1).max(64).optional().safeParse(locationId ?? undefined);
+  return getDashboardData(7, parsed.success ? parsed.data : undefined);
 }
 
 const transitionSchema = z.object({

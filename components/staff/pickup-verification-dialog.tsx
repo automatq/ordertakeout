@@ -28,9 +28,16 @@ type Method = "qr" | "manual";
 export function PickupVerificationDialog({
   onClose,
   onVerified,
+  prefillOrderNumber,
 }: {
   onClose: () => void;
   onVerified: (preview: PickupVerificationPreview) => Promise<void>;
+  /**
+   * Set when opened from an order card — the preview loads immediately so
+   * staff holding the tray don't retype the number they can already see.
+   * The server still re-resolves the order at confirm time.
+   */
+  prefillOrderNumber?: string;
 }) {
   const [rawPass, setRawPass] = useState("");
   const [orderNumber, setOrderNumber] = useState("");
@@ -71,6 +78,14 @@ export function PickupVerificationDialog({
       returnFocusRef.current?.focus();
     };
   }, [onClose, stopCamera]);
+
+  const prefillRequested = useRef(false);
+  useEffect(() => {
+    if (!prefillOrderNumber || prefillRequested.current) return;
+    prefillRequested.current = true;
+    setOrderNumber(prefillOrderNumber);
+    void lookup(prefillOrderNumber, "manual");
+  }, [prefillOrderNumber]);
 
   async function lookup(value: string, selectedMethod: Method) {
     setError(null);

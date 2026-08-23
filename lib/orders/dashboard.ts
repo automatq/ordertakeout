@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, desc, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import {
@@ -9,11 +9,13 @@ import {
   pickupVerifications,
   productsConfig,
   slotCapacity,
+  slotHolds,
   type Order,
   type OrderItem,
   type PickupVerification,
 } from "@/lib/db/schema";
 import { serverEnv } from "@/lib/env";
+import { isAttemptLeaseStale } from "@/lib/orders/payment-state";
 import { addCalendarDays, normalizeTime, storeToday, type StoreDate, type StoreTime } from "@/lib/scheduling/time";
 import { getStoreLocationsSafe } from "@/lib/locations/server";
 import { listPauseSettings, type PauseOverview } from "@/lib/settings/pause";
@@ -49,6 +51,20 @@ export interface DayGroup {
   orderCount: number;
 }
 
+export interface InCheckoutOrder {
+  id: string;
+  orderNumber: string;
+  pickupDate: StoreDate;
+  pickupTime: StoreTime;
+  totalCents: number;
+  currency: string;
+  createdAt: Date;
+  /** Live reservation expiry, when one still exists. */
+  holdExpiresAt: Date | null;
+  /** Safe to release: no live hold and no active payment attempt lease. */
+  stale: boolean;
+}
+
 export interface DashboardData {
   today: StoreDate;
   days: DayGroup[];
@@ -57,6 +73,11 @@ export interface DashboardData {
   locations: StoreLocation[];
   /** Current pause-ordering switches, for the one-tap header toggle. */
   orderingPause: PauseOverview;
+  /**
+   * pending_payment orders in the window — customers mid-checkout, or stuck
+   * checkouts. Previously invisible in every staff view.
+   */
+  inCheckout: InCheckoutOrder[];
 }
 
 type LocationSnapshotOrder = Pick<
@@ -223,7 +244,52 @@ export async function getDashboardData(daysAhead = 7, locationId?: string): Prom
     newOrderCount: rows.filter((r) => r.status === "paid").length,
     locations: mergeOperationalLocations(locations, rows),
     orderingPause: await listPauseSettings(locations.map((location) => location.id)),
+    inCheckout: await loadInCheckoutOrders(today, until, locationId),
   };
+}
+
+/**
+ * pending_payment orders holding (or having held) capacity. A row with a live
+ * slot hold is a customer at the card form right now; one with no live hold
+ * and a stale payment lease is a stuck checkout staff can safely release.
+ */
+async function loadInCheckoutOrders(
+  today: StoreDate,
+  until: StoreDate,
+  locationId?: string,
+): Promise<InCheckoutOrder[]> {
+  const now = new Date();
+  const rows = await db()
+    .select({ order: orders, holdExpiresAt: slotHolds.expiresAt })
+    .from(orders)
+    .leftJoin(
+      slotHolds,
+      and(eq(slotHolds.orderId, orders.id), gt(slotHolds.expiresAt, now)),
+    )
+    .where(
+      and(
+        eq(orders.status, "pending_payment"),
+        gte(orders.pickupDate, today),
+        lte(orders.pickupDate, until),
+        locationId ? sql`${orders.squareLocationId} = ${locationId}` : undefined,
+      ),
+    )
+    .orderBy(asc(orders.createdAt));
+
+  return rows.map(({ order, holdExpiresAt }) => ({
+    id: order.id,
+    orderNumber: order.orderNumber,
+    pickupDate: order.pickupDate,
+    pickupTime: normalizeTime(order.pickupTime),
+    totalCents: order.totalCents,
+    currency: order.currency,
+    createdAt: order.createdAt,
+    holdExpiresAt,
+    stale:
+      holdExpiresAt === null &&
+      (!order.paymentAttemptKey ||
+        isAttemptLeaseStale(order.paymentAttemptStartedAt ?? order.updatedAt, now)),
+  }));
 }
 
 /** Every order for one pickup day, for the printable prep sheet. */
