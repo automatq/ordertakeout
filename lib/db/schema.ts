@@ -232,6 +232,7 @@ export const orders = pgTable(
     currency: text("currency").notNull().default("USD"),
 
     customerNote: text("customer_note"),
+    /** Dormant: no writer or reader yet (the anonymizer only nulls it). Kept for the planned staff order-notes feature. */
     staffNote: text("staff_note"),
 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

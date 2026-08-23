@@ -245,11 +245,6 @@ export async function getOrdersForDate(date: StoreDate, locationId?: string): Pr
   }));
 }
 
-/** Recently completed or cancelled orders, for looking something up after the fact. */
-export async function getRecentlyClosed(limit = 25): Promise<DashboardOrder[]> {
-  return searchClosedOrders({ limit });
-}
-
 export interface ClosedOrderQuery {
   /** Matches an order number, customer name or phone number, case-insensitively. */
   search?: string;

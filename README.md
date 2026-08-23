@@ -207,8 +207,12 @@ Worth knowing before changing anything in `lib/orders/create.ts`:
 - **Square prices the order, not us.** Line items carry catalog ids and no amounts. Square's
   computed total is compared against what the customer was shown, and a mismatch aborts
   checkout rather than charging a different number — even a lower one.
-- **The payment idempotency key is the order id.** Stable per order, so a double-clicked pay
-  button or a network retry cannot double-charge. Never regenerate it on retry.
+- **Payments run under a per-attempt lease, not a per-order key.** Each attempt persists its
+  idempotency key, source token, and start time on the order (`payment_attempt_*`, migration
+  0007). A double-clicked pay button or a network retry replays the *same* attempt — an
+  ambiguous outcome never rotates the key — while a definitively failed attempt clears the
+  lease so the customer can try a new card. Stale leases are recovered after 15 minutes by
+  checkout traffic and the maintenance cron.
 - **The slot is reserved before the card form appears**, and the reservation expires on its
   own — an abandoned checkout frees the slot with no compensating action.
 
@@ -255,11 +259,14 @@ Worth knowing before changing anything in `lib/orders/create.ts`:
 - **Phase 8 — Admin:** done. `/staff/settings` for per-product ordering rules, closure
   dates, per-slot caps and an immediate catalog re-sync.
 
-**All build phases are code complete.** What remains before launch is verification against
-a real database and Square Sandbox — see *Not yet covered* below.
+**All build phases are code complete.** What remains before launch is finishing the
+sandbox end-to-end verification — see [`docs/RELEASE-GATE-A.md`](docs/RELEASE-GATE-A.md)
+for the executed scenarios, the evidence, and the remaining blockers.
 
-182 tests pass, with 5 database integration tests intentionally skipped unless
-`TEST_DATABASE_URL` is set. See the full build phases in [`docs/SCOPE.md`](docs/SCOPE.md).
+388 tests pass, with the 8 database integration tests skipped unless
+`TEST_DATABASE_URL` is set (they run in CI against a Postgres service container, and have
+been verified against the staging Neon database through its pooler). See the full build
+phases in [`docs/SCOPE.md`](docs/SCOPE.md).
 
 ## Admin
 
