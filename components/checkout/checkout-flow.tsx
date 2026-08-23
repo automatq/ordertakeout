@@ -21,6 +21,7 @@ import {
   usePickupLocation,
 } from "@/lib/locations/store";
 import { checkoutLocationId } from "@/lib/locations/checkout";
+import { normalizePhoneE164 } from "@/lib/phone";
 import { getPickupLocations } from "@/app/actions/locations";
 import type { StoreLocation } from "@/lib/locations/types";
 import { resolveCart, type CartItem, type ResolvedCartLine } from "@/lib/catalog/cart";
@@ -94,8 +95,10 @@ const FIELDS = [
     inputMode: "tel" as const,
     hint: "In case we need to reach you about your pickup.",
     path: "customer.phone",
-    validate: (value: string) =>
-      value.trim().length >= 7 ? null : "Please enter a phone number we can reach you on.",
+    validate: (value: string) => {
+      const parsed = normalizePhoneE164(value);
+      return parsed.ok ? null : parsed.message;
+    },
   },
 ] as const;
 
@@ -125,6 +128,7 @@ export function CheckoutFlow({
     : { name: "", email: "", phone: "" });
   const [redeemReward, setRedeemReward] = useState(false);
   const [note, setNote] = useState("");
+  const [smsOptIn, setSmsOptIn] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [reserved, setReserved] = useState<{
@@ -293,6 +297,7 @@ export function CheckoutFlow({
           note: note || undefined,
           expectedTotalCents: subtotalCents,
           redeemReward: rewardDiscountCents > 0,
+          smsOptIn,
         });
 
         if (result.ok) {
@@ -595,6 +600,22 @@ export function CheckoutFlow({
                     placeholder="Allergies, a name for the tray, anything we should know."
                     className="input"
                   />
+                </label>
+
+                <label className="text-ink flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={smsOptIn}
+                    onChange={(event) => setSmsOptIn(event.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    Text me when my order is ready.
+                    <br />
+                    <span className="text-ink-muted">
+                      Order updates only, never marketing. Message and data rates may apply.
+                    </span>
+                  </span>
                 </label>
               </section>
 

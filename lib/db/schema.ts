@@ -43,6 +43,8 @@ export const notificationChannel = pgEnum("notification_channel", [
   "email_store",
   "email_customer",
   "sms",
+  /** Transactional texts to the customer — opt-in per order. */
+  "sms_customer",
   "discord",
   "slack",
   "trello",
@@ -188,6 +190,8 @@ export const customerAccounts = pgTable(
     email: text("email").notNull(),
     name: text("name").notNull(),
     phone: text("phone").notNull(),
+    /** Prefill only — the order row carries the consent that authorizes each text. */
+    smsOptIn: boolean("sms_opt_in").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -249,6 +253,9 @@ export const orders = pgTable(
     currency: text("currency").notNull().default("USD"),
 
     customerNote: text("customer_note"),
+    /** Per-order consent to transactional texts; the ORDER row is the compliance record. */
+    customerSmsOptIn: boolean("customer_sms_opt_in").notNull().default(false),
+    customerSmsConsentAt: timestamp("customer_sms_consent_at", { withTimezone: true }),
     /** Dormant: no writer or reader yet (the anonymizer only nulls it). Kept for the planned staff order-notes feature. */
     staffNote: text("staff_note"),
 

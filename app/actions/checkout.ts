@@ -17,6 +17,7 @@ import { verifyOrderAccessToken } from "@/lib/orders/access";
 import { computeAvailability, type AvailabilityResult } from "@/lib/scheduling/availability";
 import { loadAvailabilityInput } from "@/lib/scheduling/queries";
 import { getStoreLocation } from "@/lib/locations/server";
+import { normalizePhoneE164 } from "@/lib/phone";
 import { getPauseStateFresh } from "@/lib/settings/pause";
 import { inventoryShortages } from "@/lib/inventory/map";
 import { getInventoryQuantities } from "@/lib/inventory/server";
@@ -58,7 +59,19 @@ const cartSchema = z
 const customerSchema = z.object({
   name: z.string().trim().min(1, "Please enter your name").max(120),
   email: z.email("Please enter a valid email address"),
-  phone: z.string().trim().min(7, "Please enter a phone number").max(30),
+  // Normalized to E.164 so the number we store is one Twilio can text.
+  phone: z
+    .string()
+    .trim()
+    .max(30)
+    .transform((value, context) => {
+      const parsed = normalizePhoneE164(value);
+      if (!parsed.ok) {
+        context.addIssue({ code: "custom", message: parsed.message });
+        return z.NEVER;
+      }
+      return parsed.e164;
+    }),
 });
 
 const checkoutSchema = z.object({
@@ -72,6 +85,8 @@ const checkoutSchema = z.object({
   note: z.string().trim().max(500).optional(),
   expectedTotalCents: z.number().int().min(0),
   redeemReward: z.boolean().optional(),
+  /** Consent to transactional texts ("your order is ready"). Default off. */
+  smsOptIn: z.boolean().optional(),
 });
 
 export type CheckoutInput = z.infer<typeof checkoutSchema>;
@@ -197,6 +212,7 @@ export async function startCheckout(input: unknown): Promise<StartCheckoutResult
     pickup: parsed.data.pickup,
     customer: parsed.data.customer,
     note: parsed.data.note,
+    smsOptIn: parsed.data.smsOptIn === true,
     expectedTotalCents: parsed.data.expectedTotalCents,
     // Never accept an account id from the browser. A reward may be attached
     // only to this device's signed-in account and its matching checkout email.

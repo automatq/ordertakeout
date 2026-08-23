@@ -188,6 +188,7 @@ export async function buildOrderNotification(
     items: items.map((item) => ({ quantity: item.quantity, name: item.nameSnapshot })),
     note: order.customerNote,
     trackingUrl: orderTrackingUrl(order.id, order.orderNumber),
+    customerSmsOptIn: order.customerSmsOptIn,
   };
 }
 

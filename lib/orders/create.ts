@@ -127,6 +127,8 @@ export async function createPendingOrder(input: {
   pickup: { date: StoreDate; time: StoreTime };
   customer: CustomerDetails;
   note?: string;
+  /** Consent to transactional texts; recorded on the order with its timestamp. */
+  smsOptIn?: boolean;
   /** Total shown to the customer, in cents — compared against Square's own. */
   expectedTotalCents: number;
   /** Set only when this signed-in account has chosen an available reward. */
@@ -220,6 +222,8 @@ export async function createPendingOrder(input: {
             customerName: input.customer.name,
             customerEmail: input.customer.email,
             customerPhone: input.customer.phone,
+            customerSmsOptIn: input.smsOptIn === true,
+            customerSmsConsentAt: input.smsOptIn === true ? new Date() : null,
             customerAccountId: input.accountId ?? null,
             squareLocationId: location.id,
             ...{

@@ -169,6 +169,43 @@ export function renderCustomerEmail(
   }
 }
 
+/**
+ * The customer's text message. GSM-7 ASCII only — an em-dash or curly quote
+ * silently switches the whole message to UCS-2 and 70-character segments,
+ * tripling the bill — and capped to one segment, dropping the tracking link
+ * before ever truncating the message itself.
+ */
+export function renderCustomerSms(event: NotificationEvent): string | null {
+  const { order } = event;
+  const when = `${formatStoreDate(order.pickupDate, "short")} ${formatPickupTime(order.pickupTime)}`;
+  const where = order.pickupLocationName ? ` at ${order.pickupLocationName}` : "";
+
+  let body: string;
+  switch (event.kind) {
+    case "order_ready":
+      body = `Harina: order ${order.orderNumber} is ready for pickup ${when}${where}. Bring your pickup pass.`;
+      break;
+    case "order_canceled":
+      body = `Harina: order ${order.orderNumber} was cancelled. Any payment is being refunded. Questions? Call the store.`;
+      break;
+    case "order_refunded":
+      body = `Harina: a refund of ${refundAmount(event)} was issued on order ${order.orderNumber}. It usually appears in a few days.`;
+      break;
+    default:
+      return null;
+  }
+
+  // Strip anything outside printable ASCII so a fancy location name can't
+  // silently switch the encoding.
+  body = body.replace(/[^\x20-\x7E]/g, "");
+
+  if (order.trackingUrl) {
+    const withLink = `${body} ${order.trackingUrl}`;
+    if (withLink.length <= SMS_SEGMENT_LIMIT) return withLink;
+  }
+  return body.length <= SMS_SEGMENT_LIMIT ? body : body.slice(0, SMS_SEGMENT_LIMIT);
+}
+
 /* -------------------------------------------------------------------------- */
 /* Chat and board integrations                                                */
 /* -------------------------------------------------------------------------- */

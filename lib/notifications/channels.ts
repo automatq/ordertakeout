@@ -5,6 +5,7 @@ import { resolveStoreEmails, resolveStorePhone } from "@/lib/settings/notificati
 
 import {
   renderCustomerEmail,
+  renderCustomerSms,
   renderDiscord,
   renderSlack,
   renderStoreEmail,
@@ -142,6 +143,51 @@ export async function sendSms(event: NotificationEvent): Promise<ChannelResult> 
   return expectOk(response, "sms");
 }
 
+/**
+ * Transactional texts TO THE CUSTOMER — ready and cancelled only, and only
+ * when this order carries their explicit opt-in. Paid stays email-only
+ * (the confirmation needs the full detail an SMS can't hold), which also
+ * keeps the per-order SMS cost to at most two segments.
+ */
+export async function sendCustomerSms(event: NotificationEvent): Promise<ChannelResult> {
+  const env = serverEnv();
+  if (!env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN || !env.TWILIO_FROM_NUMBER) {
+    return skip("sms_customer");
+  }
+  if (!event.order.customerSmsOptIn) return skip("sms_customer");
+  if (event.kind !== "order_ready" && event.kind !== "order_canceled" && event.kind !== "order_refunded") {
+    return skip("sms_customer");
+  }
+  // Anonymized orders ("Deleted") and legacy free-form numbers fail this shape
+  // check and are skipped rather than handed to Twilio to bounce.
+  if (!/^\+\d{8,15}$/.test(event.order.customerPhone)) return skip("sms_customer");
+
+  const body = renderCustomerSms(event);
+  if (!body) return skip("sms_customer");
+
+  const credentials = Buffer.from(
+    `${env.TWILIO_ACCOUNT_SID}:${env.TWILIO_AUTH_TOKEN}`,
+  ).toString("base64");
+
+  const response = await post(
+    `https://api.twilio.com/2010-04-01/Accounts/${env.TWILIO_ACCOUNT_SID}/Messages.json`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${credentials}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        To: event.order.customerPhone,
+        From: env.TWILIO_FROM_NUMBER,
+        Body: body,
+      }).toString(),
+    },
+  );
+
+  return expectOk(response, "sms_customer");
+}
+
 export async function sendDiscord(event: NotificationEvent): Promise<ChannelResult> {
   const url = serverEnv().DISCORD_WEBHOOK_URL;
   if (!url) return skip("discord");
@@ -207,6 +253,7 @@ export const CHANNELS: Record<Exclude<ChannelName, "email">,
   email_store: sendStoreEmail,
   email_customer: sendCustomerEmail,
   sms: sendSms,
+  sms_customer: sendCustomerSms,
   discord: sendDiscord,
   slack: sendSlack,
   trello: sendTrello,

@@ -17,6 +17,8 @@ export interface OrderNotification {
   items: { quantity: number; name: string }[];
   note: string | null;
   trackingUrl?: string | null;
+  /** Per-order consent to transactional texts. */
+  customerSmsOptIn?: boolean;
 }
 
 export type NotificationEventKind =
@@ -46,6 +48,7 @@ export type ChannelName =
   | "email_store"
   | "email_customer"
   | "sms"
+  | "sms_customer"
   | "discord"
   | "slack"
   | "trello"

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   SMS_SEGMENT_LIMIT,
   renderCustomerEmail,
+  renderCustomerSms,
   renderDiscord,
   renderSlack,
   renderStoreEmail,
@@ -175,5 +176,60 @@ describe("chat and board payloads", () => {
         note: null,
       },
     });
+  });
+});
+
+describe("renderCustomerSms", () => {
+  const base = {
+    orderId: "o1",
+    orderNumber: "PT-1001",
+    customerName: "Maria",
+    customerEmail: "m@example.com",
+    customerPhone: "+14165550142",
+    pickupDate: "2026-08-24" as const,
+    pickupTime: "16:00" as const,
+    pickupLocationName: "Wilson Ave",
+    totalCents: 4500,
+    currency: "CAD",
+    items: [{ quantity: 1, name: "25 pcs Ube" }],
+    note: null,
+    trackingUrl: "https://harina.example/orders/PT-1001?key=abc123",
+    customerSmsOptIn: true,
+  };
+
+  it("stays within one GSM-7 segment, link included when it fits", () => {
+    const body = renderCustomerSms({ kind: "order_ready", order: base });
+    expect(body).not.toBeNull();
+    expect(body!.length).toBeLessThanOrEqual(SMS_SEGMENT_LIMIT);
+    expect(body).toContain("PT-1001");
+    expect(body).toContain("https://harina.example");
+    // Printable ASCII only — anything else flips the whole message to UCS-2.
+    expect(body).toMatch(/^[\x20-\x7E]*$/);
+  });
+
+  it("drops the link before ever truncating the message", () => {
+    const body = renderCustomerSms({
+      kind: "order_ready",
+      order: {
+        ...base,
+        pickupLocationName: "The Extremely Long Location Name At The Far End Of Town Plaza",
+        trackingUrl: `https://harina.example/orders/PT-1001?key=${"x".repeat(80)}`,
+      },
+    });
+    expect(body).not.toBeNull();
+    expect(body!.length).toBeLessThanOrEqual(SMS_SEGMENT_LIMIT);
+    expect(body).not.toContain("https://");
+  });
+
+  it("strips non-ASCII from fancy location names", () => {
+    const body = renderCustomerSms({
+      kind: "order_ready",
+      order: { ...base, pickupLocationName: "Café — Où", trackingUrl: null },
+    });
+    expect(body).toMatch(/^[\x20-\x7E]*$/);
+  });
+
+  it("returns null for kinds customers are not texted about", () => {
+    expect(renderCustomerSms({ kind: "order_paid", order: base })).toBeNull();
   });
 });
