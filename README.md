@@ -71,9 +71,14 @@ npm run dev
 - **`SQUARE_WEBHOOK_NOTIFICATION_URL`** must match the subscription URL in the Square
   console character for character — it's part of the signed payload, so even a trailing
   slash mismatch will fail verification.
-- **`CRON_SECRET`** protects the maintenance endpoint that expires holds, retries provider
-  failures, and applies the configured customer-data retention policy. `vercel.json` runs it
-  once daily at 08:17 UTC, which is compatible with Vercel Hobby cron limits.
+- **`CRON_SECRET`** protects the maintenance endpoint. Maintenance runs on two schedules:
+  `vercel.json` runs the full pass (including pruning and the customer-data retention
+  policy) once daily at 08:17 UTC — the most a Vercel Hobby cron allows — and the
+  `maintenance-fast` GitHub Actions workflow calls `?scope=fast` every 5 minutes for the
+  jobs that can't wait a day: notification retries, stale payment recovery, and Square
+  sync retries. Configure the workflow's `MAINTENANCE_URL` variable and `CRON_SECRET`
+  secret in the GitHub repo settings; without them the fast schedule is skipped and
+  retries degrade to daily.
 
 Notification channels are all optional; an unset channel is skipped by the dispatcher, so
 the store can enable one later without a code change.

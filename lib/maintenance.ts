@@ -11,15 +11,21 @@ import { recoverStalePaymentAttempts } from "@/lib/orders/create";
 import { sweepExpiredHolds } from "@/lib/scheduling/queries";
 import { retrySquareOrderSync } from "@/lib/orders/transitions";
 
-export async function runMaintenance() {
-  const [holds, inventoryHolds, retries, squareRetries, paymentAttempts, operationalRows, anonymizedOrders] = await Promise.all([
+/**
+ * The minutes-scale jobs: notification retries (next_attempt_at is +5 min),
+ * stale payment recovery, Square-sync retries, and hold sweeps. Capacity is
+ * never blocked by an expired hold — both read paths filter expires_at — so
+ * the sweeps here are housekeeping; the retries are the reason this runs
+ * often. Vercel Hobby only allows daily crons, so a GitHub Actions schedule
+ * calls this every few minutes via /api/cron/maintenance?scope=fast.
+ */
+export async function runFastMaintenance() {
+  const [holds, inventoryHolds, retries, squareRetries, paymentAttempts] = await Promise.all([
     sweepExpiredHolds(),
     sweepExpiredInventoryHolds(),
     retryFailedNotifications(),
     retrySquareSyncFailures(),
     recoverStalePaymentAttempts(),
-    pruneOperationalData(),
-    anonymizeExpiredCustomerData(),
   ]);
   return {
     holds,
@@ -27,6 +33,18 @@ export async function runMaintenance() {
     retries,
     squareRetries,
     paymentAttempts,
+  };
+}
+
+/** The full daily run: everything in the fast pass plus pruning and PII retention. */
+export async function runMaintenance() {
+  const [fast, operationalRows, anonymizedOrders] = await Promise.all([
+    runFastMaintenance(),
+    pruneOperationalData(),
+    anonymizeExpiredCustomerData(),
+  ]);
+  return {
+    ...fast,
     operationalRows,
     anonymizedOrders,
   };

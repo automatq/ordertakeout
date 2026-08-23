@@ -29,7 +29,7 @@ vi.mock("@/lib/orders/create", () => ({
   recoverStalePaymentAttempts: mocks.recoverStalePaymentAttempts,
 }));
 
-import { runMaintenance } from "./maintenance";
+import { runFastMaintenance, runMaintenance } from "./maintenance";
 
 function emptyDelete() {
   return {
@@ -70,5 +70,28 @@ describe("maintenance payment recovery", () => {
       paymentAttempts: { examined: 2, resolved: 1, unresolved: 1 },
     });
     expect(mocks.recoverStalePaymentAttempts).toHaveBeenCalledOnce();
+  });
+
+  it("keeps pruning and anonymization out of the fast pass", async () => {
+    const transaction = vi.fn();
+    const select = {
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({ limit: vi.fn().mockResolvedValue([]) })),
+      })),
+    };
+    mocks.db.mockReturnValue({ select: vi.fn(() => select), transaction });
+
+    const result = await runFastMaintenance();
+
+    expect(result).toMatchObject({
+      holds: 2,
+      inventoryHolds: 3,
+      retries: 1,
+      paymentAttempts: { examined: 2, resolved: 1, unresolved: 1 },
+    });
+    expect(result).not.toHaveProperty("operationalRows");
+    expect(result).not.toHaveProperty("anonymizedOrders");
+    // pruneOperationalData is the only transaction user; the fast pass must not prune.
+    expect(transaction).not.toHaveBeenCalled();
   });
 });
