@@ -89,6 +89,12 @@ const serverSchema = z.object({
   TRELLO_TOKEN: optional(z.string()),
   TRELLO_LIST_ID: optional(z.string()),
   CUSTOM_WEBHOOK_URL: optional(z.url()),
+  /**
+   * Sentry server DSN — errors-only monitoring (see instrumentation.ts). Unset
+   * disables it entirely. The SDK reads process.env directly; this entry exists
+   * so the variable is documented and validated alongside everything else.
+   */
+  SENTRY_DSN: optional(z.url()),
   /** Protects scheduled maintenance routes. */
   CRON_SECRET: optional(z.string().min(16)),
   /** Canonical public origin used in customer notification links. */

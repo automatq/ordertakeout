@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { loyaltyEntries, orders, slotHolds, type Order, type OrderStatus } from "@/lib/db/schema";
 import { REWARD_POINTS } from "@/lib/accounts/loyalty";
 import { isDemoMode } from "@/lib/demo/config";
+import { reportError } from "@/lib/monitoring/report";
 import { squareClient } from "@/lib/square/client";
 import { STAFF_TRANSITIONS } from "@/lib/orders/status";
 import { notifyOrder } from "@/lib/notifications/dispatch";
@@ -543,8 +544,7 @@ export async function mirrorToSquare(
 
     return undefined;
   } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause);
-    console.error(`[orders] could not mirror ${status} to Square:`, message);
+    reportError("orders", `could not mirror ${status} to Square`, cause);
     return "Updated here, but Square didn't accept the change. It will re-sync shortly.";
   }
 }

@@ -1,5 +1,9 @@
 "use client";
 
+import { useEffect } from "react";
+
+import { reportBoundaryError } from "@/lib/monitoring/report-client";
+
 /**
  * Last resort: the root layout itself failed.
  *
@@ -15,6 +19,10 @@ export default function GlobalError({
   error: Error & { digest?: string };
   retry: () => void;
 }) {
+  useEffect(() => {
+    reportBoundaryError(error);
+  }, [error]);
+
   return (
     <html lang="en">
       <body

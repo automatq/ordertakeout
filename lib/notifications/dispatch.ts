@@ -4,6 +4,7 @@ import { and, eq, lt, lte, or, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { notificationLog, orderItems, orders } from "@/lib/db/schema";
+import { reportError } from "@/lib/monitoring/report";
 import { normalizeTime } from "@/lib/scheduling/time";
 import { orderTrackingUrl } from "@/lib/orders/access";
 
@@ -54,7 +55,9 @@ export async function dispatch(event: NotificationEvent): Promise<ChannelResult[
         const message = cause instanceof Error ? cause.message : String(cause);
         const result: ChannelResult = { channel: name, ok: false, error: message };
         await record(event, name, result).catch(() => {});
-        console.error(`[notifications] ${name} failed for ${event.order.orderNumber}:`, message);
+        reportError("notifications", `${name} delivery failed`, cause, {
+          orderNumber: event.order.orderNumber,
+        });
         return result;
       }
     }),
@@ -188,11 +191,11 @@ export async function notifyOrder(
   try {
     const order = await buildOrderNotification(orderId);
     if (!order) {
-      console.error(`[notifications] no order ${orderId} to notify about`);
+      reportError("notifications", "no order to notify about", undefined, { orderId });
       return;
     }
     await dispatch({ kind, order });
   } catch (cause) {
-    console.error("[notifications] dispatch failed:", cause);
+    reportError("notifications", "dispatch failed", cause);
   }
 }

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { serverEnv } from "@/lib/env";
+import { reportError } from "@/lib/monitoring/report";
 
 import {
   renderCustomerEmail,
@@ -118,7 +119,7 @@ function notificationEmailFor(
     const email = (value as Record<string, unknown>)[locationId];
     return typeof email === "string" && /^\S+@\S+\.\S+$/.test(email) ? email : null;
   } catch {
-    console.error("[notifications] LOCATION_NOTIFY_EMAILS is not valid JSON");
+    reportError("notifications", "LOCATION_NOTIFY_EMAILS is not valid JSON");
     return null;
   }
 }
@@ -135,7 +136,7 @@ function notificationDestinationFor(
     const destination = (value as Record<string, unknown>)[locationId];
     return typeof destination === "string" && pattern.test(destination) ? destination : null;
   } catch {
-    console.error("[notifications] location destination map is not valid JSON");
+    reportError("notifications", "location destination map is not valid JSON");
     return null;
   }
 }

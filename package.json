@@ -21,6 +21,7 @@
     "demo": "node scripts/demo.mjs"
   },
   "dependencies": {
+    "@sentry/nextjs": "^10.70.0",
     "@square/web-sdk": "^2.2.0",
     "date-fns": "^4.4.0",
     "date-fns-tz": "^3.2.0",

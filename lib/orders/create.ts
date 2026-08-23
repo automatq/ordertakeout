@@ -9,6 +9,7 @@ import { getOrderableProducts } from "@/lib/catalog/server";
 import { db } from "@/lib/db";
 import { customerAccounts, loyaltyEntries, orderItems, orders, slotHolds } from "@/lib/db/schema";
 import { REWARD_DISCOUNT_CENTS, REWARD_POINTS } from "@/lib/accounts/loyalty";
+import { reportError } from "@/lib/monitoring/report";
 import { reserveSlotWithin } from "@/lib/scheduling/queries";
 import { slotKey, type SelectionRejection } from "@/lib/scheduling/availability";
 import { normalizeTime, type StoreDate, type StoreTime } from "@/lib/scheduling/time";
@@ -152,7 +153,7 @@ export async function createPendingOrder(input: {
   // one stale payment-bound reservation for this location before it can reject
   // the next real customer; the cron remains the no-traffic backstop.
   await recoverStalePaymentAttempts({ limit: 1, locationId: location.id }).catch((cause) => {
-    console.error(`[checkout] stale payment recovery failed for ${location.id}:`, cause);
+    reportError("checkout", "stale payment recovery failed", cause, { locationId: location.id });
   });
 
   const rawInventory = await getFreshRawInventoryQuantities(
@@ -330,7 +331,7 @@ export async function createPendingOrder(input: {
     // A failed Square/network call must not leave a live hold consuming this
     // store's capacity for the rest of its TTL.
     await abandonOrder(created.orderId).catch((cleanupCause) => {
-      console.error("[checkout] could not release a failed Square draft hold:", cleanupCause);
+      reportError("checkout", "could not release a failed Square draft hold", cleanupCause);
     });
     throw cause;
   }
@@ -367,7 +368,7 @@ export async function createPendingOrder(input: {
     if (!linked.length) throw new Error("Pending order changed before its Square draft was linked");
   } catch (cause) {
     await abandonOrder(created.orderId).catch((cleanupCause) => {
-      console.error("[checkout] could not release an unlinked Square draft hold:", cleanupCause);
+      reportError("checkout", "could not release an unlinked Square draft hold", cleanupCause);
     });
     throw cause;
   }
@@ -784,7 +785,7 @@ export async function payForOrder(orderId: string, sourceId: string): Promise<Pa
       return rows;
     });
   } catch (cause) {
-    console.error("[checkout] payment completed but local confirmation failed:", cause);
+    reportError("checkout", "payment completed but local confirmation failed", cause);
     return {
       ok: false,
       code: "PAYMENT_RECONCILING",
@@ -875,7 +876,9 @@ export async function recoverStalePaymentAttempts(
   for (const attempt of stale) {
     const attemptKey = attempt.paymentAttemptKey;
     if (!attemptKey || attempt.squarePaymentId !== paymentAttemptMarker(attempt.id)) {
-      console.error(`[maintenance] inconsistent payment attempt for ${attempt.orderNumber}`);
+      reportError("maintenance", "inconsistent payment attempt", undefined, {
+        orderNumber: attempt.orderNumber,
+      });
       unresolved += 1;
       continue;
     }
@@ -904,9 +907,9 @@ export async function recoverStalePaymentAttempts(
 
       const cancellation = await cancelSquarePaymentAttempt(attemptKey);
       if (!cancellation.ok) {
-        console.error(
-          `[maintenance] payment attempt ${attempt.orderNumber} remains unresolved: ${cancellation.code}`,
-        );
+        reportError("maintenance", `payment attempt remains unresolved: ${cancellation.code}`, undefined, {
+          orderNumber: attempt.orderNumber,
+        });
         unresolved += 1;
         continue;
       }
@@ -928,7 +931,9 @@ export async function recoverStalePaymentAttempts(
         else unresolved += 1;
       }
     } catch (cause) {
-      console.error(`[maintenance] payment recovery failed for ${attempt.orderNumber}:`, cause);
+      reportError("maintenance", "payment recovery failed", cause, {
+        orderNumber: attempt.orderNumber,
+      });
       unresolved += 1;
     }
   }

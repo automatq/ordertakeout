@@ -3,6 +3,7 @@ import "server-only";
 import { cacheLife, cacheTag } from "next/cache";
 
 import { isDemoMode } from "@/lib/demo/config";
+import { reportError } from "@/lib/monitoring/report";
 import { squareClient } from "@/lib/square/client";
 
 import { mapSquareLocation } from "./square";
@@ -46,7 +47,7 @@ export async function getStoreLocationsSafe(): Promise<StoreLocation[]> {
   try {
     return await getStoreLocations();
   } catch (cause) {
-    console.error("[locations] Square locations fetch failed:", cause instanceof Error ? cause.message : cause);
+    reportError("locations", "Square locations fetch failed", cause);
     return [];
   }
 }

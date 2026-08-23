@@ -6,6 +6,7 @@ import type { ResolvedCartLine } from "@/lib/catalog/cart";
 import { pickupInstant, type StoreDate, type StoreTime } from "@/lib/scheduling/time";
 import { serverEnv } from "@/lib/env";
 import { isDemoMode } from "@/lib/demo/config";
+import { reportError } from "@/lib/monitoring/report";
 import {
   classifyRefundStatus,
   type RefundDisposition,
@@ -211,7 +212,7 @@ export async function createSquarePayment(params: {
     // a structured body. Surface the code so checkout can show something better
     // than "something went wrong".
     const detail = extractSquareError(cause);
-    console.error("[payments] create failed:", detail);
+    reportError("payments", "create failed", cause, { ...detail });
     return { ok: false, ...detail };
   }
 }
@@ -238,7 +239,7 @@ export async function cancelSquarePaymentAttempt(
     return { ok: true };
   } catch (cause) {
     const detail = extractSquareError(cause);
-    console.error("[payments] cancel-by-idempotency-key failed:", detail);
+    reportError("payments", "cancel-by-idempotency-key failed", cause, { ...detail });
     return { ok: false, ...detail, ambiguous: true };
   }
 }
@@ -304,7 +305,7 @@ export async function refundSquarePayment(params: {
     };
   } catch (cause) {
     const detail = extractSquareError(cause);
-    console.error("[refunds] refund failed:", detail);
+    reportError("refunds", "refund failed", cause, { ...detail });
     return {
       ok: false,
       ...detail,

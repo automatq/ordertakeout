@@ -29,11 +29,20 @@ const SQUARE_FONT_SOURCES = [
 export function buildContentSecurityPolicy({
   production,
   squareEnvironment,
+  sentryIngestOrigin,
 }: {
   production: boolean;
   squareEnvironment: SquareWebPaymentsEnvironment;
+  /**
+   * Origin of this app's own Sentry browser reporting (derived from
+   * NEXT_PUBLIC_SENTRY_DSN), distinct from SQUARE_TELEMETRY which is the Square
+   * SDK's built-in Sentry. Null when browser monitoring is not configured.
+   */
+  sentryIngestOrigin?: string | null;
 }): string {
   const square = SQUARE_WEB_PAYMENTS[squareEnvironment];
+  const connect = [square.sdk, square.payment, SQUARE_TELEMETRY];
+  if (sentryIngestOrigin) connect.push(sentryIngestOrigin);
 
   return [
     "default-src 'self'",
@@ -45,8 +54,21 @@ export function buildContentSecurityPolicy({
     `style-src 'self' 'unsafe-inline' ${square.sdk}`,
     `img-src 'self' data: blob: ${PRODUCT_IMAGE_CSP_SOURCES.join(" ")}`,
     `font-src 'self' data: ${SQUARE_FONT_SOURCES.join(" ")}`,
-    `connect-src 'self' ${square.sdk} ${square.payment} ${SQUARE_TELEMETRY}`,
+    `connect-src 'self' ${connect.join(" ")}`,
     `frame-src 'self' ${square.sdk}`,
     ...(production ? ["upgrade-insecure-requests"] : []),
   ].join("; ");
+}
+
+/**
+ * The origin a Sentry DSN reports to, for the connect-src allowlist.
+ * A malformed DSN yields null rather than a broken CSP entry.
+ */
+export function sentryIngestOriginFromDsn(dsn: string | undefined): string | null {
+  if (!dsn) return null;
+  try {
+    return new URL(dsn).origin;
+  } catch {
+    return null;
+  }
 }

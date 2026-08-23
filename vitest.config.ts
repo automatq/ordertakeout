@@ -45,6 +45,12 @@ export default defineConfig({
        * keeps the function bodies runnable.
        */
       "next/cache": path.resolve(import.meta.dirname, "lib/testing/next-cache-stub.ts"),
+      /**
+       * lib/monitoring/report.ts imports the Sentry SDK at module scope; the
+       * stub keeps the Sentry + OpenTelemetry dependency tree out of every
+       * test run. report.test.ts overrides this with its own vi.mock.
+       */
+      "@sentry/nextjs": path.resolve(import.meta.dirname, "lib/testing/sentry-stub.ts"),
     },
   },
 });

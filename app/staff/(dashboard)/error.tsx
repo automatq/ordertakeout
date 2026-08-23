@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 
 import { AlertIcon } from "@/components/ui/icons";
+import { reportBoundaryError } from "@/lib/monitoring/report-client";
 
 /**
  * Staff error boundary.
@@ -19,7 +20,7 @@ export default function StaffError({
   retry: () => void;
 }) {
   useEffect(() => {
-    console.error(error);
+    reportBoundaryError(error);
   }, [error]);
 
   return (

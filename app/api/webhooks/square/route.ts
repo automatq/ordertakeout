@@ -1,6 +1,7 @@
 import { WebhooksHelper } from "square";
 
 import { serverEnv } from "@/lib/env";
+import { reportError } from "@/lib/monitoring/report";
 import {
   applySquareEvent,
   claimEvent,
@@ -72,8 +73,7 @@ export async function POST(request: Request): Promise<Response> {
   try {
     claim = await claimEvent(event.eventId, event.type, payload);
   } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause);
-    console.error(`[webhooks] could not record ${event.type} (${event.eventId}):`, message);
+    reportError("webhooks", `could not record ${event.type}`, cause, { eventId: event.eventId });
     return new Response("Could not record event", { status: 503 });
   }
 
@@ -98,7 +98,7 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ handled: outcome.handled, detail: outcome.detail });
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
-    console.error(`[webhooks] failed to apply ${event.type}:`, message);
+    reportError("webhooks", `failed to apply ${event.type}`, cause, { eventId: event.eventId });
 
     // Records the error but leaves `processed_at` null, so the event stays
     // eligible for reprocessing. 500 asks Square to retry it.

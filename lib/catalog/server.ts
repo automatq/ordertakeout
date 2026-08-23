@@ -10,6 +10,7 @@ import { DEMO_PRODUCTS, DEMO_PRODUCT_RULES } from "@/lib/demo/catalog";
 import { isDemoMode } from "@/lib/demo/config";
 import { matchProductConfig } from "@/lib/demo/product-config";
 import { serverEnv } from "@/lib/env";
+import { reportError } from "@/lib/monitoring/report";
 import { squareClient } from "@/lib/square/client";
 import { getInStockVariationIds } from "@/lib/inventory/server";
 import { getStoreLocation } from "@/lib/locations/server";
@@ -79,7 +80,7 @@ async function fetchSquareCatalog(): Promise<CatalogLoad> {
     };
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
-    console.error("[catalog] Square catalog fetch failed:", message);
+    reportError("catalog", "Square catalog fetch failed", cause);
     return { products: [], skipped: [], error: message };
   }
 }
@@ -116,10 +117,7 @@ async function fetchImageUrls(
 
     return urls;
   } catch (cause) {
-    console.error(
-      "[catalog] image resolution failed, falling back to text tiles:",
-      cause instanceof Error ? cause.message : String(cause),
-    );
+    reportError("catalog", "image resolution failed, falling back to text tiles", cause);
     return new Map();
   }
 }
@@ -167,7 +165,7 @@ async function fetchProductConfig(): Promise<{ rows: ProductConfigRow[]; error?:
     };
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
-    console.error("[catalog] product config fetch failed:", message);
+    reportError("catalog", "product config fetch failed", cause);
     return { rows: [], error: message };
   }
 }
