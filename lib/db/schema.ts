@@ -451,6 +451,59 @@ export const appSettings = pgTable("app_settings", {
     .default(sql`now()`),
 });
 
+/**
+ * The staff roster: attribution, not authentication.
+ *
+ * The dashboard stays behind one shared password; these rows exist so the
+ * initials typed at pickup verification, refunds, and settings changes resolve
+ * to a real person. Members are deactivated rather than deleted so historical
+ * attribution keeps meaning. `initials` are stored uppercased (normalized in
+ * lib/staff/roster.ts) — the unique index depends on it.
+ */
+export const staffMembers = pgTable(
+  "staff_members",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    initials: text("initials").notNull(),
+    /** Optional 4-digit PIN (HMAC, lib/staff/roster.ts) required for refunds only. Attribution hardening, not security. */
+    pinHash: text("pin_hash"),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("staff_members_initials_key").on(t.initials)],
+);
+
+/**
+ * Append-only record of operator-relevant actions: status changes, refunds,
+ * cancellations, 86ing, pause toggles, settings writes. No update or delete
+ * path exists in code. `metadata` must never contain customer PII — the
+ * retention anonymizer does not touch this table.
+ */
+export const auditLog = pgTable(
+  "audit_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** "staff" | "system:webhook" | "system:cron" | "customer" */
+    actorType: text("actor_type").notNull(),
+    actorInitials: text("actor_initials"),
+    /** Dotted verb slug, e.g. "order.status_changed", "order.refunded", "product.86ed". */
+    action: text("action").notNull(),
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id"),
+    /** Kept nullable so audit history survives order deletion. */
+    orderId: uuid("order_id").references(() => orders.id, { onDelete: "set null" }),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("audit_log_created_idx").on(t.createdAt),
+    index("audit_log_order_idx").on(t.orderId),
+    index("audit_log_action_idx").on(t.action),
+  ],
+);
+
 /* -------------------------------------------------------------------------- */
 /* Relations                                                                  */
 /* -------------------------------------------------------------------------- */

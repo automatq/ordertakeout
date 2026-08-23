@@ -15,6 +15,8 @@ import { mirrorToSquare } from "./transitions";
 import { isOrderNumber, normalizeOrderNumber } from "./number";
 import { parsePickupPass, verifyPickupPass } from "./pickup-pass";
 import { REWARD_POINTS } from "@/lib/accounts/loyalty";
+import { recordAuditWithin } from "@/lib/audit/log";
+import { normalizeInitials, validateInitials } from "@/lib/staff/roster";
 
 export type PickupVerificationMethod = "qr" | "manual";
 
@@ -41,10 +43,6 @@ function failureForStatus(status: OrderStatus): string {
   return "This order is not ready for pickup yet.";
 }
 
-function normalizeInitials(value: string): string | null {
-  const initials = value.trim().toUpperCase();
-  return /^[A-Z]{2,6}$/.test(initials) ? initials : null;
-}
 
 async function resolveOrder(input: VerificationInput): Promise<{
   order: typeof orders.$inferSelect;
@@ -114,6 +112,8 @@ export async function verifyPickup(
 ): Promise<PickupVerificationResult> {
   const initials = normalizeInitials(input.staffInitials);
   if (!initials) return { ok: false, reason: "Enter 2–6 staff initials." };
+  const roster = await validateInitials(initials);
+  if (!roster.ok) return { ok: false, reason: roster.message };
 
   const resolved = await resolveOrder(input);
   if ("reason" in resolved) return { ok: false, reason: resolved.reason };
@@ -149,6 +149,14 @@ export async function verifyPickup(
         }).onConflictDoNothing();
       }
     }
+    await recordAuditWithin(tx, {
+      actorType: "staff",
+      actorInitials: initials,
+      action: "order.pickup_verified",
+      entityType: "order",
+      orderId: resolved.order.id,
+      metadata: { method: resolved.method, orderNumber: resolved.order.orderNumber },
+    });
     return true;
   });
 

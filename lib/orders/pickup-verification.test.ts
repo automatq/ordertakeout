@@ -3,10 +3,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   db: vi.fn(),
   mirrorToSquare: vi.fn(),
+  validateInitials: vi.fn(),
+  recordAuditWithin: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({ db: mocks.db }));
 vi.mock("@/lib/orders/transitions", () => ({ mirrorToSquare: mocks.mirrorToSquare }));
+vi.mock("@/lib/audit/log", () => ({ recordAuditWithin: mocks.recordAuditWithin }));
+vi.mock("@/lib/staff/roster", () => ({
+  normalizeInitials: (value: string) => {
+    const initials = value.trim().toUpperCase();
+    return /^[A-Z]{2,6}$/.test(initials) ? initials : null;
+  },
+  validateInitials: mocks.validateInitials,
+}));
 vi.mock("@/lib/env", () => ({
   serverEnv: () => ({
     ORDER_ACCESS_SECRET: "pickup-test-secret-that-is-long-enough-to-be-safe",
@@ -68,6 +78,23 @@ describe("pickup verification", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.mirrorToSquare.mockResolvedValue(undefined);
+    mocks.validateInitials.mockResolvedValue({ ok: true, memberId: null });
+    mocks.recordAuditWithin.mockResolvedValue(undefined);
+  });
+
+  it("refuses initials the roster rejects", async () => {
+    mocks.validateInitials.mockResolvedValue({
+      ok: false,
+      message: "These initials aren't on the staff roster. Ask a manager to add you under Settings → Staff.",
+    });
+
+    const result = await verifyPickup({ method: "manual", value: ORDER.orderNumber, staffInitials: "ZZ" });
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "These initials aren't on the staff roster. Ask a manager to add you under Settings → Staff.",
+    });
+    expect(mocks.db).not.toHaveBeenCalled();
   });
 
   it("shows a ready order only after a valid QR pass", async () => {
