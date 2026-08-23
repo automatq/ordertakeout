@@ -36,3 +36,7 @@ coverage/
 # conductor workspace scratch
 .context/
 .gstack/
+
+# local PDF/report scratch (never committed)
+output/
+tmp/
