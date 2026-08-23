@@ -21,6 +21,11 @@ export const itemLines = (order: OrderNotification): string[] =>
 
 const total = (order: OrderNotification) => formatMoney(order.totalCents, order.currency);
 
+/** What the card was charged: order total plus tip. */
+const charged = (order: OrderNotification) =>
+  formatMoney(order.totalCents + (order.tipCents ?? 0), order.currency)
+  + ((order.tipCents ?? 0) > 0 ? ` (includes ${formatMoney(order.tipCents ?? 0, order.currency)} tip)` : "");
+
 const refundAmount = (event: NotificationEvent) =>
   formatMoney(event.refund?.amountCents ?? event.order.totalCents, event.order.currency);
 
@@ -115,7 +120,7 @@ export function renderCustomerEmail(
           "Items:",
           ...itemLines(order).map((line) => `  ${line}`),
           "",
-          `Paid:   ${total(order)}`,
+          `Paid:   ${charged(order)}`,
           "",
           "Please collect in store at your chosen time. Bring your order number.",
           ...(order.trackingUrl ? ["", `Track your order: ${order.trackingUrl}`] : []),

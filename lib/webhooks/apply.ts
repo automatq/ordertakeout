@@ -245,8 +245,9 @@ async function applyRefundEvent(
     }
 
     const now = new Date();
-    const overRefunded = order.refundedTotalCents + amountCents > order.totalCents;
-    const fullyRefundedAfter = order.refundedTotalCents + amountCents >= order.totalCents;
+    const chargedCents = order.totalCents + order.tipCents;
+    const overRefunded = order.refundedTotalCents + amountCents > chargedCents;
+    const fullyRefundedAfter = order.refundedTotalCents + amountCents >= chargedCents;
     // A refund of the remaining balance cancels an ACTIVE order; a completed
     // (picked-up) order keeps its status and only its money state changes.
     const shouldCancel = order.status !== "completed" && order.status !== "canceled" && refundsRemainder;
@@ -336,7 +337,7 @@ async function applyRefundEvent(
           refundStatus: fullyRefundedAfter ? "completed" : "partial",
           squareRefundId: event.refundId,
           refundError: overRefunded
-            ? `Refunds exceed the order total by ${order.refundedTotalCents + amountCents - order.totalCents} cents. Reconcile in Square.`
+            ? `Refunds exceed the charged amount by ${order.refundedTotalCents + amountCents - chargedCents} cents. Reconcile in Square.`
             : null,
           refundAttemptStartedAt: null,
           refundedTotalCents: sql`${orders.refundedTotalCents} + ${amountCents}`,

@@ -27,8 +27,8 @@ vi.mock("@/lib/orders/refunds", () => ({
   settleLedgerRowWithin: mocks.settleLedgerRowWithin,
   markLedgerRowById: mocks.markLedgerRowById,
   revokeEarnedPointsWithin: mocks.revokeEarnedPointsWithin,
-  remainingRefundableCents: (order: { totalCents: number; refundedTotalCents?: number }) =>
-    Math.max(0, order.totalCents - (order.refundedTotalCents ?? 0)),
+  remainingRefundableCents: (order: { totalCents: number; tipCents?: number; refundedTotalCents?: number }) =>
+    Math.max(0, order.totalCents + (order.tipCents ?? 0) - (order.refundedTotalCents ?? 0)),
 }));
 vi.mock("@/lib/inventory/reservations", () => ({
   releaseInventoryHoldsWithin: mocks.releaseInventoryHoldsWithin,
@@ -119,6 +119,7 @@ const ORDER = {
   squareLocationId: "TORONTO_WEST",
   status: "paid",
   totalCents: 2400,
+  tipCents: 0,
   refundedTotalCents: 0,
   customerAccountId: null,
   currency: "CAD",
@@ -314,6 +315,23 @@ describe("applySquareEvent money reconciliation", () => {
     expect(mocks.notifyOrderRefund).toHaveBeenCalledWith(ORDER.id, "ledger-1");
     expect(mocks.mirrorToSquare).not.toHaveBeenCalled();
     expect(mocks.notifyOrder).not.toHaveBeenCalled();
+  });
+
+  it("classifies a tipped order's full refund by the charged amount, not the order total", async () => {
+    let canceledWrite: Record<string, unknown> | undefined;
+    const tipped = { ...ORDER, tipCents: 600 };
+    mocks.resolveWebhookLedgerRow.mockResolvedValue({ id: "ledger-1", status: "pending", amountCents: 3000 });
+    mocks.db
+      .mockReturnValueOnce(selectRowsDb([tipped]))
+      .mockReturnValueOnce(transactionDb([{ id: ORDER.id }], (value) => { canceledWrite = value; }))
+      .mockReturnValueOnce(captureUpdateDb());
+
+    // 2400 total + 600 tip: only a 3000-cent refund is "the remainder".
+    await expect(applySquareEvent({ ...COMPLETED_REFUND, amountCents: 3000 })).resolves.toMatchObject({
+      handled: true,
+      detail: expect.stringContaining("cancelled"),
+    });
+    expect(canceledWrite).toMatchObject({ status: "canceled", refundStatus: "completed" });
   });
 
   it("keeps a completed order completed when its refund lands in full", async () => {

@@ -533,7 +533,10 @@ function OrderCard({
           <span className={BADGE_CLASS[order.status]}>{STATUS_LABEL[order.status]}</span>
           {/* `.tag`, not `badge-ready`: the money chip used to be the same green
               pill as the "Ready for pickup" status sitting right next to it. */}
-          <span className="tag">Paid {formatMoney(order.totalCents, order.currency)}</span>
+          <span className="tag">
+          Paid {formatMoney(order.totalCents + order.tipCents, order.currency)}
+          {order.tipCents > 0 ? ` (incl. ${formatMoney(order.tipCents, order.currency)} tip)` : ""}
+        </span>
           {order.refundStatus === "pending" ? <span className="tag tag-accent">Refund pending</span> : null}
           {order.refundStatus === "failed" ? <span className="badge badge-new">Refund failed</span> : null}
         </div>

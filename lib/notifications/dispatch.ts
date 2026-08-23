@@ -184,6 +184,7 @@ export async function buildOrderNotification(
     pickupLocationId: order.squareLocationId,
     pickupLocationAddress: order.pickupLocationAddress,
     totalCents: order.totalCents,
+    tipCents: order.tipCents,
     currency: order.currency,
     items: items.map((item) => ({ quantity: item.quantity, name: item.nameSnapshot })),
     note: order.customerNote,
@@ -295,7 +296,7 @@ export async function notifyOrderRefund(orderId: string, refundId: string): Prom
       dedupeKey: `order_refunded:${refundId}`,
       refund: {
         amountCents: refund.amountCents,
-        partial: refund.amountCents < order.totalCents,
+        partial: refund.amountCents < order.totalCents + (order.tipCents ?? 0),
       },
     });
   } catch (cause) {

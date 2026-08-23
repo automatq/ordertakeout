@@ -436,6 +436,8 @@ type PaymentLine = { variationId: string; quantity: number };
 type PaymentAttemptClaim = {
   attemptKey: string;
   sourceId: string;
+  /** Pinned with the key: retries of the same attempt replay the same tip. */
+  tipCents: number;
   paymentMarker: string;
   checkoutExpiresAt: Date;
 };
@@ -455,6 +457,7 @@ export async function claimPaymentAttempt(
   order: typeof orders.$inferSelect,
   items: readonly PaymentLine[],
   sourceId: string,
+  requestedTipCents = 0,
 ): Promise<PaymentAttemptClaim | null> {
   const locationId = order.squareLocationId;
   if (!locationId) throw new PaymentReservationExpiredError();
@@ -468,6 +471,12 @@ export async function claimPaymentAttempt(
   const attemptKey = order.paymentAttemptKey
     ?? (legacyAttempt ? order.id : createPaymentAttemptKey());
   const attemptSourceId = order.paymentAttemptSourceId ?? (legacyAttempt ? null : sourceId);
+  // A fresh claim records the requested tip; a retry of an existing attempt
+  // must replay the tip that attempt was created with, whatever the client
+  // sends now — key and amount travel together.
+  const attemptTipCents = order.paymentAttemptKey || legacyAttempt
+    ? order.tipCents
+    : Math.max(0, Math.floor(requestedTipCents));
   // The pre-migration code did not persist Square's opaque source token. It is
   // unsafe to reuse its old key with a newly tokenized source. The webhook or
   // stale-attempt cancellation path must reconcile that legacy attempt.
@@ -482,6 +491,7 @@ export async function claimPaymentAttempt(
           paymentAttemptKey: attemptKey,
           paymentAttemptSourceId: attemptSourceId,
           paymentAttemptStartedAt: now,
+          tipCents: attemptTipCents,
           updatedAt: now,
         })
         .where(and(
@@ -564,6 +574,7 @@ export async function claimPaymentAttempt(
       return {
         attemptKey,
         sourceId: attemptSourceId,
+        tipCents: attemptTipCents,
         paymentMarker,
         checkoutExpiresAt,
       };
@@ -589,6 +600,9 @@ export async function restoreAfterDefinitivePaymentFailure(
         paymentAttemptKey: null,
         paymentAttemptSourceId: null,
         paymentAttemptStartedAt: null,
+        // A definitively failed attempt releases its pinned tip; the customer
+        // may pick a different one on their next try.
+        tipCents: 0,
         updatedAt: now,
       })
       .where(and(
@@ -638,7 +652,11 @@ export async function restoreAfterDefinitivePaymentFailure(
  *     reconciles the order independently. The payment id is recoverable from
  *     Square by the same idempotency key, so nothing is lost.
  */
-export async function payForOrder(orderId: string, sourceId: string): Promise<PayResult> {
+export async function payForOrder(
+  orderId: string,
+  sourceId: string,
+  tipCents = 0,
+): Promise<PayResult> {
   const [order] = await db().select().from(orders).where(eq(orders.id, orderId)).limit(1);
 
   if (!order) {
@@ -695,7 +713,11 @@ export async function payForOrder(orderId: string, sourceId: string): Promise<Pa
     }
   }
 
-  const claim = await claimPaymentAttempt(order, items, sourceId);
+  if (!Number.isInteger(tipCents) || tipCents < 0 || tipCents > order.totalCents) {
+    return { ok: false, code: "INVALID_TIP", message: "That tip amount isn't valid. Please review it and try again." };
+  }
+
+  const claim = await claimPaymentAttempt(order, items, sourceId, tipCents);
   if (!claim) {
     const [fresh] = await db()
       .select({
@@ -736,6 +758,7 @@ export async function payForOrder(orderId: string, sourceId: string): Promise<Pa
     orderId,
     squareOrderId: order.squareOrderId,
     amountCents: order.totalCents,
+    tipCents: claim.tipCents,
     currency: order.currency,
     sourceId: claim.sourceId,
     buyerEmail: order.customerEmail,

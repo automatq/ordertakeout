@@ -32,9 +32,10 @@ import { createRefundAttemptKey, isAttemptLeaseStale } from "@/lib/orders/paymen
  */
 
 export function remainingRefundableCents(
-  order: Pick<Order, "totalCents" | "refundedTotalCents">,
+  order: Pick<Order, "totalCents" | "tipCents" | "refundedTotalCents">,
 ): number {
-  return Math.max(0, order.totalCents - order.refundedTotalCents);
+  // The refundable pool is what the card was actually charged: total + tip.
+  return Math.max(0, order.totalCents + order.tipCents - order.refundedTotalCents);
 }
 
 export type RefundOrigin = "cancellation" | "staff";
@@ -499,7 +500,7 @@ export async function refundCompletedOrder(input: {
 
   const completedAt = new Date();
   const newTotal = order.refundedTotalCents + claim.amountCents;
-  const fullyRefunded = newTotal >= order.totalCents;
+  const fullyRefunded = newTotal >= order.totalCents + order.tipCents;
 
   const settled = await db().transaction(async (tx) => {
     const rows = await tx
@@ -549,7 +550,7 @@ export async function refundCompletedOrder(input: {
   return {
     ok: true,
     refundedTotalCents: newTotal,
-    remainingCents: Math.max(0, order.totalCents - newTotal),
+    remainingCents: Math.max(0, order.totalCents + order.tipCents - newTotal),
     notice: replayNotice,
   };
 }

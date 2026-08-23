@@ -542,6 +542,12 @@ function Booked({ data }: { data: SalesAnalytics }) {
           across {data.upcoming.orderCount} order{data.upcoming.orderCount === 1 ? "" : "s"}
         </span>
       </div>
+      {data.current.tipsCents > 0 ? (
+        <p className="text-ink-muted border-border mt-2 border-t pt-2 text-sm">
+          Tips collected: {formatMoney(data.current.tipsCents, data.currency)} — on top of the
+          revenue above, never counted in it.
+        </p>
+      ) : null}
       {data.refunds.refundCount > 0 ? (
         <p className="text-ink-muted border-border mt-2 border-t pt-2 text-sm">
           Refunded in this range: {formatMoney(data.refunds.refundedCents, data.currency)} across{" "}

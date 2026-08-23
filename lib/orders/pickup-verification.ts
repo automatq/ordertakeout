@@ -137,7 +137,8 @@ export async function verifyPickup(
       verifiedAt: now,
     });
     // Points are issued at the same moment as the verified completion, never
-    // at payment or when an order merely becomes ready.
+    // at payment or when an order merely becomes ready. Deliberately from
+    // totalCents alone: tips never mint points.
     if (resolved.order.customerAccountId) {
       const points = Math.floor(resolved.order.totalCents / 100);
       if (points > 0) {

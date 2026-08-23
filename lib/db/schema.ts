@@ -222,6 +222,14 @@ export const orders = pgTable(
     refundError: text("refund_error"),
     /** Sum of completed refunds (order_refunds ledger); maintained inside the same transactions. */
     refundedTotalCents: integer("refunded_total_cents").notNull().default(0),
+    /**
+     * Gratuity charged ON THE PAYMENT, not the Square order — Square's order
+     * total stays untipped, which is what keeps the total-match invariant in
+     * lib/orders/create.ts intact. Pinned at payment-attempt claim time so an
+     * ambiguous retry replays the identical request. Refunds cap at
+     * total + tip; loyalty points never count tips.
+     */
+    tipCents: integer("tip_cents").notNull().default(0),
     squareSyncError: text("square_sync_error"),
 
     customerName: text("customer_name").notNull(),

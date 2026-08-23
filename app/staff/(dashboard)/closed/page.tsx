@@ -213,7 +213,7 @@ async function ClosedList({ searchParams }: PageProps) {
                         </span>
                       ) : null}
                       <span className="text-ink font-display text-lg font-normal">
-                        {formatMoney(order.totalCents, order.currency)}
+                        {formatMoney(order.totalCents + order.tipCents, order.currency)}
                       </span>
                       <span
                         aria-hidden

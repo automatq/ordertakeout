@@ -36,6 +36,7 @@ import { SLOT_HOLD_TTL_MINUTES, STORE_INFO } from "@/lib/store";
 import { DemoPaymentForm } from "./demo-payment-form";
 import { PaymentForm } from "./payment-form";
 import { PickupPicker, type PickupSelection } from "./pickup-picker";
+import { TipSelector } from "./tip-selector";
 
 /**
  * The checkout flow: pickup selection, customer details, then payment.
@@ -129,6 +130,7 @@ export function CheckoutFlow({
   const [redeemReward, setRedeemReward] = useState(false);
   const [note, setNote] = useState("");
   const [smsOptIn, setSmsOptIn] = useState(false);
+  const [tipCents, setTipCents] = useState(0);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [reserved, setReserved] = useState<{
@@ -344,7 +346,7 @@ export function CheckoutFlow({
     paymentTokenRef.current = token;
     let result;
     try {
-      result = await completeCheckout({ orderId: reservation.orderId, sourceId: token });
+      result = await completeCheckout({ orderId: reservation.orderId, sourceId: token, tipCents });
     } catch {
       // A lost browser response cannot tell us whether Square received the
       // payment. Keep both reservations protected until an exact retry settles
@@ -728,9 +730,17 @@ export function CheckoutFlow({
                 </div>
               ) : null}
 
+              <TipSelector
+                subtotalCents={reserved.subtotalCents}
+                tipCents={tipCents}
+                currency={currency}
+                disabled={paymentBusy || paymentProtected}
+                onChange={setTipCents}
+              />
+
               {isDemoModeClient() ? (
                 <DemoPaymentForm
-                  amountLabel={formatMoney(reserved.totalCents, currency)}
+                  amountLabel={formatMoney(reserved.totalCents + tipCents, currency)}
                   disabled={paymentProtected}
                   onProcessingChange={setPaymentBusy}
                   onToken={handleToken}
@@ -739,7 +749,7 @@ export function CheckoutFlow({
                 <PaymentForm
                   applicationId={squareApplicationId}
                   locationId={reserved.locationId}
-                  amountLabel={formatMoney(reserved.totalCents, currency)}
+                  amountLabel={formatMoney(reserved.totalCents + tipCents, currency)}
                   disabled={paymentProtected}
                   onProcessingChange={setPaymentBusy}
                   onToken={handleToken}
@@ -753,7 +763,8 @@ export function CheckoutFlow({
           lines={reserved?.lines ?? (resolved.ok ? resolved.lines : [])}
           subtotalCents={subtotalCents}
           taxCents={reserved?.taxCents ?? null}
-          totalCents={reserved?.totalCents ?? subtotalCents}
+          totalCents={(reserved?.totalCents ?? subtotalCents) + (reserved ? tipCents : 0)}
+          tipCents={reserved ? tipCents : 0}
           currency={currency}
           pickup={pickup}
           location={location}
@@ -912,6 +923,7 @@ function OrderSummary({
   subtotalCents,
   taxCents,
   totalCents,
+  tipCents,
   currency,
   pickup,
   location,
@@ -921,6 +933,7 @@ function OrderSummary({
   subtotalCents: number;
   taxCents: number | null;
   totalCents: number;
+  tipCents: number;
   currency: string;
   pickup: PickupSelection | null;
   location: StoreLocation | null;
@@ -987,6 +1000,12 @@ function OrderSummary({
               {taxCents === null ? "Calculated at payment" : formatMoney(taxCents, currency)}
             </span>
           </div>
+          {tipCents > 0 ? (
+            <div className="text-ink-muted flex items-baseline justify-between text-sm">
+              <span>Tip</span>
+              <span className="tabular-nums">{formatMoney(tipCents, currency)}</span>
+            </div>
+          ) : null}
           <div className="bg-accent-soft text-ink mt-1 flex items-baseline justify-between rounded-[1.25rem] px-4 py-3 font-semibold">
             <span>Total</span>
             <span className="font-display text-3xl font-normal">

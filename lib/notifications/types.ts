@@ -13,6 +13,8 @@ export interface OrderNotification {
   pickupLocationId?: string | null;
   pickupLocationAddress?: string | null;
   totalCents: number;
+  /** Gratuity charged on top of totalCents. */
+  tipCents?: number;
   currency: string;
   items: { quantity: number; name: string }[];
   note: string | null;

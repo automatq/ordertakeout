@@ -35,8 +35,8 @@ vi.mock("@/lib/orders/refunds", () => ({
   claimRefund: mocks.claimRefund,
   markLedgerAttempt: mocks.markLedgerAttempt,
   settleLedgerCompletedWithin: mocks.settleLedgerCompletedWithin,
-  remainingRefundableCents: (order: { totalCents: number; refundedTotalCents?: number }) =>
-    Math.max(0, order.totalCents - (order.refundedTotalCents ?? 0)),
+  remainingRefundableCents: (order: { totalCents: number; tipCents?: number; refundedTotalCents?: number }) =>
+    Math.max(0, order.totalCents + (order.tipCents ?? 0) - (order.refundedTotalCents ?? 0)),
 }));
 vi.mock("@/lib/audit/log", () => ({
   recordAudit: mocks.recordAudit,
@@ -98,6 +98,7 @@ const ORDER = {
   squareLocationId: "TORONTO_WEST",
   status: "paid",
   totalCents: 2400,
+  tipCents: 0,
   refundedTotalCents: 0,
   customerAccountId: null,
   currency: "CAD",

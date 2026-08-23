@@ -129,7 +129,7 @@ function layout(input: {
           .join("")}
         <tr>
           <td style="padding:10px 0 0;border-top:1px solid ${c.canvas};color:${c.ink};font-size:15px;font-weight:bold;">
-            Paid ${escapeHtml(formatMoney(order.totalCents, order.currency))}
+            Paid ${escapeHtml(formatMoney(order.totalCents + (order.tipCents ?? 0), order.currency))}${(order.tipCents ?? 0) > 0 ? ` <span style="font-weight:normal;color:${c.inkMuted};">(includes ${escapeHtml(formatMoney(order.tipCents ?? 0, order.currency))} tip)</span>` : ""}
           </td>
         </tr>
       </table>`

@@ -38,6 +38,7 @@ const ORDER = {
   refundStatus: "not_required",
   refundError: null,
   totalCents: 5000,
+  tipCents: 0,
   refundedTotalCents: 0,
   customerAccountId: null,
   currency: "CAD",
@@ -67,10 +68,11 @@ function claimTransactionDb(updateRows: { id: string }[], captureInsert?: (v: Re
 }
 
 describe("remainingRefundableCents", () => {
-  it("subtracts completed refunds and never goes negative", () => {
-    expect(remainingRefundableCents({ totalCents: 5000, refundedTotalCents: 0 })).toBe(5000);
-    expect(remainingRefundableCents({ totalCents: 5000, refundedTotalCents: 1500 })).toBe(3500);
-    expect(remainingRefundableCents({ totalCents: 5000, refundedTotalCents: 6000 })).toBe(0);
+  it("subtracts completed refunds from the charged amount (total + tip)", () => {
+    expect(remainingRefundableCents({ totalCents: 5000, tipCents: 0, refundedTotalCents: 0 })).toBe(5000);
+    expect(remainingRefundableCents({ totalCents: 5000, tipCents: 500, refundedTotalCents: 0 })).toBe(5500);
+    expect(remainingRefundableCents({ totalCents: 5000, tipCents: 500, refundedTotalCents: 1500 })).toBe(4000);
+    expect(remainingRefundableCents({ totalCents: 5000, tipCents: 0, refundedTotalCents: 6000 })).toBe(0);
   });
 });
 

@@ -308,10 +308,16 @@ async function OrderDetail({ params, searchParams }: PageProps) {
             <dt>Taxes</dt>
             <dd className="tabular-nums">{formatMoney(order.taxCents, order.currency)}</dd>
           </div>
+          {order.tipCents > 0 ? (
+            <div className="text-ink-muted flex items-baseline justify-between text-sm">
+              <dt>Tip</dt>
+              <dd className="tabular-nums">{formatMoney(order.tipCents, order.currency)}</dd>
+            </div>
+          ) : null}
           <div className="bg-accent-soft text-ink mt-2 flex items-baseline justify-between rounded-[1.25rem] px-4 py-3 text-lg font-semibold">
             <dt>{paid ? "Paid" : "Total"}</dt>
             <dd className="font-display text-2xl font-normal">
-              {formatMoney(order.totalCents, order.currency)}
+              {formatMoney(order.totalCents + order.tipCents, order.currency)}
             </dd>
           </div>
         </dl>

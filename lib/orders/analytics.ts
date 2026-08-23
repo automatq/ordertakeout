@@ -156,6 +156,8 @@ export interface DayPoint {
 
 export interface PeriodTotals {
   revenueCents: number;
+  /** Gratuities, deliberately excluded from revenueCents and the averages. */
+  tipsCents: number;
   orderCount: number;
   /** Zero when there were no orders — callers render a dash, not a divide-by-zero. */
   avgOrderCents: number;
@@ -230,6 +232,7 @@ export async function getSalesAnalytics(
       .select({
         date: orders.pickupDate,
         revenueCents: sql<string>`coalesce(sum(${orders.totalCents}), 0)`,
+        tipsCents: sql<string>`coalesce(sum(${orders.tipCents}), 0)`,
         orderCount: sql<string>`count(*)`,
         currency: sql<string>`min(${orders.currency})`,
       })
@@ -371,12 +374,14 @@ export async function getSalesAnalytics(
 
   const totalsFor = (start: StoreDate, end: StoreDate): PeriodTotals => {
     let revenueCents = 0;
+    let tipsCents = 0;
     let orderCount = 0;
     let canceledCount = 0;
 
     for (const [date, row] of revenueByDate) {
       if (date < start || date > end) continue;
       revenueCents += toNumber(row.revenueCents);
+      tipsCents += toNumber(row.tipsCents);
       orderCount += toNumber(row.orderCount);
     }
     for (const [date, count] of canceledByDate) {
@@ -386,6 +391,7 @@ export async function getSalesAnalytics(
 
     return {
       revenueCents,
+      tipsCents,
       orderCount,
       avgOrderCents: orderCount === 0 ? 0 : Math.round(revenueCents / orderCount),
       canceledCount,

@@ -29,6 +29,8 @@ export interface AccountingTransaction {
   currency: string;
   netSalesCents: number;
   taxCents: number;
+  /** Gratuity on the payment; zero on refund rows (refund amounts already include any tip returned). */
+  tipCents: number;
   grossCents: number;
   refundCents: number;
 }
@@ -74,6 +76,7 @@ export function accountingTransactionsCsv(transactions: readonly AccountingTrans
     "currency",
     "net_sales",
     "tax",
+    "tip",
     "gross_amount",
     "refund_amount",
     "fee_source",
@@ -91,6 +94,7 @@ export function accountingTransactionsCsv(transactions: readonly AccountingTrans
     transaction.currency,
     moneyDecimal(transaction.netSalesCents),
     moneyDecimal(transaction.taxCents),
+    moneyDecimal(transaction.tipCents),
     moneyDecimal(transaction.grossCents),
     moneyDecimal(transaction.refundCents),
     "Import Square processing fees from Square payout data",
@@ -159,7 +163,8 @@ export async function getAccountingTransactions(
       currency: order.currency,
       netSalesCents: order.subtotalCents,
       taxCents: order.taxCents,
-      grossCents: order.totalCents,
+      tipCents: order.tipCents,
+      grossCents: order.totalCents + order.tipCents,
       refundCents: 0,
     };
   });
@@ -189,6 +194,7 @@ export async function getAccountingTransactions(
       currency: refund.currency || order.currency,
       netSalesCents: -net,
       taxCents: -tax,
+      tipCents: 0,
       grossCents: -refund.amountCents,
       refundCents: refund.amountCents,
     };

@@ -150,6 +150,8 @@ export async function createSquarePayment(params: {
   orderId: string;
   squareOrderId: string;
   amountCents: number;
+  /** Charged in addition to amountMoney; the Square order total stays untipped. */
+  tipCents?: number;
   currency: string;
   sourceId: string;
   buyerEmail: string;
@@ -177,6 +179,14 @@ export async function createSquarePayment(params: {
           amount: toSquareAmount(params.amountCents),
           currency: params.currency as Square.Currency,
         },
+        ...(params.tipCents && params.tipCents > 0
+          ? {
+              tipMoney: {
+                amount: toSquareAmount(params.tipCents),
+                currency: params.currency as Square.Currency,
+              },
+            }
+          : {}),
       },
       {
         timeoutInSeconds: PAYMENT_REQUEST_TIMEOUT_SECONDS,

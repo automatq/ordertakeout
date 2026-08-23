@@ -18,7 +18,8 @@ describe("accounting export", () => {
         currency: "CAD",
         netSalesCents: 4500,
         taxCents: 585,
-        grossCents: 5085,
+        tipCents: 700,
+        grossCents: 5785,
         refundCents: 0,
       },
       {
@@ -34,14 +35,16 @@ describe("accounting export", () => {
         currency: "CAD",
         netSalesCents: -4500,
         taxCents: -585,
+        tipCents: 0,
         grossCents: -5085,
         refundCents: 5085,
       },
     ]);
 
     expect(csv).toContain("transaction_type,transaction_date,transaction_id");
-    expect(csv).toContain('payment,2026-08-22,payment:PAY_1,PT-123,ORDER_1,PAY_1,,LOC_1,"Toronto, East",CAD,45.00,5.85,50.85,0.00');
-    expect(csv).toContain('refund,2026-08-23,refund:REF_1,PT-123,ORDER_1,PAY_1,REF_1,LOC_1,"Toronto, East",CAD,-45.00,-5.85,-50.85,50.85');
+    // gross = net + tax + tip on payment rows; refunds carry the returned amount.
+    expect(csv).toContain('payment,2026-08-22,payment:PAY_1,PT-123,ORDER_1,PAY_1,,LOC_1,"Toronto, East",CAD,45.00,5.85,7.00,57.85,0.00');
+    expect(csv).toContain('refund,2026-08-23,refund:REF_1,PT-123,ORDER_1,PAY_1,REF_1,LOC_1,"Toronto, East",CAD,-45.00,-5.85,0.00,-50.85,50.85');
   });
 
   it("accepts a bounded calendar range and rejects malformed or oversized requests", () => {

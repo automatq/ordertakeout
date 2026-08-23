@@ -238,6 +238,8 @@ const paySchema = z.object({
   // Square token payloads are short opaque strings. Bound this before it can
   // become a persisted payment-attempt source on a rate-limited endpoint.
   sourceId: z.string().min(1).max(512),
+  /** Gratuity in cents; payForOrder re-caps it against the order total. */
+  tipCents: z.number().int().min(0).max(50_000).optional(),
 });
 
 /** Charge the card token produced by the Square Web Payments SDK. */
@@ -258,7 +260,7 @@ export async function completeCheckout(input: unknown): Promise<PayResult> {
       message: "Too many payment attempts. Wait a few minutes before trying again.",
     };
   }
-  return payForOrder(parsed.data.orderId, parsed.data.sourceId);
+  return payForOrder(parsed.data.orderId, parsed.data.sourceId, parsed.data.tipCents ?? 0);
 }
 
 const abandonSchema = z.object({
