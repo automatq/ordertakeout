@@ -31,6 +31,9 @@ vi.mock("@/lib/orders/create", () => ({
 vi.mock("@/lib/accounts/magic-link", () => ({
   sweepMagicLinkTokens: async () => 0,
 }));
+vi.mock("@/lib/notifications/reminders", () => ({
+  sendPickupReminders: async () => 0,
+}));
 
 import { runFastMaintenance, runMaintenance } from "./maintenance";
 

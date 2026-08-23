@@ -8,6 +8,7 @@ import { notificationLog, orders, rateLimits, webhookEvents } from "@/lib/db/sch
 import { serverEnv } from "@/lib/env";
 import { sweepExpiredInventoryHolds } from "@/lib/inventory/reservations";
 import { retryFailedNotifications } from "@/lib/notifications/dispatch";
+import { sendPickupReminders } from "@/lib/notifications/reminders";
 import { recoverStalePaymentAttempts } from "@/lib/orders/create";
 import { sweepExpiredHolds } from "@/lib/scheduling/queries";
 import { retrySquareOrderSync } from "@/lib/orders/transitions";
@@ -21,19 +22,22 @@ import { retrySquareOrderSync } from "@/lib/orders/transitions";
  * calls this every few minutes via /api/cron/maintenance?scope=fast.
  */
 export async function runFastMaintenance() {
-  const [holds, inventoryHolds, retries, squareRetries, paymentAttempts] = await Promise.all([
-    sweepExpiredHolds(),
-    sweepExpiredInventoryHolds(),
-    retryFailedNotifications(),
-    retrySquareSyncFailures(),
-    recoverStalePaymentAttempts(),
-  ]);
+  const [holds, inventoryHolds, retries, squareRetries, paymentAttempts, reminders] =
+    await Promise.all([
+      sweepExpiredHolds(),
+      sweepExpiredInventoryHolds(),
+      retryFailedNotifications(),
+      retrySquareSyncFailures(),
+      recoverStalePaymentAttempts(),
+      sendPickupReminders(),
+    ]);
   return {
     holds,
     inventoryHolds,
     retries,
     squareRetries,
     paymentAttempts,
+    reminders,
   };
 }
 

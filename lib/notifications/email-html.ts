@@ -76,6 +76,17 @@ export function renderCustomerEmailHtml(event: NotificationEvent): string | null
         showItems: false,
         showCalendar: false,
       });
+    case "order_reminder":
+      return layout({
+        preheader: `Pickup today — order ${order.orderNumber} at ${formatPickupTime(order.pickupTime)}`,
+        eyebrow: "Pickup today",
+        heading: `See you at ${formatPickupTime(order.pickupTime)}!`,
+        intro: "Your order is being picked up today. Bring your order number or the pickup pass on your order page.",
+        order,
+        cta: order.trackingUrl ? { href: order.trackingUrl, label: "Show my pickup pass" } : null,
+        showItems: true,
+        showCalendar: false,
+      });
     case "order_refunded": {
       const amount = formatMoney(event.refund?.amountCents ?? order.totalCents, order.currency);
       return layout({

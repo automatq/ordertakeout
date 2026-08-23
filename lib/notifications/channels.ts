@@ -158,7 +158,12 @@ export async function sendCustomerSms(event: NotificationEvent): Promise<Channel
     return skip("sms_customer");
   }
   if (!event.order.customerSmsOptIn) return skip("sms_customer");
-  if (event.kind !== "order_ready" && event.kind !== "order_canceled" && event.kind !== "order_refunded") {
+  if (
+    event.kind !== "order_ready" &&
+    event.kind !== "order_canceled" &&
+    event.kind !== "order_refunded" &&
+    event.kind !== "order_reminder"
+  ) {
     return skip("sms_customer");
   }
   // Anonymized orders ("Deleted") and legacy free-form numbers fail this shape

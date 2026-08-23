@@ -171,6 +171,23 @@ export function renderCustomerEmail(
           "Questions? Just call the store.",
         ].join("\n"),
       };
+
+    case "order_reminder":
+      return {
+        subject: `Pickup today — order ${order.orderNumber}`,
+        text: [
+          `Hi ${order.customerName}, your order is being picked up today.`,
+          "",
+          `Order:  ${order.orderNumber}`,
+          `Pickup: ${pickupLine(order)}`,
+          "",
+          "Items:",
+          ...itemLines(order).map((line) => `  ${line}`),
+          "",
+          "Bring your order number or the pickup pass on your order page.",
+          ...(order.trackingUrl ? ["", `Your order & pickup pass: ${order.trackingUrl}`] : []),
+        ].join("\n"),
+      };
   }
 }
 
@@ -195,6 +212,9 @@ export function renderCustomerSms(event: NotificationEvent): string | null {
       break;
     case "order_refunded":
       body = `Harina: a refund of ${refundAmount(event)} was issued on order ${order.orderNumber}. It usually appears in a few days.`;
+      break;
+    case "order_reminder":
+      body = `Harina: your pickup is today ${formatPickupTime(order.pickupTime)}${where}, order ${order.orderNumber}. Bring your pickup pass.`;
       break;
     default:
       return null;
@@ -221,6 +241,9 @@ const DISCORD_COLOR: Record<NotificationEvent["kind"], number> = {
   order_ready: 0x15803d,
   order_canceled: 0xb42318,
   order_refunded: 0xb45309,
+  // Reminders are customer-channel-only and never reach Discord; the entry
+  // exists so this record stays exhaustive over the kind union.
+  order_reminder: 0x2563eb,
 };
 
 export function renderDiscord(event: NotificationEvent): unknown {

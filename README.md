@@ -75,8 +75,9 @@ npm run dev
   `vercel.json` runs the full pass (including pruning and the customer-data retention
   policy) once daily at 08:17 UTC — the most a Vercel Hobby cron allows — and the
   `maintenance-fast` GitHub Actions workflow calls `?scope=fast` every 5 minutes for the
-  jobs that can't wait a day: notification retries, stale payment recovery, and Square
-  sync retries. Configure the workflow's `MAINTENANCE_URL` variable and `CRON_SECRET`
+  jobs that can't wait a day: notification retries, stale payment recovery, Square
+  sync retries, and morning-of pickup reminders (08:00–10:59 in each pickup location's
+  own timezone — never keyed off the UTC daily cron, which fires at 03:17 Toronto time). Configure the workflow's `MAINTENANCE_URL` variable and `CRON_SECRET`
   secret in the GitHub repo settings; without them the fast schedule is skipped and
   retries degrade to daily.
 
@@ -314,8 +315,10 @@ retry units, so a partial Resend failure cannot duplicate the recipient that suc
 Every attempt is written to `notification_log`, so *"the store says they never got the
 text"* is an answerable question rather than a guess.
 
-Fired from three places: checkout (`order_paid`), staff status changes (`order_ready`,
-`order_canceled`), and webhook reconciliation. Delivery runs inside Next's `after()`, so
+Fired from four places: checkout (`order_paid`), staff status changes (`order_ready`,
+`order_canceled`), webhook reconciliation, and the fast cron (`order_reminder`, the
+morning-of pickup nudge — customer channels only, claimed per pickup date so the
+three-hour window can refire without duplicates). Delivery runs inside Next's `after()`, so
 nobody waits on Resend or Twilio to see their confirmation page, and a notification failure
 can never fail a payment that has already gone through.
 

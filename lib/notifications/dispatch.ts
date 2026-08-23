@@ -151,6 +151,21 @@ export async function retryFailedNotifications(limit = 50): Promise<number> {
       if (refundId) await notifyOrderRefund(entry.orderId, refundId);
       continue;
     }
+    if (kind === "order_reminder") {
+      // Rebuilt with the original dedupe key and the customer-only channel
+      // filter — a retry through notifyOrder would fan out to store channels
+      // and claim under the bare kind.
+      const order = await buildOrderNotification(entry.orderId);
+      if (order) {
+        await dispatch({
+          kind: "order_reminder",
+          order,
+          dedupeKey: entry.event,
+          channels: ["email_customer", "sms_customer"],
+        });
+      }
+      continue;
+    }
     if (isNotificationKind(kind)) await notifyOrder(entry.orderId, kind);
   }
   return unique.length;

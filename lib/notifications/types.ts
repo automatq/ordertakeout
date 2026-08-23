@@ -27,7 +27,9 @@ export type NotificationEventKind =
   | "order_paid"
   | "order_ready"
   | "order_canceled"
-  | "order_refunded";
+  | "order_refunded"
+  /** Morning-of pickup reminder; customer channels only, keyed per pickup date. */
+  | "order_reminder";
 
 export interface NotificationEvent {
   kind: NotificationEventKind;
