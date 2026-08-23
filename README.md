@@ -282,7 +282,7 @@ Worth knowing before changing anything in `lib/orders/create.ts`:
 sandbox end-to-end verification — see [`docs/RELEASE-GATE-A.md`](docs/RELEASE-GATE-A.md)
 for the executed scenarios, the evidence, and the remaining blockers.
 
-388 tests pass, with the 8 database integration tests skipped unless
+470 tests pass, with the 8 database integration tests skipped unless
 `TEST_DATABASE_URL` is set (they run in CI against a Postgres service container, and have
 been verified against the staging Neon database through its pooler). See the full build
 phases in [`docs/SCOPE.md`](docs/SCOPE.md).
