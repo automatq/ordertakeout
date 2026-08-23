@@ -1,38 +1,44 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import manifest from "./manifest";
 import robots from "./robots";
 import sitemap from "./sitemap";
 
 const mocks = vi.hoisted(() => ({
-  squareEnvironment: "production" as "sandbox" | "production",
-  storePublicUrl: "https://harinabakeshoppe.com" as string | undefined,
   getOrderableProducts: vi.fn(),
-}));
-
-vi.mock("@/lib/env", () => ({
-  publicEnv: () => ({ NEXT_PUBLIC_SQUARE_ENVIRONMENT: mocks.squareEnvironment }),
-  serverEnv: () => ({ STORE_PUBLIC_URL: mocks.storePublicUrl }),
 }));
 
 vi.mock("@/lib/catalog/server", () => ({
   getOrderableProducts: mocks.getOrderableProducts,
 }));
 
+// These routes read process.env directly (they must survive an env-less CI
+// build — see the comments in sitemap.ts/robots.ts), so the tests stub env
+// rather than mocking @/lib/env.
+function setEnv(squareEnvironment: string | undefined, storePublicUrl: string | undefined) {
+  if (squareEnvironment === undefined) vi.stubEnv("NEXT_PUBLIC_SQUARE_ENVIRONMENT", undefined);
+  else vi.stubEnv("NEXT_PUBLIC_SQUARE_ENVIRONMENT", squareEnvironment);
+  if (storePublicUrl === undefined) vi.stubEnv("STORE_PUBLIC_URL", undefined);
+  else vi.stubEnv("STORE_PUBLIC_URL", storePublicUrl);
+}
+
 beforeEach(() => {
-  mocks.squareEnvironment = "production";
-  mocks.storePublicUrl = "https://harinabakeshoppe.com";
+  setEnv("production", "https://harinabakeshoppe.com");
   mocks.getOrderableProducts.mockReset();
   mocks.getOrderableProducts.mockResolvedValue({
     products: [{ slug: "classic-ensaymada-tray" }, { slug: "hopia-assortment" }],
   });
 });
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 describe("robots", () => {
   it("blocks all crawling unless the deployment is wired to production Square", () => {
     // A sandbox deployment is a staging site taking fake payments; indexing it
     // would also cannibalize the real site's search presence.
-    mocks.squareEnvironment = "sandbox";
+    setEnv("sandbox", "https://harinabakeshoppe.com");
     expect(robots()).toEqual({ rules: { userAgent: "*", disallow: "/" } });
   });
 
@@ -46,7 +52,7 @@ describe("robots", () => {
   });
 
   it("omits the sitemap reference when no public URL is configured", () => {
-    mocks.storePublicUrl = undefined;
+    setEnv("production", undefined);
     expect(robots().sitemap).toBeUndefined();
   });
 });
@@ -66,18 +72,17 @@ describe("sitemap", () => {
   });
 
   it("strips a trailing slash from the configured base URL", async () => {
-    mocks.storePublicUrl = "https://harinabakeshoppe.com/";
+    setEnv("production", "https://harinabakeshoppe.com/");
     const urls = (await sitemap()).map((entry) => entry.url);
     expect(urls[0]).toBe("https://harinabakeshoppe.com/");
     expect(urls[1]).toBe("https://harinabakeshoppe.com/menu");
   });
 
   it("is empty without a public URL and on sandbox deployments", async () => {
-    mocks.storePublicUrl = undefined;
+    setEnv("production", undefined);
     expect(await sitemap()).toEqual([]);
 
-    mocks.storePublicUrl = "https://staging.example.com";
-    mocks.squareEnvironment = "sandbox";
+    setEnv("sandbox", "https://staging.example.com");
     expect(await sitemap()).toEqual([]);
   });
 

@@ -1,7 +1,6 @@
 import type { MetadataRoute } from "next";
 
 import { getOrderableProducts } from "@/lib/catalog/server";
-import { publicEnv, serverEnv } from "@/lib/env";
 
 /**
  * Absolute URLs require STORE_PUBLIC_URL; without it (local dev, previews) the
@@ -9,10 +8,15 @@ import { publicEnv, serverEnv } from "@/lib/env";
  * sites and also emit nothing — robots.ts already disallows them entirely.
  * Product entries come from the cached catalog; a catalog outage degrades to
  * the static pages instead of failing the request.
+ *
+ * Raw process.env reads, not serverEnv()/publicEnv(): metadata routes are
+ * prerendered at build time, and the validators throw for ANY missing required
+ * var — which would fail an env-less CI build over two vars this route doesn't
+ * even use. Both vars read here are individually optional-safe.
  */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const base = serverEnv().STORE_PUBLIC_URL?.replace(/\/$/, "");
-  if (!base || publicEnv().NEXT_PUBLIC_SQUARE_ENVIRONMENT !== "production") return [];
+  const base = process.env.STORE_PUBLIC_URL?.replace(/\/$/, "");
+  if (!base || process.env.NEXT_PUBLIC_SQUARE_ENVIRONMENT !== "production") return [];
 
   const entries: MetadataRoute.Sitemap = [
     { url: `${base}/`, changeFrequency: "weekly", priority: 1 },

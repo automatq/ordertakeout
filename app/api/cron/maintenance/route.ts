@@ -8,8 +8,13 @@ import { serverEnv } from "@/lib/env";
  * notification retries, stale payment recovery, Square-sync retries.
  */
 export async function GET(request: Request) {
+  // Read the request BEFORE serverEnv(): touching request data is what bails
+  // this handler out of build-time prerendering. With the env read first, an
+  // env-less build (CI) throws inside the prerender pass and fails the build
+  // before ever reaching the request.
+  const authorization = request.headers.get("authorization");
   const secret = serverEnv().CRON_SECRET;
-  if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) {
+  if (!secret || authorization !== `Bearer ${secret}`) {
     return Response.json({ ok: false }, { status: 401 });
   }
 

@@ -23,6 +23,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
+      # Generates next-env.d.ts and the route/image type declarations that
+      # `tsc --noEmit` needs; locally `next dev`/`next build` produce them, but
+      # they are gitignored, so a bare CI checkout has none.
+      - run: npx next typegen
       - run: npm run typecheck
       - run: npm test
 
