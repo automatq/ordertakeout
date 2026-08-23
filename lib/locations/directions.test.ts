@@ -10,6 +10,7 @@ const location = (overrides: Partial<StoreLocation> = {}): StoreLocation => ({
   city: "Toronto, ON",
   timezone: "America/Toronto",
   currency: "CAD",
+  country: "CA",
   phone: null,
   businessHours: [],
   coordinates: { latitude: 43.6532, longitude: -79.3832 },

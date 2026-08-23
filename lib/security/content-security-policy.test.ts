@@ -25,6 +25,9 @@ describe("Square Web Payments CSP", () => {
       "https://sandbox.web.squarecdn.com",
       "https://pci-connect.squareupsandbox.com",
       "https://o160250.ingest.sentry.io",
+      "https://pay.google.com",
+      "https://google.com/pay",
+      "https://api.cash.app",
     ]);
     expect(policy).not.toContain("https://web.squarecdn.com");
     expect(policy).not.toContain("https://pci-connect.squareup.com");
@@ -40,6 +43,9 @@ describe("Square Web Payments CSP", () => {
       "https://web.squarecdn.com",
       "https://pci-connect.squareup.com",
       "https://o160250.ingest.sentry.io",
+      "https://pay.google.com",
+      "https://google.com/pay",
+      "https://api.cash.app",
     ]);
     expect(policy).not.toContain("sandbox.web.squarecdn.com");
     expect(policy).not.toContain("pci-connect.squareupsandbox.com");

@@ -750,6 +750,10 @@ export function CheckoutFlow({
                   applicationId={squareApplicationId}
                   locationId={reserved.locationId}
                   amountLabel={formatMoney(reserved.totalCents + tipCents, currency)}
+                  totalCents={reserved.totalCents + tipCents}
+                  currency={currency}
+                  countryCode={location?.country ?? null}
+                  orderNumber={reserved.orderNumber}
                   disabled={paymentProtected}
                   onProcessingChange={setPaymentBusy}
                   onToken={handleToken}

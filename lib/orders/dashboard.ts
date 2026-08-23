@@ -107,6 +107,7 @@ export function mergeOperationalLocations(
       city: order.pickupLocationCity,
       timezone: order.pickupLocationTimezone,
       currency: order.currency,
+      country: null,
       phone: order.pickupLocationPhone,
       businessHours: order.pickupLocationHours ?? [],
       coordinates: null,

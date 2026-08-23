@@ -34,6 +34,7 @@ describe("mergeOperationalLocations", () => {
       pickupLocationPhone: "519-555-0100",
       pickupLocationHours: [],
       currency: "CAD",
+  country: "CA",
     }] as unknown as DashboardOrder[];
 
     expect(mergeOperationalLocations([], rows)).toEqual([
@@ -63,6 +64,7 @@ describe("mergeOperationalLocations", () => {
       city: "Toronto",
       timezone: "America/Toronto",
       currency: "CAD",
+      country: null,
       phone: null,
       businessHours: [],
       coordinates: null,

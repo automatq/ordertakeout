@@ -83,6 +83,24 @@ npm run dev
 Notification channels are all optional; an unset channel is skipped by the dispatcher, so
 the store can enable one later without a code change.
 
+### Digital wallets (Apple Pay, Google Pay, Cash App Pay)
+
+Google Pay and Cash App Pay work as soon as the Square Web Payments SDK loads — no extra
+setup. Apple Pay needs two one-time steps per domain (repeat for sandbox and production
+domains separately):
+
+1. **Domain verification file.** Download the merchant-domain verification file from the
+   Square Developer Dashboard (Web Payments SDK → Apple Pay) and serve it at
+   `public/.well-known/apple-developer-merchantid-domain-association`. The file is signed
+   by Square — it cannot be written by hand, and each Square account's file is different.
+2. **Register the domain** with a one-off call: `squareClient().applePay.registerDomain({
+   domainName: "order.example.com" })` (Node REPL or a scratch script; scheme-less
+   hostname). Square verifies the hosted file during this call, so deploy step 1 first.
+
+Until both are done the Apple Pay button simply doesn't render — checkout falls back to
+Google Pay / Cash App Pay / card with no error. Wallets never appear in the demo
+(`npm run demo`) because the demo payment form doesn't load the Square SDK at all.
+
 ### Accounting handoff
 
 Square remains the sales, payment, refund, fee, and payout system of record; this app is

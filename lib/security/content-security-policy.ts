@@ -14,6 +14,20 @@ const SQUARE_WEB_PAYMENTS = {
 } as const;
 
 const SQUARE_TELEMETRY = "https://o160250.ingest.sentry.io";
+
+/**
+ * Digital-wallet origins for the Square Web Payments SDK. Google Pay loads its
+ * button and sheet from pay.google.com; Cash App Pay loads its kit and talks to
+ * its API. Apple Pay is a native sheet and needs nothing. Verify against
+ * Square's current Web Payments CSP documentation on any SDK upgrade.
+ */
+const WALLET_SCRIPT_SOURCES = ["https://pay.google.com", "https://kit.cash.app"] as const;
+const WALLET_CONNECT_SOURCES = [
+  "https://pay.google.com",
+  "https://google.com/pay",
+  "https://api.cash.app",
+] as const;
+const WALLET_FRAME_SOURCES = ["https://pay.google.com"] as const;
 const SQUARE_FONT_SOURCES = [
   "https://square-fonts-production-f.squarecdn.com",
   "https://d1g145x70srn7h.cloudfront.net",
@@ -41,7 +55,7 @@ export function buildContentSecurityPolicy({
   sentryIngestOrigin?: string | null;
 }): string {
   const square = SQUARE_WEB_PAYMENTS[squareEnvironment];
-  const connect = [square.sdk, square.payment, SQUARE_TELEMETRY];
+  const connect = [square.sdk, square.payment, SQUARE_TELEMETRY, ...WALLET_CONNECT_SOURCES];
   if (sentryIngestOrigin) connect.push(sentryIngestOrigin);
 
   return [
@@ -50,12 +64,12 @@ export function buildContentSecurityPolicy({
     "object-src 'none'",
     "frame-ancestors 'none'",
     "form-action 'self'",
-    `script-src 'self' 'unsafe-inline'${production ? "" : " 'unsafe-eval'"} ${square.sdk}`,
+    `script-src 'self' 'unsafe-inline'${production ? "" : " 'unsafe-eval'"} ${square.sdk} ${WALLET_SCRIPT_SOURCES.join(" ")}`,
     `style-src 'self' 'unsafe-inline' ${square.sdk}`,
     `img-src 'self' data: blob: ${PRODUCT_IMAGE_CSP_SOURCES.join(" ")}`,
     `font-src 'self' data: ${SQUARE_FONT_SOURCES.join(" ")}`,
     `connect-src 'self' ${connect.join(" ")}`,
-    `frame-src 'self' ${square.sdk}`,
+    `frame-src 'self' ${square.sdk} ${WALLET_FRAME_SOURCES.join(" ")}`,
     ...(production ? ["upgrade-insecure-requests"] : []),
   ].join("; ");
 }

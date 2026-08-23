@@ -25,6 +25,7 @@ export function mapSquareLocation(location: Square.Location): StoreLocation | nu
         .join(", ") || null,
     timezone: location.timezone ?? null,
     currency: location.currency ?? null,
+    country: location.address?.country ?? location.country ?? null,
     phone: location.phoneNumber?.trim() || null,
     businessHours: (location.businessHours?.periods ?? []).flatMap((period) =>
       period.dayOfWeek && period.startLocalTime && period.endLocalTime
