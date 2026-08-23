@@ -17,7 +17,10 @@ import Link from "next/link";
 import { listAvailabilityOverrides, listBlackoutDates, listOperationalIssues, listProductRules, listSlotCapacity } from "@/lib/admin/queries";
 import { SoldOutList } from "@/components/staff/sold-out-list";
 import { StaffRoster } from "@/components/staff/staff-roster";
+import { NotificationSettings } from "@/components/staff/notification-settings";
 import { listStaffMembers } from "@/lib/staff/roster";
+import { getNotificationRecipients } from "@/lib/settings/notifications";
+import { serverEnv } from "@/lib/env";
 import { getStoreCatalog } from "@/lib/catalog/server";
 import { primaryImage } from "@/lib/catalog/images";
 import { getStoreLocationsSafe } from "@/lib/locations/server";
@@ -33,6 +36,7 @@ const SECTIONS = [
   { id: "soldout", label: "Sold out today" },
   { id: "closures", label: "Closures" },
   { id: "capacity", label: "Slot capacity" },
+  { id: "notifications", label: "Notifications" },
   { id: "staff", label: "Staff" },
 ] as const;
 
@@ -63,7 +67,7 @@ export default function SettingsPage() {
 async function Settings() {
   await connection();
 
-  const [catalog, rules, blackouts, slots, locations, issues, soldOut, roster] = await Promise.all([
+  const [catalog, rules, blackouts, slots, locations, issues, soldOut, roster, recipients] = await Promise.all([
     getStoreCatalog(),
     listProductRules(),
     listBlackoutDates(),
@@ -72,7 +76,14 @@ async function Settings() {
     listOperationalIssues(),
     listAvailabilityOverrides(),
     listStaffMembers(),
+    getNotificationRecipients(),
   ]);
+
+  const env = serverEnv();
+  const providers = {
+    email: Boolean(env.RESEND_API_KEY && env.NOTIFY_FROM_EMAIL),
+    sms: Boolean(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN && env.TWILIO_FROM_NUMBER),
+  };
 
   const productNames = new Map([
     ...catalog.products.map((product) => [product.id, product.name] as const),
@@ -167,6 +178,17 @@ async function Settings() {
 
       <section id="capacity" className="scroll-mt-24">
         <SlotCapacity slots={slots} defaultCap={DEFAULT_MAX_ORDERS_PER_SLOT} locations={locations} />
+      </section>
+
+      <section id="notifications" className="flex scroll-mt-24 flex-col gap-4">
+        <div>
+          <h2 className="text-ink text-lg font-semibold">Notification recipients</h2>
+          <p className="text-ink-muted text-sm">
+            Where new-order, ready, cancellation, and refund alerts go. Changes apply from the
+            next order — no redeploy.
+          </p>
+        </div>
+        <NotificationSettings initial={recipients} locations={locations} providers={providers} />
       </section>
 
       <section id="staff" className="flex scroll-mt-24 flex-col gap-4">

@@ -1,7 +1,7 @@
 import "server-only";
 
 import { serverEnv } from "@/lib/env";
-import { reportError } from "@/lib/monitoring/report";
+import { resolveStoreEmails, resolveStorePhone } from "@/lib/settings/notifications";
 
 import {
   renderCustomerEmail,
@@ -52,16 +52,13 @@ async function expectOk(response: Response, channel: ChannelName): Promise<Chann
 
 /* -------------------------------------------------------------------------- */
 
-function resendConfig(event: NotificationEvent) {
+async function resendConfig(event: NotificationEvent) {
   const env = serverEnv();
-  const storeEmail = notificationEmailFor(
-    event.order.pickupLocationId,
-    env.LOCATION_NOTIFY_EMAILS,
-  ) ?? env.STORE_NOTIFY_EMAIL;
-  if (!env.RESEND_API_KEY || !env.NOTIFY_FROM_EMAIL || !storeEmail) return null;
+  if (!env.RESEND_API_KEY || !env.NOTIFY_FROM_EMAIL) return null;
 
   return {
-    storeEmail,
+    /** May be empty: the store inbox is optional and must not block customer email. */
+    storeEmails: await resolveStoreEmails(event.order.pickupLocationId),
     from: env.NOTIFY_FROM_EMAIL,
     headers: {
       Authorization: `Bearer ${env.RESEND_API_KEY}`,
@@ -72,8 +69,8 @@ function resendConfig(event: NotificationEvent) {
 
 /** Store and customer email are separate retry units to prevent partial duplicates. */
 export async function sendStoreEmail(event: NotificationEvent): Promise<ChannelResult> {
-  const config = resendConfig(event);
-  if (!config) return skip("email_store");
+  const config = await resendConfig(event);
+  if (!config || config.storeEmails.length === 0) return skip("email_store");
 
   const store = renderStoreEmail(event);
   const response = await post("https://api.resend.com/emails", {
@@ -81,7 +78,7 @@ export async function sendStoreEmail(event: NotificationEvent): Promise<ChannelR
     headers: config.headers,
     body: JSON.stringify({
       from: config.from,
-      to: [config.storeEmail],
+      to: config.storeEmails,
       subject: store.subject,
       text: store.text,
     }),
@@ -90,7 +87,7 @@ export async function sendStoreEmail(event: NotificationEvent): Promise<ChannelR
 }
 
 export async function sendCustomerEmail(event: NotificationEvent): Promise<ChannelResult> {
-  const config = resendConfig(event);
+  const config = await resendConfig(event);
   const customer = renderCustomerEmail(event);
   if (!config || !customer || !event.order.customerEmail) return skip("email_customer");
 
@@ -100,7 +97,7 @@ export async function sendCustomerEmail(event: NotificationEvent): Promise<Chann
     body: JSON.stringify({
       from: config.from,
       to: [event.order.customerEmail],
-      reply_to: config.storeEmail,
+      ...(config.storeEmails[0] ? { reply_to: config.storeEmails[0] } : {}),
       subject: customer.subject,
       text: customer.text,
     }),
@@ -108,47 +105,11 @@ export async function sendCustomerEmail(event: NotificationEvent): Promise<Chann
   return expectOk(response, "email_customer");
 }
 
-function notificationEmailFor(
-  locationId: string | null | undefined,
-  raw: string | undefined,
-): string | null {
-  if (!locationId || !raw) return null;
-  try {
-    const value: unknown = JSON.parse(raw);
-    if (!value || typeof value !== "object") return null;
-    const email = (value as Record<string, unknown>)[locationId];
-    return typeof email === "string" && /^\S+@\S+\.\S+$/.test(email) ? email : null;
-  } catch {
-    reportError("notifications", "LOCATION_NOTIFY_EMAILS is not valid JSON");
-    return null;
-  }
-}
-
-function notificationDestinationFor(
-  locationId: string | null | undefined,
-  raw: string | undefined,
-  pattern: RegExp,
-): string | null {
-  if (!locationId || !raw) return null;
-  try {
-    const value: unknown = JSON.parse(raw);
-    if (!value || typeof value !== "object") return null;
-    const destination = (value as Record<string, unknown>)[locationId];
-    return typeof destination === "string" && pattern.test(destination) ? destination : null;
-  } catch {
-    reportError("notifications", "location destination map is not valid JSON");
-    return null;
-  }
-}
 
 /** SMS to the store via Twilio. Customers are emailed, not texted, in v1. */
 export async function sendSms(event: NotificationEvent): Promise<ChannelResult> {
   const env = serverEnv();
-  const storePhone = notificationDestinationFor(
-    event.order.pickupLocationId,
-    env.LOCATION_NOTIFY_PHONES,
-    /^\+?[\d ()-]{7,}$/,
-  ) ?? env.STORE_NOTIFY_PHONE;
+  const storePhone = await resolveStorePhone(event.order.pickupLocationId);
   if (
     !env.TWILIO_ACCOUNT_SID ||
     !env.TWILIO_AUTH_TOKEN ||

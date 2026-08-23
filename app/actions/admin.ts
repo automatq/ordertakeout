@@ -26,8 +26,12 @@ import { recordAudit } from "@/lib/audit/log";
 import { saveStaffMember, setStaffMemberActive } from "@/lib/staff/roster";
 import { serverEnv } from "@/lib/env";
 import { storeToday } from "@/lib/scheduling/time";
+import {
+  NOTIFY_RECIPIENTS_KEY,
+  notificationRecipientsSchema,
+} from "@/lib/settings/notifications";
 import { setOrderingPause } from "@/lib/settings/pause";
-import { SETTINGS_TAG } from "@/lib/settings/store";
+import { setSetting, SETTINGS_TAG } from "@/lib/settings/store";
 
 /**
  * Admin actions.
@@ -321,6 +325,41 @@ export async function setStaffMemberActiveAction(input: unknown): Promise<AdminR
     action: parsed.data.active ? "staff.reactivated" : "staff.deactivated",
     entityType: "staff_member",
     entityId: parsed.data.id,
+  });
+  return { ok: true };
+}
+
+const recipientsActionSchema = z.object({
+  useEnvFallback: z.boolean(),
+  storeEmails: z.array(z.string().trim().regex(/^\S+@\S+\.\S+$/)).max(5),
+  storePhone: z.string().trim().regex(/^\+?[\d ()-]{7,}$/).nullable(),
+  locationEmails: z.record(z.string().min(1), z.string().trim().regex(/^\S+@\S+\.\S+$/)),
+  locationPhones: z.record(z.string().min(1), z.string().trim().regex(/^\+?[\d ()-]{7,}$/)),
+});
+
+/** Recipients only — provider API keys stay in env, never in the database. */
+export async function saveNotificationRecipientsAction(input: unknown): Promise<AdminResult> {
+  await requireStaffSession();
+  const parsed = recipientsActionSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "Check the email addresses and phone numbers." };
+  }
+
+  await setSetting(NOTIFY_RECIPIENTS_KEY, notificationRecipientsSchema, parsed.data);
+  updateTag(SETTINGS_TAG);
+  await recordAudit({
+    actorType: "staff",
+    actorInitials: null,
+    action: "settings.updated",
+    entityType: "settings",
+    entityId: NOTIFY_RECIPIENTS_KEY,
+    metadata: {
+      storeEmailCount: parsed.data.storeEmails.length,
+      hasStorePhone: parsed.data.storePhone !== null,
+      locationOverrides:
+        Object.keys(parsed.data.locationEmails).length + Object.keys(parsed.data.locationPhones).length,
+      useEnvFallback: parsed.data.useEnvFallback,
+    },
   });
   return { ok: true };
 }

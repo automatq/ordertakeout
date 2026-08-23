@@ -2,6 +2,14 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { NotificationEvent } from "./types";
 
+// Recipient resolution is database-backed (lib/settings/notifications, tested
+// there); here it mirrors the env vars so these adapter tests stay about HTTP.
+vi.mock("@/lib/settings/notifications", () => ({
+  resolveStoreEmails: async () =>
+    process.env.STORE_NOTIFY_EMAIL ? [process.env.STORE_NOTIFY_EMAIL] : [],
+  resolveStorePhone: async () => process.env.STORE_NOTIFY_PHONE ?? null,
+}));
+
 /**
  * Verifies the channel adapters make the HTTP calls they claim to.
  *
