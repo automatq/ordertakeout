@@ -337,6 +337,33 @@ export const pickupVerifications = pgTable(
 );
 
 /** One immutable entry per order action; points are never edited in place. */
+/**
+ * Single-use email sign-in tokens.
+ *
+ * Only a sha256 hash of the token is stored — a database read can never mint a
+ * working link. Single use is enforced by the atomic
+ * `UPDATE … WHERE used_at IS NULL … RETURNING` in lib/accounts/magic-link.ts,
+ * not by application-level check-then-write.
+ */
+export const magicLinkTokens = pgTable(
+  "magic_link_tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    customerAccountId: uuid("customer_account_id")
+      .notNull()
+      .references(() => customerAccounts.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("magic_link_tokens_hash_key").on(t.tokenHash),
+    index("magic_link_tokens_expires_idx").on(t.expiresAt),
+    index("magic_link_tokens_account_idx").on(t.customerAccountId),
+  ],
+);
+
 export const loyaltyEntries = pgTable(
   "loyalty_entries",
   {

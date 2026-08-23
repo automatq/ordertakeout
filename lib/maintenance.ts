@@ -2,6 +2,7 @@ import "server-only";
 
 import { and, inArray, lt, sql } from "drizzle-orm";
 
+import { sweepMagicLinkTokens } from "@/lib/accounts/magic-link";
 import { db } from "@/lib/db";
 import { notificationLog, orders, rateLimits, webhookEvents } from "@/lib/db/schema";
 import { serverEnv } from "@/lib/env";
@@ -38,15 +39,17 @@ export async function runFastMaintenance() {
 
 /** The full daily run: everything in the fast pass plus pruning and PII retention. */
 export async function runMaintenance() {
-  const [fast, operationalRows, anonymizedOrders] = await Promise.all([
+  const [fast, operationalRows, anonymizedOrders, magicLinkRows] = await Promise.all([
     runFastMaintenance(),
     pruneOperationalData(),
     anonymizeExpiredCustomerData(),
+    sweepMagicLinkTokens(),
   ]);
   return {
     ...fast,
     operationalRows,
     anonymizedOrders,
+    magicLinkRows,
   };
 }
 

@@ -21,7 +21,7 @@ import type { NotificationEvent, OrderNotification } from "./types";
  * alongside as the fallback part of the same message.
  */
 
-const EMAIL_COLORS = {
+export const EMAIL_COLORS = {
   canvas: "#f5f1e9",
   surface: "#ffffff",
   ink: "#1a1a1a",
