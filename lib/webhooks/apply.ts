@@ -516,6 +516,18 @@ async function applyFulfillmentEvent(
     };
   }
 
+  // Square's COMPLETED fulfillment is an operational update, not proof that a
+  // customer collected the order. Collection must be recorded through the
+  // staffed QR/manual verification flow so we retain the method and initials.
+  if (nextStatus === "completed") {
+    const warning = "Square shows this order as completed. Verify pickup in the dashboard to close it here.";
+    await db()
+      .update(orders)
+      .set({ squareSyncError: warning, updatedAt: new Date() })
+      .where(eq(orders.id, order.id));
+    return { handled: false, detail: `${order.orderNumber} needs local pickup verification` };
+  }
+
   // Fulfillment state is operational, not proof of capture. Only a COMPLETED
   // payment event (or the synchronous payment response) may make an unpaid
   // order paid. An unpaid Square cancellation can still release the hold.

@@ -13,6 +13,7 @@ import {
 
 import { changeOrderStatus, refreshDashboard } from "@/app/actions/staff";
 import { NotificationBell } from "@/components/staff/notification-bell";
+import { PickupVerificationDialog } from "@/components/staff/pickup-verification-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
   AlertIcon,
@@ -86,6 +87,7 @@ export function OrderQueue({
   const [transitionError, setTransitionError] = useState<string | null>(null);
   const [transitionNotice, setTransitionNotice] = useState<string | null>(null);
   const [squareWarning, setSquareWarning] = useState<string | null>(null);
+  const [pickupDialogOpen, setPickupDialogOpen] = useState(false);
   const [updatedAge, setUpdatedAge] = useState("Loaded from the server");
   const lastUpdatedAt = useRef<number | null>(null);
   /** Which order is mid-transition, so only its buttons go busy. */
@@ -237,6 +239,7 @@ export function OrderQueue({
         timeZone={timeZone}
         pending={pendingOrderId === order.id}
         onTransition={handleTransition}
+        onVerifyPickup={() => setPickupDialogOpen(true)}
         cardRef={(node) => {
           if (node) cardRefs.current.set(order.id, node);
           else cardRefs.current.delete(order.id);
@@ -247,6 +250,22 @@ export function OrderQueue({
 
   return (
     <div className="flex flex-col gap-6">
+      {pickupDialogOpen ? (
+        <PickupVerificationDialog
+          onClose={() => setPickupDialogOpen(false)}
+          onVerified={async (verified) => {
+            setTransitionError(null);
+            setTransitionNotice(`${verified.orderNumber} was verified as picked up.`);
+            setFreshIds((current) => {
+              if (!current.has(verified.orderId)) return current;
+              const next = new Set(current);
+              next.delete(verified.orderId);
+              return next;
+            });
+            await poll();
+          }}
+        />
+      ) : null}
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div className="flex items-baseline gap-3">
           <h1 className="font-display text-ink text-display-md font-normal uppercase">
@@ -373,6 +392,7 @@ function OrderCard({
   pending,
   timeZone,
   onTransition,
+  onVerifyPickup,
   cardRef,
 }: {
   order: DashboardOrder;
@@ -381,6 +401,7 @@ function OrderCard({
   pending: boolean;
   timeZone: string;
   onTransition: (orderId: string, status: OrderStatus) => void;
+  onVerifyPickup: () => void;
   cardRef: (node: HTMLLIElement | null) => void;
 }) {
   /** Two-step cancel: the button asks before it does anything terminal. */
@@ -456,6 +477,11 @@ function OrderCard({
       ) : null}
 
       <div className="flex flex-wrap gap-2 print:hidden">
+        {order.status === "ready" ? (
+          <button type="button" disabled={pending} onClick={onVerifyPickup} className="btn btn-primary btn-sm">
+            Verify pickup
+          </button>
+        ) : null}
         {STAFF_TRANSITIONS[order.status].map((next, index) => {
           const destructive = next === "canceled";
           /* Only the next step forward is the primary. `paid` offers both

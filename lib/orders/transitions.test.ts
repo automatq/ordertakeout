@@ -280,6 +280,17 @@ describe("refund transition finality", () => {
   });
 });
 
+describe("pickup completion guard", () => {
+  it("does not allow the generic status action to bypass counter verification", async () => {
+    vi.clearAllMocks();
+    await expect(advanceOrder(ORDER.id, "completed")).resolves.toEqual({
+      ok: false,
+      reason: "Verify pickup at the counter before completing an order.",
+    });
+    expect(mocks.db).not.toHaveBeenCalled();
+  });
+});
+
 describe("stale payment-attempt cancellation", () => {
   beforeEach(() => {
     vi.clearAllMocks();

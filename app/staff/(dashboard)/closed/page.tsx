@@ -217,6 +217,19 @@ async function ClosedList({ searchParams }: PageProps) {
                       </p>
                     ) : null}
 
+                    {order.status === "completed" ? (
+                      order.pickupVerification ? (
+                        <p className="panel text-ink-muted p-3 text-sm">
+                          <strong className="text-ink font-semibold">Pickup verified:</strong>{" "}
+                          {order.pickupVerification.method === "qr" ? "QR pass" : "Manual order lookup"} by {order.pickupVerification.staffInitials} at {formatVerificationTime(order.pickupVerification.verifiedAt, order.pickupLocationTimezone)}.
+                        </p>
+                      ) : (
+                        <p className="panel text-warning p-3 text-sm">
+                          Pickup verification unavailable — this completed order predates the counter verification system.
+                        </p>
+                      )
+                    ) : null}
+
                     {/* Finding the order was only ever half the job; the other
                         half is calling the customer about it. */}
                     <div className="flex flex-wrap gap-3">
@@ -257,6 +270,14 @@ async function ClosedList({ searchParams }: PageProps) {
       )}
     </>
   );
+}
+
+function formatVerificationTime(value: Date, timeZone: string | null): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: timeZone ?? undefined,
+  }).format(value);
 }
 
 function pageHref(

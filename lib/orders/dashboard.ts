@@ -3,7 +3,16 @@ import "server-only";
 import { and, asc, desc, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { orderItems, orders, productsConfig, slotCapacity, type Order, type OrderItem } from "@/lib/db/schema";
+import {
+  orderItems,
+  orders,
+  pickupVerifications,
+  productsConfig,
+  slotCapacity,
+  type Order,
+  type OrderItem,
+  type PickupVerification,
+} from "@/lib/db/schema";
 import { serverEnv } from "@/lib/env";
 import { addCalendarDays, normalizeTime, storeToday, type StoreDate, type StoreTime } from "@/lib/scheduling/time";
 import { getStoreLocationsSafe } from "@/lib/locations/server";
@@ -23,6 +32,7 @@ const ACTIVE_STATUSES = ["paid", "preparing", "ready"] as const;
 
 export interface DashboardOrder extends Order {
   items: OrderItem[];
+  pickupVerification: PickupVerification | null;
 }
 
 export interface SlotGroup {
@@ -141,10 +151,17 @@ export async function getDashboardData(daysAhead = 7, locationId?: string): Prom
       ),
   ]);
 
-  const items = await loadItemsFor(rows.map((r) => r.id));
+  const [items, verifications] = await Promise.all([
+    loadItemsFor(rows.map((row) => row.id)),
+    loadPickupVerificationsFor(rows.map((row) => row.id)),
+  ]);
 
   const byDate = groupDashboardOrders(
-    rows.map((row) => ({ ...row, items: items.get(row.id) ?? [] })),
+    rows.map((row) => ({
+      ...row,
+      items: items.get(row.id) ?? [],
+      pickupVerification: verifications.get(row.id) ?? null,
+    })),
   );
 
   const configuredTimes = [...new Set(ruleRows.flatMap((row) => row.times.map(normalizeTime)))].sort();
@@ -217,8 +234,15 @@ export async function getOrdersForDate(date: StoreDate, locationId?: string): Pr
     ))
     .orderBy(asc(orders.pickupTime), asc(orders.createdAt));
 
-  const items = await loadItemsFor(rows.map((r) => r.id));
-  return rows.map((row) => ({ ...row, items: items.get(row.id) ?? [] }));
+  const [items, verifications] = await Promise.all([
+    loadItemsFor(rows.map((row) => row.id)),
+    loadPickupVerificationsFor(rows.map((row) => row.id)),
+  ]);
+  return rows.map((row) => ({
+    ...row,
+    items: items.get(row.id) ?? [],
+    pickupVerification: verifications.get(row.id) ?? null,
+  }));
 }
 
 /** Recently completed or cancelled orders, for looking something up after the fact. */
@@ -280,8 +304,15 @@ export async function searchClosedOrders(
     .limit(Math.max(1, limit))
     .offset(Math.max(0, offset));
 
-  const items = await loadItemsFor(rows.map((r) => r.id));
-  return rows.map((row) => ({ ...row, items: items.get(row.id) ?? [] }));
+  const [items, verifications] = await Promise.all([
+    loadItemsFor(rows.map((row) => row.id)),
+    loadPickupVerificationsFor(rows.map((row) => row.id)),
+  ]);
+  return rows.map((row) => ({
+    ...row,
+    items: items.get(row.id) ?? [],
+    pickupVerification: verifications.get(row.id) ?? null,
+  }));
 }
 
 /** One query for all line items, rather than one per order. */
@@ -301,6 +332,17 @@ async function loadItemsFor(orderIds: string[]): Promise<Map<string, OrderItem[]
     grouped.set(item.orderId, list);
   }
   return grouped;
+}
+
+async function loadPickupVerificationsFor(
+  orderIds: string[],
+): Promise<Map<string, PickupVerification>> {
+  if (orderIds.length === 0) return new Map();
+  const rows = await db()
+    .select()
+    .from(pickupVerifications)
+    .where(inArray(pickupVerifications.orderId, orderIds));
+  return new Map(rows.map((row) => [row.orderId, row]));
 }
 
 /**

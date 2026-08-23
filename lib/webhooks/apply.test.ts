@@ -389,4 +389,24 @@ describe("applySquareEvent money reconciliation", () => {
     })).resolves.toEqual(expect.objectContaining({ handled: false, retryable: true }));
     expect(mocks.releaseInventoryHoldsWithin).not.toHaveBeenCalled();
   });
+
+  it("keeps a Square-completed order ready until counter pickup is verified", async () => {
+    let warningWrite: Record<string, unknown> | undefined;
+    mocks.db
+      .mockReturnValueOnce(selectRowsDb([{ ...ORDER, status: "ready" }]))
+      .mockReturnValueOnce(captureUpdateDb([], (value) => { warningWrite = value; }));
+
+    await expect(applySquareEvent({
+      kind: "fulfillment",
+      eventId: "evt-completed",
+      type: "order.fulfillment.updated",
+      squareOrderId: "SQ_ORDER_1",
+      newState: "COMPLETED",
+    })).resolves.toMatchObject({ handled: false, detail: expect.stringContaining("pickup verification") });
+
+    expect(warningWrite).toMatchObject({
+      squareSyncError: expect.stringContaining("Verify pickup"),
+    });
+    expect(warningWrite).not.toHaveProperty("status");
+  });
 });

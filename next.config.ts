@@ -42,7 +42,10 @@ const nextConfig: NextConfig = {
         { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
         { key: "X-Content-Type-Options", value: "nosniff" },
         { key: "X-Frame-Options", value: "DENY" },
-        { key: "Permissions-Policy", value: "geolocation=(self), camera=(), microphone=()" },
+        // Camera is used only after a staff member explicitly opens the pickup
+        // verifier; the storefront never requests it. HTTPS/localhost remains
+        // required by the browser for getUserMedia.
+        { key: "Permissions-Policy", value: "geolocation=(self), camera=(self), microphone=()" },
         ...(production ? [{ key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" }] : []),
       ],
     }];

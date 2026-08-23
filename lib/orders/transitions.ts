@@ -5,7 +5,8 @@ import { after } from "next/server";
 import { and, eq, isNull, ne } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { orders, slotHolds, type Order, type OrderStatus } from "@/lib/db/schema";
+import { loyaltyEntries, orders, slotHolds, type Order, type OrderStatus } from "@/lib/db/schema";
+import { REWARD_POINTS } from "@/lib/accounts/loyalty";
 import { isDemoMode } from "@/lib/demo/config";
 import { squareClient } from "@/lib/square/client";
 import { STAFF_TRANSITIONS } from "@/lib/orders/status";
@@ -63,6 +64,13 @@ export async function advanceOrder(
   orderId: string,
   nextStatus: OrderStatus,
 ): Promise<TransitionResult> {
+  if (nextStatus === "completed") {
+    return {
+      ok: false,
+      reason: "Verify pickup at the counter before completing an order.",
+    };
+  }
+
   const [order] = await db().select().from(orders).where(eq(orders.id, orderId)).limit(1);
   if (!order) return { ok: false, reason: "Order not found." };
 
@@ -279,6 +287,22 @@ async function cancelOrder(order: Order): Promise<TransitionResult> {
       ))
       .returning({ id: orders.id });
     if (rows.length) await releaseInventoryHoldsWithin(tx, order.id);
+    // A reward reservation is spent when an order is started. If Square has
+    // refunded it, restore those points in an auditable, idempotent entry.
+    if (rows.length && order.customerAccountId) {
+      const [redemption] = await tx.select({ id: loyaltyEntries.id }).from(loyaltyEntries).where(and(
+        eq(loyaltyEntries.orderId, order.id),
+        eq(loyaltyEntries.kind, "redeemed"),
+      )).limit(1);
+      if (redemption) {
+        await tx.insert(loyaltyEntries).values({
+          customerAccountId: order.customerAccountId,
+          orderId: order.id,
+          kind: "reversed",
+          points: REWARD_POINTS,
+        }).onConflictDoNothing();
+      }
+    }
     return rows;
   });
 

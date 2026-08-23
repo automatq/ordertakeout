@@ -16,8 +16,11 @@ import { hasStaffSession } from "@/lib/auth/guard";
 import { verifyOrderAccessToken } from "@/lib/orders/access";
 import { customerCancellationEligibility } from "@/lib/orders/cancellation";
 import { CancelOrder } from "@/components/orders/cancel-order";
+import { PickupPass } from "@/components/orders/pickup-pass";
 import { getOrderableProducts } from "@/lib/catalog/server";
 import { primaryImage, sizedImage } from "@/lib/catalog/images";
+import { createPickupPass } from "@/lib/orders/pickup-pass";
+import { CreateAccount } from "@/components/accounts/create-account";
 
 type PageProps = {
   params: Promise<{ orderNumber: string }>;
@@ -46,7 +49,9 @@ async function OrderDetail({ params, searchParams }: PageProps) {
   const order = await getOrderByNumber(orderNumber);
 
   if (!order) notFound();
-  if (!(await hasStaffSession()) && !verifyOrderAccessToken(order.id, order.orderNumber, key)) {
+  const staffSession = await hasStaffSession();
+  const hasCustomerAccess = verifyOrderAccessToken(order.id, order.orderNumber, key);
+  if (!staffSession && !hasCustomerAccess) {
     notFound();
   }
 
@@ -223,6 +228,8 @@ async function OrderDetail({ params, searchParams }: PageProps) {
           </section>
 
           <OrderProgress status={order.status} />
+          {paid && order.status !== "completed" ? <PickupPass value={createPickupPass(order.id, order.orderNumber)} /> : null}
+          {paid && hasCustomerAccess && key ? <CreateAccount orderNumber={order.orderNumber} accessToken={key} /> : null}
           <OrderRefresher live={live} />
           {cancellation?.allowed && key ? (
             <section className="card flex flex-col gap-3 rounded-[1.5rem] p-5 sm:p-6">
