@@ -8,6 +8,7 @@ import { OrderProgress } from "@/components/orders/order-progress";
 import { OrderRefresher } from "@/components/orders/order-refresher";
 import { AlertIcon, CalendarIcon, ClockIcon, LoafIcon, MapPinIcon, PhoneIcon } from "@/components/ui/icons";
 import { LoadingRegion, Skeleton } from "@/components/ui/skeleton";
+import { googleCalendarUrl } from "@/lib/orders/calendar-link";
 import { getOrderByNumber } from "@/lib/orders/lookup";
 import { formatPickupTime, formatStoreDate } from "@/lib/scheduling/time";
 import { formatMoney } from "@/lib/square/money";
@@ -211,7 +212,7 @@ async function OrderDetail({ params, searchParams }: PageProps) {
                 Directions
               </a>
               <a
-                href={calendarLink(order.pickupDate, order.pickupTime, order.orderNumber, order.pickupLocationName ?? STORE_INFO.name, pickupAddress, pickupCity, pickupPhone)}
+                href={googleCalendarUrl({ date: order.pickupDate, time: order.pickupTime, orderNumber: order.orderNumber, locationName: order.pickupLocationName ?? STORE_INFO.name, address: pickupAddress, city: pickupCity, phone: pickupPhone })}
                 target="_blank"
                 rel="noreferrer"
                 className="btn btn-secondary btn-sm rounded-full"
@@ -326,36 +327,6 @@ async function OrderDetail({ params, searchParams }: PageProps) {
       </div>
     </>
   );
-}
-
-/**
- * A Google Calendar "add event" link for the pickup.
- *
- * Deliberately not an .ics download: that needs a route handler and a MIME
- * type, and this covers the case that actually matters — a customer on a phone
- * who wants a reminder not to forget the tray they've already paid for.
- *
- * The times are the store's wall clock. Google reads a floating (zoneless)
- * timestamp in the viewer's own zone, which is right for a local bakery and
- * wrong only for someone booking from another timezone — a trade for not
- * dragging a tz conversion into a convenience link.
- */
-function calendarLink(date: string, time: string, orderNumber: string, locationName: string, address: string, city: string, phone: string): string {
-  const start = `${date.replace(/-/g, "")}T${time.replace(":", "")}00`;
-  const [hours, minutes] = time.split(":").map(Number) as [number, number];
-  const end = `${date.replace(/-/g, "")}T${String((hours + 1) % 24).padStart(2, "0")}${String(
-    minutes,
-  ).padStart(2, "0")}00`;
-
-  const params = new URLSearchParams({
-    action: "TEMPLATE",
-    text: `Pick up order ${orderNumber} — ${locationName}`,
-    dates: `${start}/${end}`,
-    location: `${address}, ${city}`,
-    details: `Collect your party tray order ${orderNumber}. Call ${phone} if you need to change anything.`,
-  });
-
-  return `https://calendar.google.com/calendar/render?${params.toString()}`;
 }
 
 function hoursForDate(

@@ -3,6 +3,7 @@ import "server-only";
 import { serverEnv } from "@/lib/env";
 import { resolveStoreEmails, resolveStorePhone } from "@/lib/settings/notifications";
 
+import { renderCustomerEmailHtml } from "./email-html";
 import {
   renderCustomerEmail,
   renderCustomerSms,
@@ -92,6 +93,7 @@ export async function sendCustomerEmail(event: NotificationEvent): Promise<Chann
   const customer = renderCustomerEmail(event);
   if (!config || !customer || !event.order.customerEmail) return skip("email_customer");
 
+  const html = renderCustomerEmailHtml(event);
   const response = await post("https://api.resend.com/emails", {
     method: "POST",
     headers: config.headers,
@@ -101,6 +103,7 @@ export async function sendCustomerEmail(event: NotificationEvent): Promise<Chann
       ...(config.storeEmails[0] ? { reply_to: config.storeEmails[0] } : {}),
       subject: customer.subject,
       text: customer.text,
+      ...(html ? { html } : {}),
     }),
   });
   return expectOk(response, "email_customer");
