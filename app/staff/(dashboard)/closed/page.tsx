@@ -4,6 +4,7 @@ import { Suspense } from "react";
 
 import { EmptyState } from "@/components/ui/empty-state";
 import { PhoneIcon, SearchIcon } from "@/components/ui/icons";
+import { RefundButton } from "@/components/staff/refund-dialog";
 import { ListSkeleton } from "@/components/ui/skeleton";
 import { searchClosedOrders } from "@/lib/orders/dashboard";
 import { formatPickupTime, formatStoreDate, isStoreDate } from "@/lib/scheduling/time";
@@ -188,6 +189,11 @@ async function ClosedList({ searchParams }: PageProps) {
                       >
                         {order.status === "canceled" ? "Cancelled" : "Completed"}
                       </span>
+                      {order.refundedTotalCents > 0 ? (
+                        <span className="tag">
+                          Refunded {formatMoney(order.refundedTotalCents, order.currency)}
+                        </span>
+                      ) : null}
                       <span className="text-ink font-display text-lg font-normal">
                         {formatMoney(order.totalCents, order.currency)}
                       </span>
@@ -233,6 +239,15 @@ async function ClosedList({ searchParams }: PageProps) {
                     {/* Finding the order was only ever half the job; the other
                         half is calling the customer about it. */}
                     <div className="flex flex-wrap gap-3">
+                      {order.status === "completed" && order.squarePaymentId ? (
+                        <RefundButton
+                          orderId={order.id}
+                          orderNumber={order.orderNumber}
+                          totalCents={order.totalCents}
+                          refundedTotalCents={order.refundedTotalCents}
+                          currency={order.currency}
+                        />
+                      ) : null}
                       <a
                         href={`tel:${order.customerPhone}`}
                         className="btn btn-secondary btn-sm"

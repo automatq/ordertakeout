@@ -6,6 +6,11 @@ const mocks = vi.hoisted(() => ({
   cancelSquarePaymentAttempt: vi.fn(),
   notifyOrder: vi.fn(),
   releaseInventoryHoldsWithin: vi.fn(),
+  claimRefund: vi.fn(),
+  markLedgerAttempt: vi.fn(),
+  settleLedgerCompletedWithin: vi.fn(),
+  recordAudit: vi.fn(),
+  recordAuditWithin: vi.fn(),
 }));
 
 vi.mock("next/server", () => ({ after: (callback: () => unknown) => callback() }));
@@ -23,6 +28,19 @@ vi.mock("@/lib/inventory/reservations", () => ({
 vi.mock("@/lib/orders/payment-state", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/orders/payment-state")>(),
   createRefundAttemptKey: () => "refund-00000000-0000-4000-8000-000000000099",
+}));
+// The claim/ledger machinery has its own suite (refunds.test.ts); here it is
+// stubbed so these tests keep exercising the transition logic in isolation.
+vi.mock("@/lib/orders/refunds", () => ({
+  claimRefund: mocks.claimRefund,
+  markLedgerAttempt: mocks.markLedgerAttempt,
+  settleLedgerCompletedWithin: mocks.settleLedgerCompletedWithin,
+  remainingRefundableCents: (order: { totalCents: number; refundedTotalCents?: number }) =>
+    Math.max(0, order.totalCents - (order.refundedTotalCents ?? 0)),
+}));
+vi.mock("@/lib/audit/log", () => ({
+  recordAudit: mocks.recordAudit,
+  recordAuditWithin: mocks.recordAuditWithin,
 }));
 
 import { advanceOrder } from "./transitions";
@@ -80,6 +98,8 @@ const ORDER = {
   squareLocationId: "TORONTO_WEST",
   status: "paid",
   totalCents: 2400,
+  refundedTotalCents: 0,
+  customerAccountId: null,
   currency: "CAD",
   updatedAt: new Date("2026-08-20T12:00:00Z"),
   canceledAt: null,
@@ -90,6 +110,11 @@ describe("refund transition finality", () => {
     vi.clearAllMocks();
     mocks.notifyOrder.mockResolvedValue(undefined);
     mocks.releaseInventoryHoldsWithin.mockResolvedValue(undefined);
+    mocks.claimRefund.mockResolvedValue({ ok: true, key: ATTEMPT_KEY, amountCents: ORDER.totalCents });
+    mocks.markLedgerAttempt.mockResolvedValue(undefined);
+    mocks.settleLedgerCompletedWithin.mockResolvedValue("ledger-1");
+    mocks.recordAudit.mockResolvedValue(undefined);
+    mocks.recordAuditWithin.mockResolvedValue(undefined);
   });
 
   it.each(["FAILED", "REJECTED"])(
@@ -98,7 +123,6 @@ describe("refund transition finality", () => {
       let failedWrite: Record<string, unknown> | undefined;
       mocks.db
         .mockReturnValueOnce(selectRowsDb([ORDER]))
-        .mockReturnValueOnce(captureUpdateDb([{ id: ORDER.id }]))
         .mockReturnValueOnce(captureUpdateDb([{ id: ORDER.id }], (value) => { failedWrite = value; }));
       mocks.refundSquarePayment.mockResolvedValue({
         ok: true,
@@ -121,7 +145,6 @@ describe("refund transition finality", () => {
     let pendingWrite: Record<string, unknown> | undefined;
     mocks.db
       .mockReturnValueOnce(selectRowsDb([ORDER]))
-      .mockReturnValueOnce(captureUpdateDb([{ id: ORDER.id }]))
       .mockReturnValueOnce(captureUpdateDb([{ id: ORDER.id }], (value) => { pendingWrite = value; }));
     mocks.refundSquarePayment.mockResolvedValue({
       ok: true,
@@ -146,7 +169,6 @@ describe("refund transition finality", () => {
     let canceledWrite: Record<string, unknown> | undefined;
     mocks.db
       .mockReturnValueOnce(selectRowsDb([ORDER]))
-      .mockReturnValueOnce(captureUpdateDb([{ id: ORDER.id }]))
       .mockReturnValueOnce(transactionDb([{ id: ORDER.id }], (value) => { canceledWrite = value; }))
       .mockReturnValueOnce(captureUpdateDb());
     mocks.refundSquarePayment.mockResolvedValue({
@@ -179,7 +201,6 @@ describe("refund transition finality", () => {
     };
     mocks.db
       .mockReturnValueOnce(selectRowsDb([ORDER]))
-      .mockReturnValueOnce(captureUpdateDb([{ id: ORDER.id }]))
       .mockReturnValueOnce(captureUpdateDb([], (value) => { errorWrite = value; }))
       .mockReturnValueOnce(selectRowsDb([pending]));
     mocks.refundSquarePayment.mockResolvedValue({
@@ -210,7 +231,6 @@ describe("refund transition finality", () => {
     };
     mocks.db
       .mockReturnValueOnce(selectRowsDb([ORDER]))
-      .mockReturnValueOnce(captureUpdateDb([{ id: ORDER.id }]))
       .mockReturnValueOnce(captureUpdateDb())
       .mockReturnValueOnce(selectRowsDb([completed]))
       .mockReturnValueOnce(captureUpdateDb());
@@ -238,7 +258,6 @@ describe("refund transition finality", () => {
     };
     mocks.db
       .mockReturnValueOnce(selectRowsDb([ORDER]))
-      .mockReturnValueOnce(captureUpdateDb([{ id: ORDER.id }]))
       .mockReturnValueOnce(captureUpdateDb([]))
       .mockReturnValueOnce(selectRowsDb([failed]));
     mocks.refundSquarePayment.mockResolvedValue({
@@ -264,7 +283,6 @@ describe("refund transition finality", () => {
     };
     mocks.db
       .mockReturnValueOnce(selectRowsDb([failed]))
-      .mockReturnValueOnce(captureUpdateDb([{ id: ORDER.id }]))
       .mockReturnValueOnce(captureUpdateDb([{ id: ORDER.id }]));
     mocks.refundSquarePayment.mockResolvedValue({
       ok: true,

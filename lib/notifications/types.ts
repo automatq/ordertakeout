@@ -19,11 +19,26 @@ export interface OrderNotification {
   trackingUrl?: string | null;
 }
 
-export type NotificationEventKind = "order_paid" | "order_ready" | "order_canceled";
+export type NotificationEventKind =
+  | "order_paid"
+  | "order_ready"
+  | "order_canceled"
+  | "order_refunded";
 
 export interface NotificationEvent {
   kind: NotificationEventKind;
   order: OrderNotification;
+  /**
+   * Claim/record key in notification_log; defaults to `kind`. Events that can
+   * legitimately recur per order (a second partial refund, a future reminder)
+   * pass a suffixed key like `order_refunded:<refundId>` so each occurrence is
+   * its own idempotent delivery unit.
+   */
+  dedupeKey?: string;
+  /** Restrict delivery to these channels; omitted = all configured channels. */
+  channels?: ChannelName[];
+  /** Present for order_refunded. */
+  refund?: { amountCents: number; partial: boolean };
 }
 
 export type ChannelName =

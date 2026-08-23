@@ -3,7 +3,7 @@ import "server-only";
 import { and, eq, lt, lte, or, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { notificationLog, orderItems, orders } from "@/lib/db/schema";
+import { notificationLog, orderItems, orderRefunds, orders } from "@/lib/db/schema";
 import { reportError } from "@/lib/monitoring/report";
 import { normalizeTime } from "@/lib/scheduling/time";
 import { orderTrackingUrl } from "@/lib/orders/access";
@@ -39,11 +39,15 @@ export async function dispatch(event: NotificationEvent): Promise<ChannelResult[
     (typeof CHANNELS)[Exclude<ChannelName, "email">],
   ][];
 
+  const dedupeKey = event.dedupeKey ?? event.kind;
   const results = await Promise.all(
     entries.map(async ([name, send]): Promise<ChannelResult> => {
+      if (event.channels && !event.channels.includes(name)) {
+        return { channel: name, ok: true, skipped: true };
+      }
       // Claim the unique delivery before touching the provider. This closes the
       // old check-then-send race between checkout and Square's payment webhook.
-      if (!(await claim(event.order.orderId, event.kind, name))) {
+      if (!(await claim(event.order.orderId, dedupeKey, name))) {
         return { channel: name, ok: true, skipped: true };
       }
 
@@ -68,12 +72,12 @@ export async function dispatch(event: NotificationEvent): Promise<ChannelResult[
 
 async function claim(
   orderId: string,
-  kind: NotificationEventKind,
+  dedupeKey: string,
   channel: ChannelName,
 ): Promise<boolean> {
   const rows = await db().execute<{ id: string }>(sql`
     INSERT INTO ${notificationLog} (order_id, channel, event, status, attempts, created_at)
-    VALUES (${orderId}, ${channel}::notification_channel, ${kind}, 'pending', 1, now())
+    VALUES (${orderId}, ${channel}::notification_channel, ${dedupeKey}, 'pending', 1, now())
     ON CONFLICT (order_id, event, channel) DO UPDATE
       SET status = 'pending',
           attempts = ${notificationLog.attempts} + 1,
@@ -98,7 +102,7 @@ async function record(
 ): Promise<void> {
   const delivery = and(
     eq(notificationLog.orderId, event.order.orderId),
-    eq(notificationLog.event, event.kind),
+    eq(notificationLog.event, event.dedupeKey ?? event.kind),
     eq(notificationLog.channel, channel),
   );
 
@@ -137,7 +141,15 @@ export async function retryFailedNotifications(limit = 50): Promise<number> {
 
   const unique = [...new Map(due.map((entry) => [`${entry.orderId}:${entry.event}`, entry])).values()];
   for (const entry of unique) {
-    if (isNotificationKind(entry.event)) await notifyOrder(entry.orderId, entry.event);
+    // The event column stores the dedupe key; the kind is its prefix
+    // (e.g. "order_refunded:<refundId>").
+    const kind = entry.event.split(":")[0] ?? entry.event;
+    if (kind === "order_refunded") {
+      const refundId = entry.event.slice("order_refunded:".length);
+      if (refundId) await notifyOrderRefund(entry.orderId, refundId);
+      continue;
+    }
+    if (isNotificationKind(kind)) await notifyOrder(entry.orderId, kind);
   }
   return unique.length;
 }
@@ -197,5 +209,43 @@ export async function notifyOrder(
     await dispatch({ kind, order });
   } catch (cause) {
     reportError("notifications", "dispatch failed", cause);
+  }
+}
+
+/**
+ * Notify about one completed refund from the ledger.
+ *
+ * The amount is re-read from order_refunds rather than passed by the caller so
+ * cron retries reconstruct the identical event; the per-refund dedupe key means
+ * a second partial refund still notifies while replays of the same one don't.
+ */
+export async function notifyOrderRefund(orderId: string, refundId: string): Promise<void> {
+  try {
+    const [refund] = await db()
+      .select({
+        amountCents: orderRefunds.amountCents,
+        status: orderRefunds.status,
+      })
+      .from(orderRefunds)
+      .where(eq(orderRefunds.id, refundId))
+      .limit(1);
+    if (!refund || refund.status !== "completed") return;
+
+    const order = await buildOrderNotification(orderId);
+    if (!order) {
+      reportError("notifications", "no order to notify about", undefined, { orderId });
+      return;
+    }
+    await dispatch({
+      kind: "order_refunded",
+      order,
+      dedupeKey: `order_refunded:${refundId}`,
+      refund: {
+        amountCents: refund.amountCents,
+        partial: refund.amountCents < order.totalCents,
+      },
+    });
+  } catch (cause) {
+    reportError("notifications", "refund dispatch failed", cause);
   }
 }

@@ -2,7 +2,7 @@ import "server-only";
 
 import { after } from "next/server";
 
-import { and, eq, isNull, ne } from "drizzle-orm";
+import { and, eq, isNull, ne, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { loyaltyEntries, orders, slotHolds, type Order, type OrderStatus } from "@/lib/db/schema";
@@ -12,19 +12,22 @@ import { reportError } from "@/lib/monitoring/report";
 import { squareClient } from "@/lib/square/client";
 import { STAFF_TRANSITIONS } from "@/lib/orders/status";
 import { notifyOrder } from "@/lib/notifications/dispatch";
-import {
-  PARTIAL_REFUND_ERROR_PREFIX,
-  shouldApplyStatus,
-} from "@/lib/webhooks/events";
+import { shouldApplyStatus } from "@/lib/webhooks/events";
 import {
   cancelSquarePaymentAttempt,
   refundSquarePayment,
 } from "@/lib/square/orders";
 import {
-  createRefundAttemptKey,
   isAttemptLeaseStale,
   isPaymentAttemptMarker,
 } from "@/lib/orders/payment-state";
+import {
+  claimRefund,
+  markLedgerAttempt,
+  remainingRefundableCents,
+  settleLedgerCompletedWithin,
+} from "@/lib/orders/refunds";
+import { recordAudit, type AuditActorType } from "@/lib/audit/log";
 import { releaseInventoryHoldsWithin } from "@/lib/inventory/reservations";
 
 export { STAFF_TRANSITIONS };
@@ -61,9 +64,17 @@ export type TransitionResult =
   | { ok: true; status: OrderStatus; squareWarning?: string; notice?: string }
   | { ok: false; reason: string };
 
+export interface TransitionActor {
+  type: AuditActorType;
+  initials?: string | null;
+}
+
+const STAFF_ACTOR: TransitionActor = { type: "staff" };
+
 export async function advanceOrder(
   orderId: string,
   nextStatus: OrderStatus,
+  actor: TransitionActor = STAFF_ACTOR,
 ): Promise<TransitionResult> {
   if (nextStatus === "completed") {
     return {
@@ -93,7 +104,7 @@ export async function advanceOrder(
   }
 
   if (nextStatus === "canceled") {
-    return cancelOrder(order);
+    return cancelOrder(order, actor);
   }
 
   const now = new Date();
@@ -111,6 +122,15 @@ export async function advanceOrder(
   if (updated.length === 0) {
     return { ok: false, reason: "Someone else just updated this order." };
   }
+
+  after(() => recordAudit({
+    actorType: actor.type,
+    actorInitials: actor.initials ?? null,
+    action: "order.status_changed",
+    entityType: "order",
+    orderId: order.id,
+    metadata: { orderNumber: order.orderNumber, from: order.status, to: nextStatus },
+  }));
 
   // "Ready for pickup" is the one the customer is waiting on; cancellation is
   // the one they need to know about. Starting preparation is internal.
@@ -131,15 +151,17 @@ export async function advanceOrder(
 }
 
 /**
- * A paid order is cancelled only after Square accepts its full refund. Keeping
- * the order active on refund failure prevents the dashboard and customer page
- * from promising money has been returned when it has not.
+ * A paid order is cancelled only after Square accepts the refund of its
+ * REMAINING balance — prior partial refunds shrink the amount rather than
+ * blocking the cancellation. Keeping the order active on refund failure
+ * prevents the dashboard and customer page from promising money has been
+ * returned when it has not.
  */
-async function cancelOrder(order: Order): Promise<TransitionResult> {
+async function cancelOrder(order: Order, actor: TransitionActor = STAFF_ACTOR): Promise<TransitionResult> {
   const now = new Date();
 
   if (order.status === "pending_payment") {
-    return cancelPendingPaymentOrder(order, now);
+    return cancelPendingPaymentOrder(order, now, actor);
   }
 
   if (!order.squarePaymentId) {
@@ -153,22 +175,43 @@ async function cancelOrder(order: Order): Promise<TransitionResult> {
     };
   }
 
-  if (
-    order.refundStatus === "failed" &&
-    order.refundError?.startsWith(PARTIAL_REFUND_ERROR_PREFIX)
-  ) {
-    return {
-      ok: false,
-      reason: "Square already recorded a partial refund. Reconcile the remaining balance in Square before changing this order.",
-    };
+  // Already fully refunded (staff refunds or Square-side): nothing left to
+  // return, so cancel locally without another Square refund call.
+  if (remainingRefundableCents(order) === 0 && order.refundStatus !== "pending") {
+    return finalizeCancellation(order, {
+      actor,
+      squareRefundId: order.squareRefundId,
+      attemptKey: null,
+      amountCents: 0,
+    });
   }
 
-  const attempt = await claimRefundAttempt(order, now);
-  if (!attempt.ok) return attempt.result;
+  const attempt = await claimRefund(order, now, {
+    amountCents: Math.max(1, remainingRefundableCents(order)),
+    origin: "cancellation",
+    initiatedBy: actor.initials ?? null,
+    reason: `Order ${order.orderNumber} cancelled`,
+  });
+  if (!attempt.ok) {
+    if (attempt.kind === "external_pending") {
+      return {
+        ok: false,
+        reason: "This refund was started outside the app and must finish or be reconciled in Square before another refund is attempted.",
+      };
+    }
+    if (attempt.kind === "in_flight") {
+      return {
+        ok: true,
+        status: order.status,
+        notice: "Square is still processing this refund. The order remains locked until its final status arrives.",
+      };
+    }
+    return { ok: false, reason: "Another refund reconciliation just started." };
+  }
 
   const refund = await refundSquarePayment({
     paymentId: order.squarePaymentId,
-    amountCents: order.totalCents,
+    amountCents: attempt.amountCents,
     currency: order.currency,
     idempotencyKey: attempt.key,
     reason: `Order ${order.orderNumber} cancelled by staff`,
@@ -209,6 +252,7 @@ async function cancelOrder(order: Order): Promise<TransitionResult> {
       ))
       .returning({ id: orders.id });
     if (!failed.length) return resolveRefundRace(order, attempt.key);
+    await markLedgerAttempt(attempt.key, { status: "failed", error: `${refund.code}: ${refund.message}` });
     return {
       ok: false,
       reason: `Square rejected the refund (${refund.message}). The order remains active; retrying will use a new refund attempt.`,
@@ -232,6 +276,11 @@ async function cancelOrder(order: Order): Promise<TransitionResult> {
       ))
       .returning({ id: orders.id });
     if (!failed.length) return resolveRefundRace(order, attempt.key);
+    await markLedgerAttempt(attempt.key, {
+      status: "failed",
+      squareRefundId: refund.refundId,
+      error: `Square refund ${refund.status ?? "UNKNOWN"}`,
+    });
     return {
       ok: false,
       reason: `Square reported that the refund was ${refund.status?.toLowerCase() ?? "unsuccessful"}. The order remains active.`,
@@ -257,6 +306,7 @@ async function cancelOrder(order: Order): Promise<TransitionResult> {
       .returning({ id: orders.id });
 
     if (!recorded.length) return resolveRefundRace(order, attempt.key);
+    await markLedgerAttempt(attempt.key, { squareRefundId: refund.refundId });
 
     return {
       ok: true,
@@ -267,30 +317,59 @@ async function cancelOrder(order: Order): Promise<TransitionResult> {
     };
   }
 
+  return finalizeCancellation(order, {
+    actor,
+    squareRefundId: refund.refundId ?? null,
+    attemptKey: attempt.key,
+    amountCents: attempt.amountCents,
+  });
+}
+
+/**
+ * Flip the order to canceled, settle the ledger, release holds, restore
+ * redeemed points, mirror to Square, and notify — in that order. Shared by the
+ * refunded path (attemptKey set) and the already-fully-refunded path
+ * (attemptKey null: no Square call was needed, so nothing new to settle).
+ */
+async function finalizeCancellation(
+  order: Order,
+  options: {
+    actor: TransitionActor;
+    squareRefundId: string | null;
+    attemptKey: string | null;
+    amountCents: number;
+  },
+): Promise<TransitionResult> {
   const canceledAt = new Date();
-  const updated = await db().transaction(async (tx) => {
+  const settled = await db().transaction(async (tx) => {
     const rows = await tx
       .update(orders)
       .set({
         status: "canceled",
-        squareRefundId: refund.refundId,
+        squareRefundId: options.squareRefundId,
         refundStatus: "completed",
         refundError: null,
         refundAttemptStartedAt: null,
+        ...(options.amountCents > 0
+          ? { refundedTotalCents: sql`${orders.refundedTotalCents} + ${options.amountCents}` }
+          : {}),
         canceledAt,
         updatedAt: canceledAt,
       })
       .where(and(
         eq(orders.id, order.id),
         eq(orders.status, order.status),
-        eq(orders.refundStatus, "pending"),
-        eq(orders.refundAttemptKey, attempt.key),
+        options.attemptKey
+          ? and(eq(orders.refundStatus, "pending"), eq(orders.refundAttemptKey, options.attemptKey))
+          : ne(orders.refundStatus, "pending"),
       ))
       .returning({ id: orders.id });
-    if (rows.length) await releaseInventoryHoldsWithin(tx, order.id);
+    if (!rows.length) return null;
+
+    await releaseInventoryHoldsWithin(tx, order.id);
     // A reward reservation is spent when an order is started. If Square has
     // refunded it, restore those points in an auditable, idempotent entry.
-    if (rows.length && order.customerAccountId) {
+    if (order.customerAccountId) {
       const [redemption] = await tx.select({ id: loyaltyEntries.id }).from(loyaltyEntries).where(and(
         eq(loyaltyEntries.orderId, order.id),
         eq(loyaltyEntries.kind, "redeemed"),
@@ -304,12 +383,34 @@ async function cancelOrder(order: Order): Promise<TransitionResult> {
         }).onConflictDoNothing();
       }
     }
-    return rows;
+
+    let ledgerId: string | null = null;
+    if (options.attemptKey && options.amountCents > 0) {
+      ledgerId = await settleLedgerCompletedWithin(
+        tx, order.id, options.attemptKey, options.squareRefundId, options.amountCents, canceledAt,
+      );
+    }
+    return { ledgerId };
   });
 
-  if (!updated.length) {
-    return resolveRefundRace(order, attempt.key);
+  if (!settled) {
+    return options.attemptKey
+      ? resolveRefundRace(order, options.attemptKey)
+      : { ok: false, reason: "Someone else just updated this order." };
   }
+
+  after(() => recordAudit({
+    actorType: options.actor.type,
+    actorInitials: options.actor.initials ?? null,
+    action: "order.canceled",
+    entityType: "order",
+    orderId: order.id,
+    metadata: {
+      orderNumber: order.orderNumber,
+      refundedCents: options.amountCents,
+      alreadyRefunded: options.attemptKey === null,
+    },
+  }));
 
   const squareWarning = order.squareOrderId
     ? await mirrorToSquare(order.squareOrderId, "canceled")
@@ -325,6 +426,7 @@ async function cancelOrder(order: Order): Promise<TransitionResult> {
 async function cancelPendingPaymentOrder(
   order: Order,
   now: Date,
+  actor: TransitionActor = STAFF_ACTOR,
 ): Promise<TransitionResult> {
   const marker = isPaymentAttemptMarker(order.squarePaymentId);
   if (marker) {
@@ -380,86 +482,19 @@ async function cancelPendingPaymentOrder(
     }
     return rows;
   });
+  if (updated.length) {
+    after(() => recordAudit({
+      actorType: actor.type,
+      actorInitials: actor.initials ?? null,
+      action: "order.canceled",
+      entityType: "order",
+      orderId: order.id,
+      metadata: { orderNumber: order.orderNumber, unpaid: true },
+    }));
+  }
   return updated.length
     ? { ok: true, status: "canceled" }
     : { ok: false, reason: "Someone else just updated this order." };
-}
-
-type RefundAttemptClaim =
-  | { ok: true; key: string }
-  | { ok: false; result: TransitionResult };
-
-async function claimRefundAttempt(order: Order, now: Date): Promise<RefundAttemptClaim> {
-  if (order.refundStatus === "pending") {
-    if (!order.refundAttemptKey) {
-      return {
-        ok: false,
-        result: {
-          ok: false,
-          reason: "This refund was started outside the app and must finish or be reconciled in Square before another refund is attempted.",
-        },
-      };
-    }
-    const key = order.refundAttemptKey;
-    const startedAt = order.refundAttemptStartedAt ?? order.updatedAt;
-    if (!isAttemptLeaseStale(startedAt, now)) {
-      return {
-        ok: false,
-        result: {
-          ok: true,
-          status: order.status,
-          notice: "Square is still processing this refund. The order remains locked until its final status arrives.",
-        },
-      };
-    }
-
-    const reclaimed = await db()
-      .update(orders)
-      .set({
-        refundAttemptKey: key,
-        refundAttemptStartedAt: now,
-        updatedAt: now,
-      })
-      .where(and(
-        eq(orders.id, order.id),
-        eq(orders.status, order.status),
-        eq(orders.refundStatus, "pending"),
-        order.refundAttemptKey
-          ? eq(orders.refundAttemptKey, order.refundAttemptKey)
-          : isNull(orders.refundAttemptKey),
-        order.refundAttemptStartedAt
-          ? eq(orders.refundAttemptStartedAt, order.refundAttemptStartedAt)
-          : isNull(orders.refundAttemptStartedAt),
-      ))
-      .returning({ id: orders.id });
-    return reclaimed.length
-      ? { ok: true, key }
-      : { ok: false, result: { ok: false, reason: "Another refund reconciliation just started." } };
-  }
-
-  const key = createRefundAttemptKey();
-  const claimed = await db()
-    .update(orders)
-    .set({
-      squareRefundId: null,
-      refundAttemptKey: key,
-      refundAttemptStartedAt: now,
-      refundStatus: "pending",
-      refundError: null,
-      updatedAt: now,
-    })
-    .where(and(
-      eq(orders.id, order.id),
-      eq(orders.status, order.status),
-      eq(orders.refundStatus, order.refundStatus),
-      order.refundAttemptKey
-        ? eq(orders.refundAttemptKey, order.refundAttemptKey)
-        : isNull(orders.refundAttemptKey),
-    ))
-    .returning({ id: orders.id });
-  return claimed.length
-    ? { ok: true, key }
-    : { ok: false, result: { ok: false, reason: "Another refund reconciliation just started." } };
 }
 
 async function resolveRefundRace(

@@ -1,13 +1,21 @@
 import "server-only";
 
-import { and, eq, isNotNull, isNull, lt, ne, or } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { notifyOrder } from "@/lib/notifications/dispatch";
-import { orders, slotHolds, webhookEvents } from "@/lib/db/schema";
+import { notifyOrder, notifyOrderRefund } from "@/lib/notifications/dispatch";
+import { loyaltyEntries, orders, slotHolds, webhookEvents } from "@/lib/db/schema";
 import type { OrderStatus } from "@/lib/db/schema";
+import { REWARD_POINTS } from "@/lib/accounts/loyalty";
 import { isPaymentAttemptMarker } from "@/lib/orders/payment-state";
 import { mirrorToSquare } from "@/lib/orders/transitions";
+import {
+  markLedgerRowById,
+  remainingRefundableCents,
+  resolveWebhookLedgerRow,
+  revokeEarnedPointsWithin,
+  settleLedgerRowWithin,
+} from "@/lib/orders/refunds";
 import {
   releaseInventoryHoldsWithin,
   retainInventoryHoldsAfterPaymentWithin,
@@ -16,10 +24,8 @@ import {
 import {
   classifyRefundStatus,
   isExpectedOrderPayment,
-  isFullOrderRefund,
   isPaymentCaptured,
   mapFulfillmentState,
-  PARTIAL_REFUND_ERROR_PREFIX,
   shouldApplyStatus,
   type SquareWebhookEvent,
 } from "./events";
@@ -162,16 +168,35 @@ async function applyRefundEvent(
     };
   }
 
+  // Narrowed copies survive into the transaction closures below.
+  const amountCents = event.amountCents;
+  const currency = event.currency;
+
+  // Money in one currency must never be summed with an order in another.
+  if (currency.toUpperCase() !== order.currency.toUpperCase()) {
+    await db()
+      .update(orders)
+      .set({
+        refundError: `Square refund ${event.refundId} is in ${currency}; the order is in ${order.currency}. Reconcile manually in Square.`,
+        updatedAt: new Date(),
+      })
+      .where(eq(orders.id, order.id));
+    return { handled: true, detail: `Flagged cross-currency refund ${event.refundId} for ${order.orderNumber}` };
+  }
+
   const disposition = classifyRefundStatus(event.status);
-  const isFullRefund = isFullOrderRefund(
-    event.amountCents,
-    event.currency,
-    order.totalCents,
-    order.currency,
-  );
+  const remainingCents = remainingRefundableCents(order);
+  // "Final" now means it refunds the remaining balance — prior partial refunds
+  // shrink what a cancellation-completing refund looks like.
+  const refundsRemainder = remainingCents > 0 && amountCents === remainingCents;
+
+  const belongsToActiveAttempt =
+    order.refundStatus === "pending" &&
+    order.refundAttemptKey !== null &&
+    (order.squareRefundId === null || order.squareRefundId === event.refundId);
 
   if (
-    !(isFullRefund && disposition === "completed") &&
+    !(refundsRemainder && disposition === "completed") &&
     order.refundStatus === "pending" &&
     order.refundAttemptKey &&
     order.squareRefundId === null
@@ -193,75 +218,144 @@ async function applyRefundEvent(
     }
   }
 
-  if (!isFullRefund) return recordPartialRefund(order, event);
+  const ledger = await resolveWebhookLedgerRow(
+    order,
+    { refundId: event.refundId, amountCents: amountCents, currency: currency },
+    belongsToActiveAttempt,
+  );
+  if (!ledger) {
+    await db()
+      .update(orders)
+      .set({
+        refundError: `Square refund ${event.refundId} arrived while another refund is in flight. Reconcile manually in Square.`,
+        updatedAt: new Date(),
+      })
+      .where(eq(orders.id, order.id));
+    return { handled: true, detail: `Flagged concurrent refund ${event.refundId} for ${order.orderNumber}` };
+  }
 
   if (disposition === "completed") {
-    if (order.status === "canceled" && order.refundStatus === "completed") {
-      if (order.squareRefundId === event.refundId) {
+    if (ledger.status === "completed") {
+      // Replay of an already-counted refund: side effects only, never a second bump.
+      if (order.status === "canceled" && order.refundStatus === "completed" && order.squareRefundId === event.refundId) {
         await finishWebhookCancellation(order.id, order.squareOrderId);
         return { handled: true, detail: `Replayed completed refund for ${order.orderNumber}` };
       }
-      return {
-        handled: false,
-        detail: `Ignored completed refund ${event.refundId}; ${order.orderNumber} already has refund ${order.squareRefundId ?? "unknown"}`,
-      };
+      return { handled: true, detail: `Refund ${event.refundId} was already recorded for ${order.orderNumber}` };
     }
 
     const now = new Date();
-    const updated = await db().transaction(async (tx) => {
-      const rows = await tx
-        .update(orders)
-        .set({
-          status: "canceled",
-          refundStatus: "completed",
-          squarePaymentId: event.paymentId,
-          paymentAttemptKey: null,
-          paymentAttemptSourceId: null,
-          paymentAttemptStartedAt: null,
-          squareRefundId: event.refundId,
-          refundError: null,
-          refundAttemptStartedAt: null,
-          canceledAt: order.canceledAt ?? now,
-          updatedAt: now,
-        })
-        .where(and(
-          eq(orders.id, order.id),
-          order.squarePaymentId === null
-            ? isNull(orders.squarePaymentId)
-            : eq(orders.squarePaymentId, order.squarePaymentId),
-          or(
-            ne(orders.refundStatus, "completed"),
-            ne(orders.status, "canceled"),
-          ),
-        ))
-        .returning({ id: orders.id });
-      if (rows.length) await releaseInventoryHoldsWithin(tx, order.id);
-      return rows;
-    });
-    if (!updated.length) {
-      const [fresh] = await db()
-        .select()
-        .from(orders)
-        .where(eq(orders.id, order.id))
-        .limit(1);
-      if (fresh?.status === "canceled" && fresh.refundStatus === "completed") {
-        if (fresh.squareRefundId === event.refundId) {
-          await finishWebhookCancellation(fresh.id, fresh.squareOrderId);
-          return { handled: true, detail: `Replayed completed refund for ${fresh.orderNumber}` };
+    const overRefunded = order.refundedTotalCents + amountCents > order.totalCents;
+    const fullyRefundedAfter = order.refundedTotalCents + amountCents >= order.totalCents;
+    // A refund of the remaining balance cancels an ACTIVE order; a completed
+    // (picked-up) order keeps its status and only its money state changes.
+    const shouldCancel = order.status !== "completed" && order.status !== "canceled" && refundsRemainder;
+
+    if (shouldCancel) {
+      const updated = await db().transaction(async (tx) => {
+        const rows = await tx
+          .update(orders)
+          .set({
+            status: "canceled",
+            refundStatus: "completed",
+            squarePaymentId: event.paymentId,
+            paymentAttemptKey: null,
+            paymentAttemptSourceId: null,
+            paymentAttemptStartedAt: null,
+            squareRefundId: event.refundId,
+            refundError: null,
+            refundAttemptStartedAt: null,
+            refundedTotalCents: sql`${orders.refundedTotalCents} + ${amountCents}`,
+            canceledAt: order.canceledAt ?? now,
+            updatedAt: now,
+          })
+          .where(and(
+            eq(orders.id, order.id),
+            order.squarePaymentId === null
+              ? isNull(orders.squarePaymentId)
+              : eq(orders.squarePaymentId, order.squarePaymentId),
+            or(
+              ne(orders.refundStatus, "completed"),
+              ne(orders.status, "canceled"),
+            ),
+          ))
+          .returning({ id: orders.id });
+        if (!rows.length) return rows;
+        await releaseInventoryHoldsWithin(tx, order.id);
+        await settleLedgerRowWithin(tx, ledger.id, event.refundId, now);
+        // Restore redeemed reward points, same as the staff cancellation path.
+        if (order.customerAccountId) {
+          const [redemption] = await tx.select({ id: loyaltyEntries.id }).from(loyaltyEntries).where(and(
+            eq(loyaltyEntries.orderId, order.id),
+            eq(loyaltyEntries.kind, "redeemed"),
+          )).limit(1);
+          if (redemption) {
+            await tx.insert(loyaltyEntries).values({
+              customerAccountId: order.customerAccountId,
+              orderId: order.id,
+              kind: "reversed",
+              points: REWARD_POINTS,
+            }).onConflictDoNothing();
+          }
+        }
+        return rows;
+      });
+      if (!updated.length) {
+        const [fresh] = await db()
+          .select()
+          .from(orders)
+          .where(eq(orders.id, order.id))
+          .limit(1);
+        if (fresh?.status === "canceled" && fresh.refundStatus === "completed") {
+          if (fresh.squareRefundId === event.refundId) {
+            await finishWebhookCancellation(fresh.id, fresh.squareOrderId);
+            return { handled: true, detail: `Replayed completed refund for ${fresh.orderNumber}` };
+          }
+          return {
+            handled: false,
+            detail: `Ignored completed refund ${event.refundId}; ${fresh.orderNumber} already has refund ${fresh.squareRefundId ?? "unknown"}`,
+          };
         }
         return {
           handled: false,
-          detail: `Ignored completed refund ${event.refundId}; ${fresh.orderNumber} already has refund ${fresh.squareRefundId ?? "unknown"}`,
+          retryable: true,
+          detail: `Cancellation for ${order.orderNumber} changed concurrently`,
         };
       }
-      return {
-        handled: false,
-        retryable: true,
-        detail: `Cancellation for ${order.orderNumber} changed concurrently`,
-      };
+      await finishWebhookCancellation(order.id, order.squareOrderId);
+      return { handled: true, detail: `Refunded and cancelled ${order.orderNumber}` };
     }
-    await finishWebhookCancellation(order.id, order.squareOrderId);
-    return { handled: true, detail: `Refunded and cancelled ${order.orderNumber}` };
+
+    // Partial refund on any order, or any refund on a completed (picked-up)
+    // order: record the money, never touch the lifecycle status.
+    const settled = await db().transaction(async (tx) => {
+      if (!(await settleLedgerRowWithin(tx, ledger.id, event.refundId, now))) return false;
+      await tx
+        .update(orders)
+        .set({
+          refundStatus: fullyRefundedAfter ? "completed" : "partial",
+          squareRefundId: event.refundId,
+          refundError: overRefunded
+            ? `Refunds exceed the order total by ${order.refundedTotalCents + amountCents - order.totalCents} cents. Reconcile in Square.`
+            : null,
+          refundAttemptStartedAt: null,
+          refundedTotalCents: sql`${orders.refundedTotalCents} + ${amountCents}`,
+          updatedAt: now,
+        })
+        .where(eq(orders.id, order.id));
+      if (fullyRefundedAfter && order.status === "completed") {
+        await revokeEarnedPointsWithin(tx, order);
+      }
+      return true;
+    });
+    if (!settled) {
+      return { handled: true, detail: `Refund ${event.refundId} was already recorded for ${order.orderNumber}` };
+    }
+    await notifyOrderRefund(order.id, ledger.id);
+    return {
+      handled: true,
+      detail: `Recorded ${fullyRefundedAfter ? "final" : "partial"} refund ${event.refundId} for ${order.orderNumber}`,
+    };
   }
 
   const matchesActiveOrDirectRefund = and(
@@ -286,9 +380,15 @@ async function applyRefundEvent(
       })
       .where(matchesActiveOrDirectRefund)
       .returning({ id: orders.id });
-    return updated.length
-      ? { handled: true, detail: `Refund failed for ${order.orderNumber}` }
-      : { handled: false, detail: `Ignored stale refund failure for ${order.orderNumber}` };
+    if (updated.length) {
+      await markLedgerRowById(ledger.id, {
+        status: "failed",
+        squareRefundId: event.refundId,
+        error: `Square refund ${event.status ?? "UNKNOWN"}`,
+      });
+      return { handled: true, detail: `Refund failed for ${order.orderNumber}` };
+    }
+    return { handled: false, detail: `Ignored stale refund failure for ${order.orderNumber}` };
   }
 
   const updated = await db()
@@ -309,40 +409,11 @@ async function applyRefundEvent(
     })
     .where(matchesActiveOrDirectRefund)
     .returning({ id: orders.id });
-  return updated.length
-    ? { handled: true, detail: `Refund ${event.status ?? "unknown"} for ${order.orderNumber}` }
-    : { handled: false, detail: `Ignored stale refund update for ${order.orderNumber}` };
-}
-
-async function recordPartialRefund(
-  order: typeof orders.$inferSelect,
-  event: Extract<SquareWebhookEvent, { kind: "refund" }>,
-): Promise<EventOutcome> {
-  const amount = event.amountCents ?? 0;
-  const currency = event.currency ?? "unknown currency";
-  const message = `${PARTIAL_REFUND_ERROR_PREFIX} Square refund ${event.refundId} is ${event.status ?? "UNKNOWN"} for ${amount} minor units (${currency}); reconcile the remaining balance manually.`;
-  const updated = await db()
-    .update(orders)
-    .set({
-      squareRefundId: event.refundId,
-      refundStatus: "failed",
-      refundError: message,
-      refundAttemptStartedAt: null,
-      updatedAt: new Date(),
-    })
-    .where(and(
-      eq(orders.id, order.id),
-      ne(orders.refundStatus, "completed"),
-      or(
-        ne(orders.refundStatus, "pending"),
-        isNull(orders.squareRefundId),
-        eq(orders.squareRefundId, event.refundId),
-      ),
-    ))
-    .returning({ id: orders.id });
-  return updated.length
-    ? { handled: true, detail: `Flagged partial refund ${event.refundId} for manual reconciliation` }
-    : { handled: false, detail: `Ignored conflicting partial refund ${event.refundId}` };
+  if (updated.length) {
+    await markLedgerRowById(ledger.id, { squareRefundId: event.refundId });
+    return { handled: true, detail: `Refund ${event.status ?? "unknown"} for ${order.orderNumber}` };
+  }
+  return { handled: false, detail: `Ignored stale refund update for ${order.orderNumber}` };
 }
 
 async function finishWebhookCancellation(

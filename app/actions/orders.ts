@@ -91,7 +91,7 @@ export async function cancelCustomerOrder(input: unknown): Promise<{ ok: true } 
   }
   const eligibility = await customerCancellationEligibility(order);
   if (!eligibility.allowed) return { ok: false, reason: eligibility.reason };
-  const result = await advanceOrder(order.id, "canceled");
+  const result = await advanceOrder(order.id, "canceled", { type: "customer" });
   if (result.ok && result.status === "canceled") return { ok: true };
   return {
     ok: false,

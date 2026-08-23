@@ -60,6 +60,15 @@ export const refundStatus = pgEnum("refund_status", [
   "pending",
   "completed",
   "failed",
+  /** ≥1 completed refund for less than the order total, nothing in flight. */
+  "partial",
+]);
+
+/** Where a refund originated: our cancellation flow, a staff refund, or Square-side directly. */
+export const orderRefundOrigin = pgEnum("order_refund_origin", [
+  "cancellation",
+  "staff",
+  "external",
 ]);
 
 /** How staff established that an order was collected at the counter. */
@@ -69,7 +78,13 @@ export const pickupVerificationMethod = pgEnum("pickup_verification_method", [
 ]);
 
 /** A ledger is used instead of a mutable points balance so every change is explainable. */
-export const loyaltyEntryKind = pgEnum("loyalty_entry_kind", ["earned", "redeemed", "reversed"]);
+export const loyaltyEntryKind = pgEnum("loyalty_entry_kind", [
+  "earned",
+  "redeemed",
+  "reversed",
+  /** Earned points clawed back when a completed pickup is later fully refunded. */
+  "revoked",
+]);
 
 /* -------------------------------------------------------------------------- */
 /* Catalog overlay                                                            */
@@ -201,6 +216,8 @@ export const orders = pgTable(
     refundAttemptStartedAt: timestamp("refund_attempt_started_at", { withTimezone: true }),
     refundStatus: refundStatus("refund_status").notNull().default("not_required"),
     refundError: text("refund_error"),
+    /** Sum of completed refunds (order_refunds ledger); maintained inside the same transactions. */
+    refundedTotalCents: integer("refunded_total_cents").notNull().default(0),
     squareSyncError: text("square_sync_error"),
 
     customerName: text("customer_name").notNull(),
@@ -450,6 +467,51 @@ export const appSettings = pgTable("app_settings", {
     .notNull()
     .default(sql`now()`),
 });
+
+/**
+ * One row per logical refund — the money history the orders row can't hold.
+ *
+ * The `orders.refund_*` columns remain the coarse per-order lock (one refund in
+ * flight, attempt-lease semantics); this table records every refund — the
+ * cancellation flow's, staff partial/post-pickup refunds, and refunds issued
+ * directly in Square — so "how much has been returned on this order, when, by
+ * whom, and why" is answerable. The partial unique index makes "one in-flight
+ * refund per order" a database guarantee rather than an application promise.
+ */
+export const orderRefunds = pgTable(
+  "order_refunds",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "cascade" }),
+    /** Null until Square answers; also null forever for rows we never initiated. */
+    squareRefundId: text("square_refund_id"),
+    /** Our idempotency key for the attempt; null for Square-initiated (external) rows. */
+    attemptKey: text("attempt_key"),
+    origin: orderRefundOrigin("origin").notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    currency: text("currency").notNull(),
+    /** Only pending | completed | failed are used at row level. */
+    status: refundStatus("status").notNull(),
+    reason: text("reason"),
+    /** Roster initials for staff refunds. */
+    initiatedBy: text("initiated_by"),
+    error: text("error"),
+    attemptStartedAt: timestamp("attempt_started_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("order_refunds_pending_key").on(t.orderId).where(sql`${t.status} = 'pending'`),
+    uniqueIndex("order_refunds_square_id_key").on(t.squareRefundId).where(sql`${t.squareRefundId} IS NOT NULL`),
+    uniqueIndex("order_refunds_attempt_key").on(t.attemptKey).where(sql`${t.attemptKey} IS NOT NULL`),
+    index("order_refunds_order_idx").on(t.orderId),
+    index("order_refunds_completed_idx").on(t.completedAt),
+    check("order_refunds_amount_positive", sql`${t.amountCents} > 0`),
+  ],
+);
 
 /**
  * The staff roster: attribution, not authentication.

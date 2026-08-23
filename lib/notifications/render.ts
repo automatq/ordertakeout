@@ -21,6 +21,9 @@ export const itemLines = (order: OrderNotification): string[] =>
 
 const total = (order: OrderNotification) => formatMoney(order.totalCents, order.currency);
 
+const refundAmount = (event: NotificationEvent) =>
+  formatMoney(event.refund?.amountCents ?? event.order.totalCents, event.order.currency);
+
 /* -------------------------------------------------------------------------- */
 /* To the store                                                               */
 /* -------------------------------------------------------------------------- */
@@ -32,7 +35,9 @@ export function renderStoreEmail(event: NotificationEvent): { subject: string; t
       ? `New paid order ${order.orderNumber}`
       : event.kind === "order_canceled"
         ? `Order ${order.orderNumber} cancelled`
-        : `Order ${order.orderNumber} ready`;
+        : event.kind === "order_refunded"
+          ? `Refund of ${refundAmount(event)} issued on order ${order.orderNumber}`
+          : `Order ${order.orderNumber} ready`;
 
   const text = [
     heading,
@@ -66,7 +71,9 @@ export function renderStoreSms(event: NotificationEvent): string {
       ? "NEW ORDER"
       : event.kind === "order_canceled"
         ? "CANCELLED"
-        : "READY";
+        : event.kind === "order_refunded"
+          ? "REFUNDED"
+          : "READY";
 
   const head = `${prefix} ${order.orderNumber} - ${pickupLine(order)} - ${total(order)}`;
   const items = itemLines(order);
@@ -142,6 +149,23 @@ export function renderCustomerEmail(
           "If this is unexpected, please call the store.",
         ].join("\n"),
       };
+
+    case "order_refunded":
+      return {
+        subject: `Refund issued for order ${order.orderNumber}`,
+        text: [
+          `Hi ${order.customerName}, we've issued a refund of ${refundAmount(event)} on your order ${order.orderNumber}.`,
+          "",
+          event.refund?.partial
+            ? `This is a partial refund — the rest of your order is unchanged.`
+            : `This refunds your order in full.`,
+          "",
+          "Refunds usually appear on your statement within a few business days.",
+          ...(order.trackingUrl ? ["", `Order details: ${order.trackingUrl}`] : []),
+          "",
+          "Questions? Just call the store.",
+        ].join("\n"),
+      };
   }
 }
 
@@ -154,6 +178,7 @@ const DISCORD_COLOR: Record<NotificationEvent["kind"], number> = {
   order_paid: 0x2563eb,
   order_ready: 0x15803d,
   order_canceled: 0xb42318,
+  order_refunded: 0xb45309,
 };
 
 export function renderDiscord(event: NotificationEvent): unknown {
