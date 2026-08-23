@@ -89,9 +89,29 @@ export function SiteFooter({ locations = [] }: { locations?: StoreLocation[] }) 
           </div>
         </div>
 
-        <p className="text-canvas/55 text-center text-xs">
-          &copy; {STORE_INFO.name}. Baked with care in Ontario.
-        </p>
+        <div className="flex flex-col items-center gap-3">
+          <nav aria-label="Legal">
+            <ul className="flex flex-wrap items-center justify-center gap-x-6 gap-y-1">
+              {[
+                { href: "/privacy", label: "Privacy" },
+                { href: "/terms", label: "Terms" },
+                { href: "/refund-policy", label: "Refund policy" },
+              ].map((link) => (
+                <li key={link.href}>
+                  <Link
+                    href={link.href}
+                    className="text-canvas/55 hover:text-accent flex min-h-11 items-center text-xs transition-colors"
+                  >
+                    {link.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </nav>
+          <p className="text-canvas/55 text-center text-xs">
+            &copy; {STORE_INFO.name}. Baked with care in Ontario.
+          </p>
+        </div>
       </div>
     </footer>
   );

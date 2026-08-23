@@ -979,6 +979,52 @@
     border-radius: var(--radius-card);
   }
 
+  /* Long-form policy text (privacy, terms, refund policy). Element selectors
+     rather than utilities: the content is static prose, and a class on every
+     paragraph would bury the words. */
+  .policy-prose h1 {
+    font-family: var(--font-display);
+    font-size: var(--text-display-lg);
+    line-height: var(--text-display-lg--line-height);
+    font-weight: 400;
+    text-transform: uppercase;
+    color: var(--color-brand);
+  }
+  .policy-prose h2 {
+    font-family: var(--font-display);
+    font-size: var(--text-display-md);
+    line-height: var(--text-display-md--line-height);
+    font-weight: 400;
+    text-transform: uppercase;
+    color: var(--color-ink);
+    margin-top: 1rem;
+  }
+  .policy-prose p,
+  .policy-prose li {
+    color: var(--color-ink-muted);
+    font-size: 0.9375rem;
+    line-height: 1.7;
+  }
+  .policy-prose ul {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding-left: 1.25rem;
+    list-style: disc;
+  }
+  .policy-prose strong {
+    color: var(--color-ink);
+    font-weight: 500;
+  }
+  .policy-prose a {
+    color: var(--color-brand);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .policy-prose a:hover {
+    color: var(--color-brand-hover);
+  }
+
   /* The small caps line that introduces a section heading. */
   .eyebrow {
     color: var(--color-brand);

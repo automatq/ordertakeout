@@ -382,10 +382,23 @@ Three things to know before touching this code:
 character — the URL is part of the signed payload, so a trailing-slash difference fails
 verification. There's a test for exactly that.
 
-### Known tradeoff
+## SEO, legal pages and PWA
 
-`/products/[slug]` uses partial prerendering, so the shell streams before the product
-lookup resolves. An unknown slug therefore returns **HTTP 200 with 404 content** (a
-soft-404). Fine for customers, not ideal for search engines. If that matters, either add
-`generateStaticParams` for the real slugs or set `export const instant = false` on the
-route to make it blocking and return a true 404 — at the cost of the instant shell.
+`/privacy`, `/terms` and `/refund-policy` are static pages whose copy states what the code
+actually does (the cancellation cutoff, tip-inclusive refunds, the retention anonymizer,
+SMS consent). If behavior changes, the policy page changes in the same PR. `app/robots.ts`
+and `app/sitemap.ts` only expose the site when `NEXT_PUBLIC_SQUARE_ENVIRONMENT=production`
+— a sandbox deployment is a staging site taking fake payments and must never be indexed.
+`app/manifest.ts` makes the storefront installable; `public/harina/icon-512.png` is
+upscaled from the 256px badge and should be replaced with designer artwork before a
+marketing push.
+
+`/products/[slug]` resolves the slug in the page body — `notFound()` before any JSX. Under
+Cache Components every dynamic route streams its static shell before the page resolves, so
+the HTTP status is already `200` by the time an unknown slug is detected; what Next does
+instead is inject `<meta name="robots" content="noindex">` into the streamed 404 content,
+which its docs (and Google's) say prevents indexing. Verified with `curl` against
+`next start`. A genuine `404` status would need a slug check in a root `proxy.ts` — a
+per-request catalog lookup at the routing layer, not worth it for this catalog. Known
+slugs stay fast because the catalog lookup is `"use cache"`; `loading.tsx` covers cold
+navigations.
