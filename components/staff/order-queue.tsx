@@ -13,6 +13,7 @@ import {
 
 import { changeOrderStatus, refreshDashboard } from "@/app/actions/staff";
 import { NotificationBell } from "@/components/staff/notification-bell";
+import { PauseToggle } from "@/components/staff/pause-toggle";
 import { PickupVerificationDialog } from "@/components/staff/pickup-verification-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
@@ -283,6 +284,7 @@ export function OrderQueue({
           <option value="all">All locations</option>
           {locationOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
         </select>
+        <PauseToggle overview={data.orderingPause} locations={data.locations} onChanged={poll} />
         <button
           type="button"
           onClick={() => setSoundOn(primeChime() && isChimeReady())}

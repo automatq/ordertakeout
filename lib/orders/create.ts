@@ -11,6 +11,7 @@ import { customerAccounts, loyaltyEntries, orderItems, orders, slotHolds } from 
 import { REWARD_DISCOUNT_CENTS, REWARD_POINTS } from "@/lib/accounts/loyalty";
 import { reportError } from "@/lib/monitoring/report";
 import { reserveSlotWithin } from "@/lib/scheduling/queries";
+import { getPauseStateFresh } from "@/lib/settings/pause";
 import { slotKey, type SelectionRejection } from "@/lib/scheduling/availability";
 import { normalizeTime, type StoreDate, type StoreTime } from "@/lib/scheduling/time";
 import { notifyOrder } from "@/lib/notifications/dispatch";
@@ -102,7 +103,8 @@ export type CreateOrderFailure =
       shownCents: number;
       actualCents: number;
     }
-  | { kind: "reward_unavailable" };
+  | { kind: "reward_unavailable" }
+  | { kind: "ordering_paused" };
 
 export type CreateOrderResult =
   | {
@@ -148,6 +150,12 @@ export async function createPendingOrder(input: {
 
   const location = await getStoreLocation(input.locationId);
   if (!location) return { ok: false, failure: { kind: "catalog_unavailable" } };
+
+  // Belt-and-braces: the server action already refused, but this function is
+  // the last gate before a slot hold is taken.
+  if (await getPauseStateFresh(location.id)) {
+    return { ok: false, failure: { kind: "ordering_paused" } };
+  }
 
   // Hobby deployments can run the housekeeping cron only once per day. Clear
   // one stale payment-bound reservation for this location before it can reject

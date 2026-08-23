@@ -20,6 +20,9 @@ import {
 } from "@/lib/admin/validate";
 import { CATALOG_TAG, PRODUCT_CONFIG_TAG } from "@/lib/catalog/server";
 import { getStoreLocation } from "@/lib/locations/server";
+import { recordAudit } from "@/lib/audit/log";
+import { setOrderingPause } from "@/lib/settings/pause";
+import { SETTINGS_TAG } from "@/lib/settings/store";
 
 /**
  * Admin actions.
@@ -158,5 +161,47 @@ export async function resyncCatalogAction(): Promise<AdminResult> {
   await requireStaffSession();
   updateTag(CATALOG_TAG);
   updateTag(PRODUCT_CONFIG_TAG);
+  return { ok: true };
+}
+
+const pauseActionSchema = z.object({
+  scope: z.union([z.literal("global"), z.object({ locationId: z.string().min(1) })]),
+  paused: z.boolean(),
+  note: z.string().trim().max(200).optional(),
+  /** Optional auto-resume, minutes from now. */
+  resumeMinutes: z.number().int().min(5).max(24 * 60).optional(),
+  staffInitials: z.string().trim().max(6).optional(),
+});
+
+/** One-tap "stop taking orders" from the dashboard header (and settings). */
+export async function setOrderingPauseAction(input: unknown): Promise<AdminResult> {
+  await requireStaffSession();
+  const parsed = pauseActionSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Check the pause details." };
+
+  const { scope, paused, note, resumeMinutes, staffInitials } = parsed.data;
+  if (scope !== "global" && !(await getStoreLocation(scope.locationId))) {
+    return { ok: false, error: "That pickup location is no longer active." };
+  }
+
+  const initials = staffInitials?.trim().toUpperCase() || null;
+  await setOrderingPause(scope, {
+    paused,
+    note: paused ? note?.trim() || null : null,
+    resumeAt: paused && resumeMinutes
+      ? new Date(Date.now() + resumeMinutes * 60_000).toISOString()
+      : null,
+    setBy: initials,
+  });
+  updateTag(SETTINGS_TAG);
+
+  await recordAudit({
+    actorType: "staff",
+    actorInitials: initials,
+    action: paused ? "ordering.paused" : "ordering.resumed",
+    entityType: scope === "global" ? "store" : "location",
+    entityId: scope === "global" ? "global" : scope.locationId,
+    metadata: { note: note?.trim() || null, resumeMinutes: resumeMinutes ?? null },
+  });
   return { ok: true };
 }

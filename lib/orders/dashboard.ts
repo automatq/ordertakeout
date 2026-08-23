@@ -16,6 +16,7 @@ import {
 import { serverEnv } from "@/lib/env";
 import { addCalendarDays, normalizeTime, storeToday, type StoreDate, type StoreTime } from "@/lib/scheduling/time";
 import { getStoreLocationsSafe } from "@/lib/locations/server";
+import { listPauseSettings, type PauseOverview } from "@/lib/settings/pause";
 import type { StoreLocation } from "@/lib/locations/types";
 import { DEFAULT_MAX_ORDERS_PER_SLOT } from "@/lib/store";
 
@@ -54,6 +55,8 @@ export interface DashboardData {
   /** Paid but not yet started, across all days — the "needs attention" count. */
   newOrderCount: number;
   locations: StoreLocation[];
+  /** Current pause-ordering switches, for the one-tap header toggle. */
+  orderingPause: PauseOverview;
 }
 
 type LocationSnapshotOrder = Pick<
@@ -219,6 +222,7 @@ export async function getDashboardData(daysAhead = 7, locationId?: string): Prom
     days,
     newOrderCount: rows.filter((r) => r.status === "paid").length,
     locations: mergeOperationalLocations(locations, rows),
+    orderingPause: await listPauseSettings(locations.map((location) => location.id)),
   };
 }
 

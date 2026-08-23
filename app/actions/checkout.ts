@@ -17,6 +17,7 @@ import { verifyOrderAccessToken } from "@/lib/orders/access";
 import { computeAvailability, type AvailabilityResult } from "@/lib/scheduling/availability";
 import { loadAvailabilityInput } from "@/lib/scheduling/queries";
 import { getStoreLocation } from "@/lib/locations/server";
+import { getPauseStateFresh } from "@/lib/settings/pause";
 import { inventoryShortages } from "@/lib/inventory/map";
 import { getInventoryQuantities } from "@/lib/inventory/server";
 import { consumeRateLimit, requestFingerprint } from "@/lib/security/rate-limit";
@@ -84,13 +85,21 @@ export type CheckoutInput = z.infer<typeof checkoutSchema>;
 export async function getCartAvailability(
   cart: unknown,
   locationId?: unknown,
-): Promise<AvailabilityResult | { ok: false; problem: { kind: "catalog_unavailable" } }> {
+): Promise<
+  | AvailabilityResult
+  | { ok: false; problem: { kind: "catalog_unavailable" } }
+  | { ok: false; problem: { kind: "ordering_paused"; note: string | null } }
+> {
   const parsed = cartSchema.safeParse(cart);
   if (!parsed.success) {
     return { ok: false, problem: { kind: "empty_cart" } };
   }
   if (typeof locationId !== "string" || !locationId || !(await getStoreLocation(locationId))) {
     return { ok: false, problem: { kind: "catalog_unavailable" } };
+  }
+  const paused = await getPauseStateFresh(locationId);
+  if (paused) {
+    return { ok: false, problem: { kind: "ordering_paused", note: paused.note } };
   }
   const limit = await consumeRateLimit(
     "checkout-availability",
@@ -133,6 +142,7 @@ type PublicCreateOrderFailure =
   | { kind: "insufficient_stock" };
 
 export type StartCheckoutResult =
+  | { ok: false; failure: { kind: "ordering_paused"; note: string | null } }
   | (Extract<CreateOrderResult, { ok: true }> & { locationId: string })
   | { ok: false; failure: PublicCreateOrderFailure }
   | { ok: false; failure: { kind: "invalid_input"; fieldErrors: Record<string, string[]> } }
@@ -174,6 +184,11 @@ export async function startCheckout(input: unknown): Promise<StartCheckoutResult
   );
   if (!limit.allowed) {
     return { ok: false, failure: { kind: "rate_limited" } };
+  }
+
+  const paused = await getPauseStateFresh(parsed.data.locationId);
+  if (paused) {
+    return { ok: false, failure: { kind: "ordering_paused", note: paused.note } };
   }
 
   const result = await createPendingOrder({

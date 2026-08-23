@@ -183,7 +183,7 @@ export function CheckoutFlow({
           });
         } else {
           setDays([]);
-          setAvailabilityProblem(describeProblem(result.problem.kind));
+          setAvailabilityProblem(describeProblem(result.problem));
           setAvailabilityFor(availabilityKey);
           setPickup(null);
         }
@@ -1062,19 +1062,29 @@ function CheckoutSkeleton() {
   );
 }
 
-function describeProblem(kind: string): string {
-  switch (kind) {
+function pausedMessage(note?: string | null): string {
+  return note
+    ? `Online ordering is paused right now: ${note}`
+    : "Online ordering is paused right now. Please try again later or call the store.";
+}
+
+function describeProblem(problem: { kind: string; note?: string | null }): string {
+  switch (problem.kind) {
     case "no_common_pickup_time":
       return "The items in your order have different pickup times. Please place them as separate orders.";
     case "catalog_unavailable":
       return "We can't load pickup times right now. Please try again shortly or call the store.";
+    case "ordering_paused":
+      return pausedMessage(problem.note);
     default:
       return "We couldn't work out pickup times for this order. Please call the store.";
   }
 }
 
-function describeFailure(failure: { kind: string }): string {
+function describeFailure(failure: { kind: string; note?: string | null }): string {
   switch (failure.kind) {
+    case "ordering_paused":
+      return pausedMessage(failure.note);
     case "slot_rejected":
       return "That pickup time was just taken. Please choose another.";
     case "price_changed":

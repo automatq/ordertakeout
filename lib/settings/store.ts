@@ -1,7 +1,7 @@
 import "server-only";
 
 import { cacheLife, cacheTag } from "next/cache";
-import { eq } from "drizzle-orm";
+import { eq, like } from "drizzle-orm";
 import type { z } from "zod";
 
 import { db } from "@/lib/db";
@@ -82,4 +82,21 @@ export async function setSetting<T>(key: string, schema: z.ZodType<T>, value: T)
 
 export async function deleteSetting(key: string): Promise<void> {
   await db().delete(appSettings).where(eq(appSettings.key, key));
+}
+
+/** One-query fresh read of every key under a prefix; invalid values are skipped (and reported). */
+export async function listSettingsByPrefixFresh<T>(
+  prefix: string,
+  schema: z.ZodType<T>,
+): Promise<Map<string, T>> {
+  const rows = await db()
+    .select({ key: appSettings.key, value: appSettings.value })
+    .from(appSettings)
+    .where(like(appSettings.key, `${prefix}%`));
+  const parsed = new Map<string, T>();
+  for (const row of rows) {
+    const value = parseSetting(row.key, schema, row.value);
+    if (value !== null) parsed.set(row.key, value);
+  }
+  return parsed;
 }
