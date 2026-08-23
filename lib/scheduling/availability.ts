@@ -52,6 +52,11 @@ export interface AvailabilityInput {
   /** How far ahead bookings are accepted, counted from today. */
   horizonDays: number;
   blackoutDates: ReadonlySet<StoreDate>;
+  /**
+   * `${productId}|${date}` staff "sold out today" 86 entries. Optional so the
+   * engine's many existing callers/tests read as before; absent means none.
+   */
+  productDateBlocks?: ReadonlySet<string>;
   /** `${date}|${time}` → orders already committed (paid orders + live holds). */
   slotUsage: ReadonlyMap<string, number>;
   /** `${date}|${time}` → staff override for that slot's order cap. */
@@ -64,7 +69,8 @@ export interface AvailabilityInput {
 export type SlotUnavailableReason =
   | "blackout"
   | "slot_full"
-  | "product_daily_capacity";
+  | "product_daily_capacity"
+  | "product_sold_out";
 
 export interface SlotAvailability {
   time: StoreTime;
@@ -131,6 +137,7 @@ export function computeAvailability(input: AvailabilityInput): AvailabilityResul
     rules,
     horizonDays,
     blackoutDates,
+    productDateBlocks,
     slotUsage,
     slotCapacityOverrides,
     defaultSlotCapacity,
@@ -193,6 +200,7 @@ export function computeAvailability(input: AvailabilityInput): AvailabilityResul
   ) {
     days.push(buildDay(date, offeredTimes, cartRules, {
       blackoutDates,
+      productDateBlocks,
       slotUsage,
       slotCapacityOverrides,
       defaultSlotCapacity,
@@ -206,6 +214,7 @@ export function computeAvailability(input: AvailabilityInput): AvailabilityResul
 type CapacityContext = Pick<
   AvailabilityInput,
   | "blackoutDates"
+  | "productDateBlocks"
   | "slotUsage"
   | "slotCapacityOverrides"
   | "defaultSlotCapacity"
@@ -222,6 +231,16 @@ function buildDay(
     return {
       date,
       slots: offeredTimes.map((time) => ({ time, available: false, reason: "blackout" })),
+      hasAvailability: false,
+    };
+  }
+
+  // A staff 86 gates the whole day for that product, exactly like a blackout
+  // but scoped to one item.
+  if (cartRules.some(({ rule }) => ctx.productDateBlocks?.has(productDayKey(rule.productId, date)))) {
+    return {
+      date,
+      slots: offeredTimes.map((time) => ({ time, available: false, reason: "product_sold_out" })),
       hasAvailability: false,
     };
   }

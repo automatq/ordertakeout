@@ -7,6 +7,7 @@ import {
   blackoutDates as blackoutDatesTable,
   orderItems,
   orders,
+  productAvailabilityOverrides,
   productsConfig,
   slotCapacity,
   slotHolds,
@@ -111,7 +112,7 @@ export async function loadAvailabilityInput(
 
   const rules = await loadProductRules(cart.map((line) => line.productId), exec);
 
-  const [blackouts, capacities, slotCounts, productCounts] = await Promise.all([
+  const [blackouts, capacities, slotCounts, productCounts, soldOutOverrides] = await Promise.all([
     exec
       .select({ date: blackoutDatesTable.date })
       .from(blackoutDatesTable)
@@ -141,6 +142,24 @@ export async function loadAvailabilityInput(
       ),
     countOrdersPerSlot(today, lastDate, exec, locationId),
     countUnitsPerProductPerDay(today, lastDate, exec, locationId),
+    exec
+      .select({
+        productId: productAvailabilityOverrides.squareProductId,
+        date: productAvailabilityOverrides.date,
+      })
+      .from(productAvailabilityOverrides)
+      .where(
+        and(
+          sql`${productAvailabilityOverrides.date} >= ${today}`,
+          sql`${productAvailabilityOverrides.date} <= ${lastDate}`,
+          locationId
+            ? or(
+                eq(productAvailabilityOverrides.squareLocationId, locationId),
+                isNull(productAvailabilityOverrides.squareLocationId),
+              )
+            : undefined,
+        ),
+      ),
   ]);
 
   return {
@@ -150,6 +169,9 @@ export async function loadAvailabilityInput(
     rules,
     horizonDays: MAX_ORDER_HORIZON_DAYS,
     blackoutDates: new Set(blackouts.map((b) => b.date)),
+    productDateBlocks: new Set(
+      soldOutOverrides.map((row) => productDayKey(row.productId, row.date)),
+    ),
     slotUsage: new Map(slotCounts.map((r) => [slotKey(r.date, r.time), r.count])),
     slotCapacityOverrides: new Map(
       capacities

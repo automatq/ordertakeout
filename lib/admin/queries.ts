@@ -3,7 +3,7 @@ import "server-only";
 import { and, asc, desc, eq, gte, isNotNull, lt, or, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { blackoutDates, notificationLog, orders, productsConfig, slotCapacity, webhookEvents } from "@/lib/db/schema";
+import { blackoutDates, notificationLog, orders, productAvailabilityOverrides, productsConfig, slotCapacity, webhookEvents } from "@/lib/db/schema";
 import { serverEnv } from "@/lib/env";
 import { normalizeTime, storeToday, type StoreDate, type StoreTime } from "@/lib/scheduling/time";
 
@@ -191,4 +191,59 @@ export async function clearSlotCapacity(
     .where(
       sql`${slotCapacity.squareLocationId} = ${locationId} AND ${slotCapacity.pickupDate} = ${pickupDate} AND ${slotCapacity.pickupTime} = ${normalizeTime(pickupTime)}`,
     );
+}
+
+/** Upcoming "sold out today" 86 entries, oldest date first. */
+export async function listAvailabilityOverrides(): Promise<{
+  id: string;
+  productId: string;
+  locationId: string | null;
+  date: StoreDate;
+  reason: string | null;
+  createdBy: string | null;
+}[]> {
+  const today = storeToday(new Date(), serverEnv().STORE_TIMEZONE);
+  const rows = await db()
+    .select()
+    .from(productAvailabilityOverrides)
+    .where(gte(productAvailabilityOverrides.date, today))
+    .orderBy(asc(productAvailabilityOverrides.date));
+  return rows.map((row) => ({
+    id: row.id,
+    productId: row.squareProductId,
+    locationId: row.squareLocationId,
+    date: row.date,
+    reason: row.reason,
+    createdBy: row.createdBy,
+  }));
+}
+
+export async function addAvailabilityOverride(input: {
+  productId: string;
+  locationId: string;
+  date: StoreDate;
+  reason: string | null;
+  createdBy: string | null;
+}): Promise<void> {
+  await db()
+    .insert(productAvailabilityOverrides)
+    .values({
+      squareProductId: input.productId,
+      squareLocationId: input.locationId,
+      date: input.date,
+      reason: input.reason,
+      createdBy: input.createdBy,
+    })
+    .onConflictDoUpdate({
+      target: [
+        productAvailabilityOverrides.squareProductId,
+        productAvailabilityOverrides.squareLocationId,
+        productAvailabilityOverrides.date,
+      ],
+      set: { reason: input.reason, createdBy: input.createdBy },
+    });
+}
+
+export async function removeAvailabilityOverride(id: string): Promise<void> {
+  await db().delete(productAvailabilityOverrides).where(eq(productAvailabilityOverrides.id, id));
 }

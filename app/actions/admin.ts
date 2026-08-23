@@ -5,8 +5,10 @@ import { z } from "zod";
 
 import { requireStaffSession } from "@/lib/auth/guard";
 import {
+  addAvailabilityOverride,
   addBlackoutDate,
   clearSlotCapacity,
+  removeAvailabilityOverride,
   removeBlackoutDate,
   saveProductRules,
   setSlotCapacity,
@@ -21,6 +23,8 @@ import {
 import { CATALOG_TAG, PRODUCT_CONFIG_TAG } from "@/lib/catalog/server";
 import { getStoreLocation } from "@/lib/locations/server";
 import { recordAudit } from "@/lib/audit/log";
+import { serverEnv } from "@/lib/env";
+import { storeToday } from "@/lib/scheduling/time";
 import { setOrderingPause } from "@/lib/settings/pause";
 import { SETTINGS_TAG } from "@/lib/settings/store";
 
@@ -202,6 +206,69 @@ export async function setOrderingPauseAction(input: unknown): Promise<AdminResul
     entityType: scope === "global" ? "store" : "location",
     entityId: scope === "global" ? "global" : scope.locationId,
     metadata: { note: note?.trim() || null, resumeMinutes: resumeMinutes ?? null },
+  });
+  return { ok: true };
+}
+
+const eightySixSchema = z.object({
+  productId: z.string().min(1),
+  /** Explicit location ids — the quick action fans out one row per location. */
+  locationIds: z.array(z.string().min(1)).min(1).max(20),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  reason: z.string().trim().max(120).optional(),
+  staffInitials: z.string().trim().max(6).optional(),
+});
+
+/** "Sold out today": block one product for one date without touching its permanent settings. */
+export async function add86Action(input: unknown): Promise<AdminResult> {
+  await requireStaffSession();
+  const parsed = eightySixSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Check the product, date, and locations." };
+
+  const { productId, locationIds, date, reason, staffInitials } = parsed.data;
+  const today = storeToday(new Date(), serverEnv().STORE_TIMEZONE);
+  if (date < today) return { ok: false, error: "Pick today or a future date." };
+  for (const locationId of locationIds) {
+    if (!(await getStoreLocation(locationId))) {
+      return { ok: false, error: "One of those pickup locations is no longer active." };
+    }
+  }
+
+  const initials = staffInitials?.trim().toUpperCase() || null;
+  for (const locationId of locationIds) {
+    await addAvailabilityOverride({
+      productId,
+      locationId,
+      date,
+      reason: reason?.trim() || null,
+      createdBy: initials,
+    });
+  }
+  updateTag(PRODUCT_CONFIG_TAG);
+  await recordAudit({
+    actorType: "staff",
+    actorInitials: initials,
+    action: "product.86ed",
+    entityType: "product",
+    entityId: productId,
+    metadata: { date, locationIds, reason: reason?.trim() || null },
+  });
+  return { ok: true };
+}
+
+export async function remove86Action(input: unknown): Promise<AdminResult> {
+  await requireStaffSession();
+  const parsed = z.object({ id: z.uuid(), staffInitials: z.string().trim().max(6).optional() }).safeParse(input);
+  if (!parsed.success) return { ok: false, error: "That entry no longer exists." };
+
+  await removeAvailabilityOverride(parsed.data.id);
+  updateTag(PRODUCT_CONFIG_TAG);
+  await recordAudit({
+    actorType: "staff",
+    actorInitials: parsed.data.staffInitials?.trim().toUpperCase() || null,
+    action: "product.86_removed",
+    entityType: "product",
+    entityId: parsed.data.id,
   });
   return { ok: true };
 }

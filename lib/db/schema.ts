@@ -469,6 +469,34 @@ export const appSettings = pgTable("app_settings", {
 });
 
 /**
+ * "Sold out today" — a date-scoped 86 for one product, optionally one location.
+ *
+ * Distinct from `products_config.is_orderable` (a permanent switch someone must
+ * remember to flip back) and from Square inventory counts (unit-level): rows
+ * here simply stop matching once their date passes, so 86ing ube for one busy
+ * Saturday needs no restore step. A NULL location means every location; the
+ * quick actions write one row per location instead, because the unique index
+ * cannot see NULLs.
+ */
+export const productAvailabilityOverrides = pgTable(
+  "product_availability_overrides",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    squareProductId: text("square_product_id").notNull(),
+    squareLocationId: text("square_location_id"),
+    date: date("date").notNull(),
+    reason: text("reason"),
+    /** Roster initials. */
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("product_availability_overrides_key").on(t.squareProductId, t.squareLocationId, t.date),
+    index("product_availability_overrides_date_idx").on(t.date),
+  ],
+);
+
+/**
  * One row per logical refund — the money history the orders row can't hold.
  *
  * The `orders.refund_*` columns remain the coarse per-order lock (one refund in

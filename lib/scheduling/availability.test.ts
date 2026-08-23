@@ -486,3 +486,40 @@ describe("validatePickupSelection (the server-side checkout guard)", () => {
     });
   });
 });
+
+describe("per-day 86 (staff 'sold out today')", () => {
+  it("blocks every slot on the 86ed day for that product, like a one-item blackout", () => {
+    const result = expectOk(
+      computeAvailability(makeInput({
+        productDateBlocks: new Set([productDayKey(ENSAYMADA.productId, "2026-03-03")]),
+      })),
+    );
+    const blocked = result.days.find((day) => day.date === "2026-03-03");
+    expect(blocked?.hasAvailability).toBe(false);
+    expect(blocked?.slots.every((slot) => slot.reason === "product_sold_out")).toBe(true);
+    const open = result.days.find((day) => day.date === "2026-03-04");
+    expect(open?.hasAvailability).toBe(true);
+  });
+
+  it("does not touch other products' days", () => {
+    const result = expectOk(
+      computeAvailability(makeInput({
+        productDateBlocks: new Set([productDayKey("some-other-product", "2026-03-03")]),
+      })),
+    );
+    expect(result.days.find((day) => day.date === "2026-03-03")?.hasAvailability).toBe(true);
+  });
+
+  it("is enforced by the server-side checkout guard", () => {
+    const rejection = validatePickupSelection(
+      makeInput({
+        productDateBlocks: new Set([productDayKey(ENSAYMADA.productId, "2026-03-03")]),
+      }),
+      { date: "2026-03-03", time: "16:00" },
+    );
+    expect(rejection).toEqual({
+      ok: false,
+      rejection: { kind: "slot_unavailable", reason: "product_sold_out" },
+    });
+  });
+});

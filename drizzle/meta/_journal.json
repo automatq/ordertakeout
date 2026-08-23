@@ -85,6 +85,13 @@
       "when": 1787518030674,
       "tag": "0011_solid_screwball",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1787519667570,
+      "tag": "0012_slimy_amphibian",
+      "breakpoints": true
     }
   ]
 }

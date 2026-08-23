@@ -12,7 +12,8 @@ import {
 } from "@/components/staff/schedule-settings";
 import { AlertIcon } from "@/components/ui/icons";
 import { FormSkeleton } from "@/components/ui/skeleton";
-import { listBlackoutDates, listOperationalIssues, listProductRules, listSlotCapacity } from "@/lib/admin/queries";
+import { listAvailabilityOverrides, listBlackoutDates, listOperationalIssues, listProductRules, listSlotCapacity } from "@/lib/admin/queries";
+import { SoldOutList } from "@/components/staff/sold-out-list";
 import { getStoreCatalog } from "@/lib/catalog/server";
 import { primaryImage } from "@/lib/catalog/images";
 import { getStoreLocationsSafe } from "@/lib/locations/server";
@@ -25,6 +26,7 @@ const SECTIONS = [
   { id: "sync", label: "Square sync" },
   { id: "operations", label: "Operations" },
   { id: "rules", label: "Ordering rules" },
+  { id: "soldout", label: "Sold out today" },
   { id: "closures", label: "Closures" },
   { id: "capacity", label: "Slot capacity" },
 ] as const;
@@ -56,14 +58,31 @@ export default function SettingsPage() {
 async function Settings() {
   await connection();
 
-  const [catalog, rules, blackouts, slots, locations, issues] = await Promise.all([
+  const [catalog, rules, blackouts, slots, locations, issues, soldOut] = await Promise.all([
     getStoreCatalog(),
     listProductRules(),
     listBlackoutDates(),
     listSlotCapacity(),
     getStoreLocationsSafe(),
     listOperationalIssues(),
+    listAvailabilityOverrides(),
   ]);
+
+  const productNames = new Map([
+    ...catalog.products.map((product) => [product.id, product.name] as const),
+    ...catalog.unconfigured.map((product) => [product.id, product.name] as const),
+  ]);
+  const locationNames = new Map(locations.map((location) => [location.id, location.name]));
+  const soldOutEntries = soldOut.map((entry) => ({
+    id: entry.id,
+    productName: productNames.get(entry.productId) ?? entry.productId,
+    locationName: entry.locationId
+      ? locationNames.get(entry.locationId) ?? "Former location"
+      : "All locations",
+    date: entry.date,
+    reason: entry.reason,
+    createdBy: entry.createdBy,
+  }));
 
   const rulesById = new Map(rules.map((rule) => [rule.productId, rule]));
 
@@ -124,6 +143,16 @@ async function Settings() {
         ) : (
           <ProductRulesList products={items} />
         )}
+      </section>
+
+      <section id="soldout" className="flex scroll-mt-24 flex-col gap-4">
+        <div>
+          <h2 className="text-ink text-lg font-semibold">Sold out today</h2>
+          <p className="text-ink-muted text-sm">
+            Day-scoped 86 entries. They lift themselves when the date passes.
+          </p>
+        </div>
+        <SoldOutList entries={soldOutEntries} />
       </section>
 
       <section id="closures" className="scroll-mt-24">

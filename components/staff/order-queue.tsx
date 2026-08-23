@@ -12,6 +12,7 @@ import {
 } from "react";
 
 import { changeOrderStatus, refreshDashboard } from "@/app/actions/staff";
+import { EightySixButton, type EightySixProduct } from "@/components/staff/eighty-six-dialog";
 import { NotificationBell } from "@/components/staff/notification-bell";
 import { PauseToggle } from "@/components/staff/pause-toggle";
 import { PickupVerificationDialog } from "@/components/staff/pickup-verification-dialog";
@@ -76,10 +77,13 @@ function displayRefundFailure(error: string): string {
 export function OrderQueue({
   initialData,
   timeZone,
+  products,
 }: {
   initialData: DashboardData;
   /** The store's IANA zone, so "in 20 min" means the shop's clock. */
   timeZone: string;
+  /** Orderable products, for the "86 an item" quick action. */
+  products: EightySixProduct[];
 }) {
   const [data, setData] = useState(initialData);
   const [soundOn, setSoundOn] = useState(false);
@@ -284,6 +288,7 @@ export function OrderQueue({
           <option value="all">All locations</option>
           {locationOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
         </select>
+        <EightySixButton products={products} locations={data.locations} today={data.today} onChanged={poll} />
         <PauseToggle overview={data.orderingPause} locations={data.locations} onChanged={poll} />
         <button
           type="button"
