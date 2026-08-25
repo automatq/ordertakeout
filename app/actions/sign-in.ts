@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { headers } from "next/headers";
 import { z } from "zod";
 
@@ -51,11 +52,19 @@ export async function requestSignInLink(formData: FormData): Promise<SignInReque
 
   const issued = await issueMagicLink(email);
   if (issued) {
-    await sendMagicLinkEmail({
-      to: issued.account.email,
-      name: issued.account.name,
-      url: `${base}/account/sign-in/confirm?token=${encodeURIComponent(issued.token)}`,
-    });
+    /* Deliberately not awaited. Awaiting the provider round-trip only when the
+       account exists turns response time into an oracle for "is this address
+       registered" — a known address costs a Resend call, an unknown one returns
+       immediately, and that gap is trivially measurable against a JSON client.
+       after() sends once the response is already on its way, so both branches
+       return in the same time and the uniform message above stays honest. */
+    after(() =>
+      sendMagicLinkEmail({
+        to: issued.account.email,
+        name: issued.account.name,
+        url: `${base}/account/sign-in/confirm?token=${encodeURIComponent(issued.token)}`,
+      }),
+    );
   }
 
   // Identical response whether the account existed, was capped, or the email
@@ -145,7 +154,9 @@ export async function requestPhoneSignInCode(formData: FormData): Promise<SignIn
 
   const issued = await issuePhoneSignInCode(normalized.e164);
   if (issued) {
-    await sendPhoneSignInCode({ to: issued.account.phone, code: issued.code });
+    // Same timing-oracle reasoning as the email path above — a Twilio round-trip
+    // is an even louder signal than a Resend one.
+    after(() => sendPhoneSignInCode({ to: issued.account.phone, code: issued.code }));
   }
 
   return { ok: true, message: CODE_SENT_MESSAGE };
