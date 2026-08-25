@@ -7,6 +7,7 @@ import { requireStaffSession } from "@/lib/auth/guard";
 import {
   addAvailabilityOverride,
   addBlackoutDate,
+  applyProductRulesBulk,
   clearSlotCapacity,
   removeAvailabilityOverride,
   removeBlackoutDate,
@@ -15,12 +16,14 @@ import {
 } from "@/lib/admin/queries";
 import {
   blackoutSchema,
+  bulkProductRulesSchema,
   parsePickupTimes,
   productRulesSchema,
   slotCapacitySchema,
+  slugFromName,
   warnAboutRules,
 } from "@/lib/admin/validate";
-import { CATALOG_TAG, PRODUCT_CONFIG_TAG } from "@/lib/catalog/server";
+import { CATALOG_TAG, PRODUCT_CONFIG_TAG, getStoreCatalog } from "@/lib/catalog/server";
 import { getStoreLocation } from "@/lib/locations/server";
 import { recordAudit } from "@/lib/audit/log";
 import { saveStaffMember, setStaffMemberActive } from "@/lib/staff/roster";
@@ -96,6 +99,91 @@ export async function saveProductRulesAction(formData: FormData): Promise<AdminR
       pickupTimes: times.times,
     }),
   };
+}
+
+/**
+ * Apply one rule set to many products.
+ *
+ * Product names are resolved from the catalog rather than taken from the
+ * request: the catalog is authoritative, it means an id Square no longer has
+ * cannot create an orphan row, and the derived slug is then based on the same
+ * name the storefront shows.
+ */
+export async function saveProductRulesBulkAction(input: unknown): Promise<AdminResult> {
+  await requireStaffSession();
+
+  const parsed = bulkProductRulesSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "Check the highlighted fields.", fieldErrors: flatten(parsed.error) };
+  }
+
+  const times = parsePickupTimes(parsed.data.pickupTimes);
+  if (!times.ok) {
+    return {
+      ok: false,
+      error:
+        times.invalid.length > 0
+          ? `Not a valid 24-hour time: ${times.invalid.join(", ")}`
+          : "Add at least one pickup time.",
+      fieldErrors: { pickupTimes: ["Use 24-hour times, e.g. 16:00, 17:00"] },
+    };
+  }
+
+  const catalog = await getStoreCatalog();
+  if (catalog.error) {
+    return { ok: false, error: "Couldn't read the catalog from Square. Try again in a moment." };
+  }
+
+  const nameById = new Map(
+    [...catalog.products, ...catalog.unconfigured].map((product) => [product.id, product.name]),
+  );
+  const targets = parsed.data.productIds.flatMap((productId) => {
+    const name = nameById.get(productId);
+    return name ? [{ productId, name }] : [];
+  });
+
+  if (targets.length === 0) {
+    return { ok: false, error: "Those products are no longer in your Square catalog." };
+  }
+
+  const result = await applyProductRulesBulk(targets, {
+    leadTimeDays: parsed.data.leadTimeDays,
+    orderCutoffTime: parsed.data.orderCutoffTime,
+    allowedPickupTimes: times.times,
+    maxUnitsPerDay: parsed.data.maxUnitsPerDay,
+    isOrderable: parsed.data.isOrderable,
+    allergens: parsed.data.allergens,
+    dietaryTags: parsed.data.dietaryTags,
+  });
+
+  updateTag(PRODUCT_CONFIG_TAG);
+  await recordAudit({
+    actorType: "staff",
+    action: "product.rules_bulk_applied",
+    entityType: "product",
+    metadata: {
+      configured: result.configured,
+      updated: result.updated,
+      leadTimeDays: parsed.data.leadTimeDays,
+      orderCutoffTime: parsed.data.orderCutoffTime,
+    },
+  });
+
+  const warnings = [
+    ...(targets.length < parsed.data.productIds.length
+      ? [`${parsed.data.productIds.length - targets.length} product(s) were skipped — Square no longer lists them.`]
+      : []),
+    ...warnAboutRules({
+      leadTimeDays: parsed.data.leadTimeDays,
+      orderCutoffTime: parsed.data.orderCutoffTime,
+      pickupTimes: times.times,
+    }),
+    ...result.newSlugs
+      .filter((entry) => entry.slug !== slugFromName(entry.name))
+      .map((entry) => `"${entry.name}" got the URL name "${entry.slug}" — its preferred one was taken.`),
+  ];
+
+  return { ok: true, warnings };
 }
 
 export async function addBlackoutAction(formData: FormData): Promise<AdminResult> {

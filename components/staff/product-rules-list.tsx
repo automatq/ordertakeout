@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useMemo, useState } from "react";
 
+import { BulkRulesPanel } from "@/components/staff/bulk-rules-panel";
 import { ProductRulesForm } from "@/components/staff/product-rules-form";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SearchIcon } from "@/components/ui/icons";
@@ -31,6 +32,8 @@ export interface RuleListItem {
 export function ProductRulesList({ products }: { products: RuleListItem[] }) {
   const [search, setSearch] = useState("");
   const [unconfiguredOnly, setUnconfiguredOnly] = useState(false);
+  const [bulkMode, setBulkMode] = useState(false);
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
 
   const unconfiguredCount = products.filter((p) => p.unconfigured).length;
 
@@ -91,6 +94,51 @@ export function ProductRulesList({ products }: { products: RuleListItem[] }) {
         ) : null}
       </div>
 
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          aria-pressed={bulkMode}
+          onClick={() => {
+            setBulkMode((on) => !on);
+            setSelected(new Set());
+          }}
+          className={`btn btn-sm rounded-full ${bulkMode ? "btn-primary" : "btn-outline"}`}
+        >
+          {bulkMode ? "Done selecting" : "Set up several at once"}
+        </button>
+
+        {bulkMode ? (
+          <>
+            <button
+              type="button"
+              onClick={() => setSelected(new Set(visible.map((product) => product.id)))}
+              className="btn btn-ghost btn-sm rounded-full"
+            >
+              Select all {visible.length} shown
+            </button>
+            {selected.size > 0 ? (
+              <button
+                type="button"
+                onClick={() => setSelected(new Set())}
+                className="btn btn-ghost btn-sm rounded-full"
+              >
+                Clear selection
+              </button>
+            ) : null}
+          </>
+        ) : null}
+      </div>
+
+      {bulkMode && selected.size > 0 ? (
+        <BulkRulesPanel
+          productIds={[...selected]}
+          onApplied={() => {
+            setSelected(new Set());
+            setBulkMode(false);
+          }}
+        />
+      ) : null}
+
       {visible.length === 0 ? (
         <EmptyState
           compact
@@ -101,6 +149,25 @@ export function ProductRulesList({ products }: { products: RuleListItem[] }) {
         <ul className="flex flex-col gap-2">
           {visible.map((product) => (
             <li key={product.id} className="panel overflow-hidden">
+              {bulkMode ? (
+                <label className="hover:bg-surface flex cursor-pointer items-center gap-3 p-4 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(product.id)}
+                    onChange={(event) => {
+                      const next = new Set(selected);
+                      if (event.target.checked) next.add(product.id);
+                      else next.delete(product.id);
+                      setSelected(next);
+                    }}
+                    className="accent-brand h-5 w-5 shrink-0"
+                  />
+                  <span className="text-ink truncate font-semibold">{product.name}</span>
+                  {product.unconfigured ? (
+                    <span className="badge badge-new shrink-0">Needs setup</span>
+                  ) : null}
+                </label>
+              ) : (
               <details open={product.unconfigured} className="group">
                 <summary className="hover:bg-surface flex cursor-pointer flex-wrap items-center justify-between gap-3 p-4 list-none transition-colors">
                   <span className="flex min-w-0 items-center gap-3">
@@ -154,6 +221,7 @@ export function ProductRulesList({ products }: { products: RuleListItem[] }) {
                   />
                 </div>
               </details>
+              )}
             </li>
           ))}
         </ul>

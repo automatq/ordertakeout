@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { blackoutDates, notificationLog, orders, productAvailabilityOverrides, productsConfig, slotCapacity, webhookEvents } from "@/lib/db/schema";
 import { serverEnv } from "@/lib/env";
 import { normalizeTime, storeToday, type StoreDate, type StoreTime } from "@/lib/scheduling/time";
+import { uniqueSlug } from "./validate";
 
 /** Reads and writes behind the admin screens. */
 
@@ -83,6 +84,92 @@ export async function listProductRules(): Promise<ProductRuleRow[]> {
     allergens: parseAllergens(row.allergens),
     dietaryTags: parseDietaryTags(row.dietaryTags),
   }));
+}
+
+export interface BulkRuleTemplate {
+  leadTimeDays: number;
+  orderCutoffTime: StoreTime;
+  allowedPickupTimes: StoreTime[];
+  maxUnitsPerDay: number | null;
+  isOrderable: boolean;
+  allergens: Allergen[];
+  dietaryTags: DietaryTag[];
+}
+
+export interface BulkRuleResult {
+  configured: number;
+  updated: number;
+  /** Slugs minted for products that had no row, for the confirmation message. */
+  newSlugs: { name: string; slug: string }[];
+}
+
+/**
+ * Apply one set of ordering rules to many products at once.
+ *
+ * Onboarding a full bakery menu one form at a time is roughly forty clicks per
+ * product, and the defaults are shaped for party trays — so the fast path also
+ * produced the wrong answer for everyday bread. Nearly every item shares a
+ * single rule; the exceptions are few enough to edit afterwards.
+ *
+ * Two invariants:
+ *  - A product that already has a row keeps its slug, description and photo.
+ *    Changing a cutoff must never silently rewrite a URL customers have, or
+ *    discard copy somebody wrote.
+ *  - Slugs are resolved against the whole table plus the rest of the batch, so
+ *    two products whose names reduce to the same slug both succeed.
+ */
+export async function applyProductRulesBulk(
+  products: readonly { productId: string; name: string }[],
+  template: BulkRuleTemplate,
+): Promise<BulkRuleResult> {
+  if (products.length === 0) return { configured: 0, updated: 0, newSlugs: [] };
+
+  return db().transaction(async (tx) => {
+    const existing = await tx
+      .select({ productId: productsConfig.squareCatalogObjectId, slug: productsConfig.slug })
+      .from(productsConfig);
+
+    const slugByProduct = new Map(existing.map((row) => [row.productId, row.slug]));
+    const taken = new Set(existing.map((row) => row.slug));
+
+    const newSlugs: { name: string; slug: string }[] = [];
+    let configured = 0;
+    let updated = 0;
+
+    for (const product of products) {
+      const current = slugByProduct.get(product.productId);
+      let slug: string;
+      if (current) {
+        slug = current;
+        updated += 1;
+      } else {
+        slug = uniqueSlug(product.name, taken);
+        taken.add(slug);
+        newSlugs.push({ name: product.name, slug });
+        configured += 1;
+      }
+
+      const shared = {
+        leadTimeDays: template.leadTimeDays,
+        orderCutoffTime: template.orderCutoffTime,
+        allowedPickupTimes: template.allowedPickupTimes,
+        maxUnitsPerDay: template.maxUnitsPerDay,
+        isOrderable: template.isOrderable,
+        allergens: template.allergens,
+        dietaryTags: template.dietaryTags,
+        updatedAt: new Date(),
+      };
+
+      await tx
+        .insert(productsConfig)
+        .values({ squareCatalogObjectId: product.productId, slug, ...shared })
+        /* Only the shared fields on conflict: slug, descriptionMd and
+           heroImageUrl are intentionally absent so an existing row keeps them. */
+        .onConflictDoUpdate({ target: productsConfig.squareCatalogObjectId, set: shared });
+    }
+
+    return { configured, updated, newSlugs };
+  });
 }
 
 /**
