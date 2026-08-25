@@ -22,6 +22,8 @@ import { listStaffMembers } from "@/lib/staff/roster";
 import { getNotificationRecipients } from "@/lib/settings/notifications";
 import { serverEnv } from "@/lib/env";
 import { getStoreCatalog } from "@/lib/catalog/server";
+import { CatalogReadinessPanel } from "@/components/staff/catalog-readiness";
+import { getCatalogReadiness } from "@/lib/catalog/readiness";
 import { primaryImage } from "@/lib/catalog/images";
 import { getStoreLocationsSafe } from "@/lib/locations/server";
 import { DEFAULT_MAX_ORDERS_PER_SLOT } from "@/lib/store";
@@ -31,6 +33,7 @@ export const metadata = { title: "Settings — Staff" };
 /** Jump links, so the page's four sections are reachable without scrolling. */
 const SECTIONS = [
   { id: "sync", label: "Square sync" },
+  { id: "readiness", label: "Catalog health" },
   { id: "operations", label: "Operations" },
   { id: "rules", label: "Ordering rules" },
   { id: "soldout", label: "Sold out today" },
@@ -62,6 +65,11 @@ export default function SettingsPage() {
       </Suspense>
     </div>
   );
+}
+
+async function CatalogHealth() {
+  await connection();
+  return <CatalogReadinessPanel readiness={await getCatalogReadiness()} />;
 }
 
 async function Settings() {
@@ -128,6 +136,21 @@ async function Settings() {
     <div className="flex flex-col gap-12">
       <section id="sync" className="scroll-mt-24">
         <CatalogResync />
+      </section>
+
+      <section id="readiness" className="flex scroll-mt-24 flex-col gap-4">
+        <div>
+          <h2 className="text-ink text-lg font-semibold">Catalog health</h2>
+          <p className="text-ink-muted text-sm">
+            Products you&rsquo;ve added in Square that can&rsquo;t be sold online yet, and why.
+          </p>
+        </div>
+
+        {/* Its own boundary: this checks stock counts at every branch, so it is
+            the slowest thing on the page and must not hold up the rest. */}
+        <Suspense fallback={<FormSkeleton label="Checking catalog health" fields={2} />}>
+          <CatalogHealth />
+        </Suspense>
       </section>
 
       <section id="operations" className="scroll-mt-24">
