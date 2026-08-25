@@ -24,6 +24,8 @@ export const DEMO_PRODUCTS: CatalogProduct[] = [
       "Soft, buttery brioche rolls topped with cheese or ube, baked fresh for your party.",
     imageIds: [],
     imageUrls: ["/harina/ube-pandesal.webp", "/harina/freshly-baked.webp"],
+    categoryId: "DEMO_CAT_TRAYS",
+    categoryName: "Party Trays",
     variants: [
       {
         id: "DEMO_VAR_ENSAYMADA_25_UBE",
@@ -65,6 +67,8 @@ export const DEMO_PRODUCTS: CatalogProduct[] = [
     description: "Flaky bean-filled pastries, in ube or classic baboy.",
     imageIds: [],
     imageUrls: ["/harina/hopia-pirat-baboy.webp"],
+    categoryId: "DEMO_CAT_TRAYS",
+    categoryName: "Party Trays",
     variants: [
       {
         id: "DEMO_VAR_HOPIA_60",
@@ -90,6 +94,8 @@ export const DEMO_PRODUCTS: CatalogProduct[] = [
     description: "Purple yam bars, rich and not too sweet.",
     imageIds: [],
     imageUrls: ["/harina/ube-bars.webp"],
+    categoryId: "DEMO_CAT_TRAYS",
+    categoryName: "Party Trays",
     variants: [
       {
         id: "DEMO_VAR_UBE_BARS_BIG",

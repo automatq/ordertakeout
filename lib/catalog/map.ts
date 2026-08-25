@@ -113,6 +113,12 @@ export function mapCatalogItems(
       imageIds: item?.imageIds ?? [],
       // Resolved separately — see lib/catalog/images.ts. This module stays pure.
       imageUrls: [],
+      /* reportingCategory is Square's own primary category and is what the
+         Dashboard groups by, so it matches what staff see when they organise
+         the catalog. categories[] is the multi-assignment list; its first entry
+         is the fallback for items predating reporting categories. */
+      categoryId: item?.reportingCategory?.id ?? item?.categories?.[0]?.id ?? null,
+      categoryName: null,
       variants,
     });
   }

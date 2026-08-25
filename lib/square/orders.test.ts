@@ -66,6 +66,8 @@ describe("Square payment finality", () => {
           description: null,
           imageIds: [],
           imageUrls: [],
+          categoryId: null,
+          categoryName: null,
           variants: [],
         },
         variant: {
@@ -106,7 +108,7 @@ describe("Square payment finality", () => {
       locationId: "LONDON", orderNumber: "PT-REWARD", pickup: { date: "2026-08-24", time: "14:00" }, timeZone: "America/Toronto",
       customer: { name: "Maria Santos", email: "maria@example.com", phone: "416-555-0100" },
       rewardDiscountCents: 1000,
-      lines: [{ product: { id: "ITEM", name: "Tray", description: null, imageIds: [], imageUrls: [], variants: [] }, variant: { id: "VAR", name: "One", priceCents: 4500, currency: "CAD", sku: null, ordinal: 0 }, quantity: 1, lineTotalCents: 4500 }],
+      lines: [{ product: { id: "ITEM", name: "Tray", description: null, imageIds: [], imageUrls: [], categoryId: null, categoryName: null, variants: [] }, variant: { id: "VAR", name: "One", priceCents: 4500, currency: "CAD", sku: null, ordinal: 0 }, quantity: 1, lineTotalCents: 4500 }],
     });
     expect(mocks.createOrder).toHaveBeenCalledWith(expect.objectContaining({
       order: expect.objectContaining({ discounts: [expect.objectContaining({ type: "FIXED_AMOUNT", scope: "ORDER" })] }),

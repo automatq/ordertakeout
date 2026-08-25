@@ -95,5 +95,5 @@ async function MenuGrid() {
     );
   }
 
-  return <ProductGrid products={products} />;
+  return <ProductGrid products={products} grouped />;
 }

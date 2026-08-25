@@ -18,6 +18,8 @@ function product(overrides: Partial<CatalogProduct> = {}): CatalogProduct {
     description: null,
     imageIds: [],
     imageUrls: [],
+    categoryId: null,
+    categoryName: null,
     variants: [],
     ...overrides,
   };

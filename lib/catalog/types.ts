@@ -49,6 +49,13 @@ export interface CatalogProduct {
    * where the item has no photography or a referenced image has been deleted.
    */
   imageUrls: string[];
+  /**
+   * Square's reporting category for this item, if it has one. Null both when
+   * the item is uncategorised and when the name lookup failed — the storefront
+   * treats those identically and files the product under "More".
+   */
+  categoryId: string | null;
+  categoryName: string | null;
   variants: CatalogVariant[];
 }
 

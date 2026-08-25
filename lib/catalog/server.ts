@@ -14,6 +14,7 @@ import { reportError } from "@/lib/monitoring/report";
 import { squareClient } from "@/lib/square/client";
 
 import { parseAllergens, parseDietaryTags, type Allergen, type DietaryTag } from "./dietary";
+import { attachCategoryNames, collectCategoryIds } from "./categories";
 import { attachImageUrls, collectImageIds, extractImageUrls } from "./images";
 import { mapCatalogItems } from "./map";
 import type { CatalogProduct, SkippedCatalogObject, StoreProduct } from "./types";
@@ -72,10 +73,11 @@ async function fetchSquareCatalog(): Promise<CatalogLoad> {
     } while (cursor);
 
     const mapped = mapCatalogItems(objects, { expectedCurrency: serverEnv().STORE_CURRENCY });
+    const withImages = attachImageUrls(mapped.products, await fetchImageUrls(client, mapped));
 
     return {
       ...mapped,
-      products: attachImageUrls(mapped.products, await fetchImageUrls(client, mapped)),
+      products: attachCategoryNames(withImages, await fetchCategoryNames(client, withImages)),
     };
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
@@ -117,6 +119,41 @@ async function fetchImageUrls(
     return urls;
   } catch (cause) {
     reportError("catalog", "image resolution failed, falling back to text tiles", cause);
+    return new Map();
+  }
+}
+
+/**
+ * Resolve the CATEGORY objects the items reference.
+ *
+ * `searchItems` returns category *ids* on each item, never names, so this is a
+ * second lookup with the same shape as image resolution — and non-fatal for the
+ * same reason. A menu that renders ungrouped is a degraded storefront; a menu
+ * that fails to load because a category lookup timed out is a closed one.
+ */
+async function fetchCategoryNames(
+  client: ReturnType<typeof squareClient>,
+  products: readonly CatalogProduct[],
+): Promise<Map<string, string>> {
+  const ids = collectCategoryIds(products);
+  if (ids.length === 0) return new Map();
+
+  try {
+    const names = new Map<string, string>();
+
+    for (let start = 0; start < ids.length; start += 1000) {
+      const response = await client.catalog.batchGet({
+        objectIds: ids.slice(start, start + 1000),
+      });
+      for (const object of response.objects ?? []) {
+        const name = object.type === "CATEGORY" ? object.categoryData?.name?.trim() : null;
+        if (object.id && name) names.set(object.id, name);
+      }
+    }
+
+    return names;
+  } catch (cause) {
+    reportError("catalog", "category resolution failed, menu will be ungrouped", cause);
     return new Map();
   }
 }
