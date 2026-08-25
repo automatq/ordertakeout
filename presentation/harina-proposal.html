@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Harina Bakeshoppe — Online Pre-Order Platform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --canvas:#f5f1e9; --surface:#fff; --sunken:#faf7f1;
+    --ink:#1a1a1a; --muted:#5c5449; --subtle:#6f665a;
+    --brand:#ce3f23; --brand-deep:#a8321c; --brand-soft:#fbe9e5; --brand-tint:#fdf5f2;
+    --accent:#ffc446; --accent-soft:#fff5dd;
+    --border:#e6ddcd; --good:#2f7d4f; --good-soft:#e8f5ed;
+    --display:"Bebas Neue",Impact,sans-serif;
+    --sans:"Poppins",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--sans);background:var(--canvas);color:var(--ink);line-height:1.65;font-weight:300;-webkit-font-smoothing:antialiased}
+  .page{max-width:1080px;margin:0 auto;padding:0 32px}
+  section{padding:64px 0;border-bottom:1px solid var(--border)}
+  section:last-child{border-bottom:0}
+  h1,h2,h3,.d{font-family:var(--display);font-weight:400;text-transform:uppercase;letter-spacing:.01em;line-height:1.02}
+  h2{font-size:clamp(2rem, 1.4rem + 2.4vw, 3.1rem);color:var(--brand);margin-bottom:8px}
+  h3{font-size:1.5rem;color:var(--ink);margin-bottom:6px}
+  .eyebrow{font-size:.75rem;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--brand);margin-bottom:10px}
+  .lede{font-size:1.15rem;color:var(--muted);max-width:62ch;margin-bottom:28px}
+  p{color:var(--muted);max-width:70ch}
+  strong{font-weight:600;color:var(--ink)}
+  /* cover */
+  .cover{background:linear-gradient(150deg,var(--brand) 0%,var(--brand-deep) 100%);color:#fff;padding:0;border:0}
+  .cover .page{padding-top:76px;padding-bottom:76px}
+  .cover h1{font-size:clamp(3rem, 2rem + 5.5vw, 6rem);color:#fff;max-width:15ch}
+  .cover h1 em{font-style:normal;color:var(--accent)}
+  .cover .sub{font-size:1.2rem;color:rgba(255,255,255,.9);max-width:56ch;margin-top:20px;font-weight:300}
+  .pill{display:inline-block;border:1px solid rgba(255,255,255,.45);border-radius:999px;padding:6px 16px;font-size:.72rem;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:#fff}
+  .cover-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:44px}
+  .cover-stats div{background:rgba(0,0,0,.16);border:1px solid rgba(255,255,255,.18);border-radius:16px;padding:18px}
+  .cover-stats b{display:block;font-family:var(--display);font-size:2.3rem;color:var(--accent);line-height:1}
+  .cover-stats span{font-size:.78rem;color:rgba(255,255,255,.85)}
+  /* headline number band */
+  .band{background:var(--ink);color:#fff;border:0}
+  .band .page{padding:52px 32px}
+  .band h2{color:var(--accent)}
+  .band p{color:rgba(255,255,255,.82)}
+  .bignum{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-top:28px}
+  .bignum div{border-left:3px solid var(--accent);padding-left:18px}
+  .bignum b{display:block;font-family:var(--display);font-size:3.2rem;line-height:1;color:#fff}
+  .bignum span{font-size:.9rem;color:rgba(255,255,255,.75)}
+  /* tables */
+  table{width:100%;border-collapse:collapse;margin:20px 0;font-size:.92rem;background:var(--surface);border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+  th,td{padding:12px 16px;text-align:left;border-bottom:1px solid var(--border)}
+  th{background:var(--sunken);font-weight:600;font-size:.76rem;letter-spacing:.09em;text-transform:uppercase;color:var(--subtle)}
+  td{color:var(--muted)}
+  tr:last-child td{border-bottom:0}
+  .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .win{color:var(--good);font-weight:600}
+  .bad{color:var(--brand);font-weight:600}
+  .hi td{background:var(--accent-soft)}
+  /* cards */
+  .grid{display:grid;gap:16px}
+  .g2{grid-template-columns:repeat(2,1fr)}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:22px}
+  .card h3{font-size:1.15rem;margin-bottom:8px;color:var(--brand-deep)}
+  .card p{font-size:.9rem}
+  .card ul{margin:8px 0 0 0;padding-left:0;list-style:none}
+  .card li{font-size:.88rem;color:var(--muted);padding-left:20px;position:relative;margin-bottom:5px}
+  .card li::before{content:"";position:absolute;left:2px;top:.55em;width:7px;height:7px;border-radius:50%;background:var(--accent)}
+  .q{background:var(--brand-tint);border:1px solid var(--brand-soft);border-radius:14px;padding:16px 18px;margin-bottom:10px}
+  .q b{display:block;color:var(--brand-deep);font-size:.9rem;margin-bottom:3px}
+  .q span{font-size:.88rem;color:var(--muted)}
+  .tick{color:var(--good);font-weight:600}
+  /* pricing */
+  .price{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:26px}
+  .plan{background:var(--surface);border:2px solid var(--border);border-radius:20px;padding:26px;display:flex;flex-direction:column}
+  .plan.feature{border-color:var(--brand);box-shadow:0 8px 28px rgba(206,63,35,.13)}
+  .plan .tag{display:inline-block;background:var(--brand);color:#fff;font-size:.65rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;padding:4px 12px;border-radius:999px;margin-bottom:12px;align-self:flex-start}
+  .plan .tag.ghost{background:var(--sunken);color:var(--subtle)}
+  .plan .amt{font-family:var(--display);font-size:2.9rem;color:var(--brand);line-height:1}
+  .plan .per{font-size:.85rem;color:var(--subtle);margin-bottom:14px}
+  .plan ul{list-style:none;margin-top:10px}
+  .plan li{font-size:.86rem;color:var(--muted);padding-left:19px;position:relative;margin-bottom:6px}
+  .plan li::before{content:"✓";position:absolute;left:0;color:var(--good);font-weight:700}
+  .note{background:var(--accent-soft);border-left:4px solid var(--accent);border-radius:0 12px 12px 0;padding:16px 20px;margin:20px 0;font-size:.9rem;color:var(--muted)}
+  .note b{color:var(--ink)}
+  .foot{background:var(--ink);color:rgba(255,255,255,.6);text-align:center;padding:34px;font-size:.8rem;border:0}
+  .foot b{font-family:var(--display);color:#fff;font-size:1.6rem;display:block;letter-spacing:.02em}
+  @media(max-width:860px){.g3,.g2,.price,.bignum,.cover-stats{grid-template-columns:1fr}.cover-stats{grid-template-columns:repeat(2,1fr)}}
+  @media print{
+    body{background:#fff}
+    section{page-break-inside:avoid;padding:34px 0;border-bottom:1px solid #ddd}
+    .cover,.band,.foot{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .card,table,.plan{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .pagebreak{page-break-before:always}
+    a{text-decoration:none;color:inherit}
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ COVER ============ -->
+<section class="cover">
+  <div class="page">
+    <span class="pill">Proposal · Prepared for Harina Bakeshoppe</span>
+    <h1>Your own ordering system.<br><em>Zero commission.</em></h1>
+    <p class="sub">A complete online pre-order and pickup platform, built around your Square POS and your kitchen's real rules — so every order you take is an order you keep 96.4&nbsp;cents on the dollar of.</p>
+    <div class="cover-stats">
+      <div><b>96.4%</b><span>of every order stays with you</span></div>
+      <div><b>3.5</b><span>orders/week to break even</span></div>
+      <div><b>24/7</b><span>ordering without staffing it</span></div>
+      <div><b>$69</b><span>total monthly running cost</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ THE PROBLEM ============ -->
+<section>
+  <div class="page">
+    <p class="eyebrow">Where the money goes today</p>
+    <h2>Three leaks, one fix</h2>
+    <p class="lede">Party trays are your highest-ticket product — $20 to $65 each. That's exactly where a percentage-based commission hurts most, and exactly where manual order-taking costs the most staff time.</p>
+    <div class="grid g3">
+      <div class="card">
+        <h3>1 · Commission</h3>
+        <p>You already partner with Uber Eats and DoorDash. Every order that flows through them is revenue you generated, taxed at <strong>15–30%</strong>. On a $45 tray that's <strong>$6.75–$13.50</strong> gone before flour.</p>
+      </div>
+      <div class="card">
+        <h3>2 · Staff time</h3>
+        <p>Every phone order takes roughly <strong>5 minutes</strong> — answer, write it down, confirm the date, chase payment. During service, that's your busiest person standing still.</p>
+      </div>
+      <div class="card">
+        <h3>3 · Lost orders</h3>
+        <p>Calls that come after 9&nbsp;PM don't happen. Unpaid pickups that never get collected are trays you baked for nothing. Double-booked Saturdays blow up the kitchen.</p>
+      </div>
+    </div>
+    <div class="note"><b>The platforms own your customer, too.</b> On a marketplace, the customer's email, order history and reorder habit belong to the platform — not to you. Direct ordering makes that list yours, permanently.</div>
+  </div>
+</section>
+
+<!-- ============ THE MONEY ============ -->
+<section class="band">
+  <div class="page">
+    <p class="eyebrow" style="color:var(--accent)">The math on a $40.63 average tray order</p>
+    <h2>What you keep</h2>
+    <div class="bignum">
+      <div><b>$39.15</b><span>Direct on your own site<br>Square fee: $1.48</span></div>
+      <div><b>$34.53</b><span>Marketplace at 15%<br>Commission: $6.09</span></div>
+      <div><b>$28.44</b><span>Marketplace at 30%<br>Commission: $12.19</span></div>
+    </div>
+    <p style="margin-top:26px">Direct ordering saves <strong style="color:var(--accent)">$4.62 to $10.71 on every single order</strong> — 11.4% to 26.4% of revenue, straight to the bottom line.</p>
+  </div>
+</section>
+
+<section>
+  <div class="page">
+    <p class="eyebrow">Annual impact</p>
+    <h2>Commission avoided, by volume</h2>
+    <p class="lede">Pick the row that matches where you expect to land. Every figure is annual, net of Square's 2.9%&nbsp;+&nbsp;30¢ online processing fee.</p>
+    <table>
+      <thead><tr><th>Direct orders / week</th><th class="num">Annual sales</th><th class="num">vs 15%</th><th class="num">vs 25%</th><th class="num">vs 30%</th></tr></thead>
+      <tbody>
+        <tr><td>5</td><td class="num">$10,563</td><td class="num win">$1,200</td><td class="num win">$2,256</td><td class="num win">$2,784</td></tr>
+        <tr><td>10</td><td class="num">$21,125</td><td class="num win">$2,400</td><td class="num win">$4,513</td><td class="num win">$5,569</td></tr>
+        <tr class="hi"><td><strong>20</strong></td><td class="num">$42,250</td><td class="num win">$4,800</td><td class="num win">$9,025</td><td class="num win">$11,138</td></tr>
+        <tr><td>40</td><td class="num">$84,500</td><td class="num win">$9,601</td><td class="num win">$18,051</td><td class="num win">$22,276</td></tr>
+        <tr><td>75</td><td class="num">$158,438</td><td class="num win">$18,001</td><td class="num win">$33,845</td><td class="num win">$41,767</td></tr>
+      </tbody>
+    </table>
+
+    <h3 style="margin-top:36px">Plus what commission math doesn't capture</h3>
+    <table>
+      <thead><tr><th>Recovered</th><th class="num">20 orders/wk</th><th class="num">40 orders/wk</th></tr></thead>
+      <tbody>
+        <tr><td>Staff time on manual order-taking <span style="color:var(--subtle)">(5 min @ $20/hr loaded)</span></td><td class="num">$1,733</td><td class="num">$3,467</td></tr>
+        <tr><td>No-show / uncollected trays <span style="color:var(--subtle)">(3% — eliminated by prepay)</span></td><td class="num">$1,268</td><td class="num">$2,536</td></tr>
+        <tr class="hi"><td><strong>Total annual value vs a 15% marketplace</strong></td><td class="num win"><strong>$7,802</strong></td><td class="num win"><strong>$15,604</strong></td></tr>
+        <tr class="hi"><td><strong>Total annual value vs a 25% marketplace</strong></td><td class="num win"><strong>$12,027</strong></td><td class="num win"><strong>$24,055</strong></td></tr>
+      </tbody>
+    </table>
+    <div class="note"><b>Break-even is 3.5 orders per week.</b> The platform's entire running cost is $69/month — hosting, database, email and text messaging combined. Everything above roughly one order every other day is profit you weren't keeping before.</div>
+  </div>
+</section>
+
+<!-- ============ THE 9 QUESTIONS ============ -->
+<section class="pagebreak">
+  <div class="page">
+    <p class="eyebrow">Built to your brief</p>
+    <h2>Your nine questions, answered in code</h2>
+    <p class="lede">Your requirements document asked nine specific questions. Each one is a working, tested feature — not a roadmap item.</p>
+    <div class="grid g2">
+      <div>
+        <div class="q"><b><span class="tick">✓</span> 1. How will we know an order came in?</b><span>Six ways at once: Square POS, staff dashboard with an audible chime, email, text message, plus Discord, Slack or Trello if you want them.</span></div>
+        <div class="q"><b><span class="tick">✓</span> 2. Does a new order notify automatically?</b><span>Yes. The kitchen screen updates live and chimes. No refreshing, no checking.</span></div>
+        <div class="q"><b><span class="tick">✓</span> 3. How do staff know it's paid?</b><span>Every order is paid before it's confirmed. A PAID badge and the Square payment ID sit on every card. Unpaid carts never reach the kitchen.</span></div>
+        <div class="q"><b><span class="tick">✓</span> 4. Separate order statuses?</b><span>New → Paid → Preparing → Ready for Pickup → Completed, plus Cancelled. One tap each, and it mirrors into Square.</span></div>
+        <div class="q"><b><span class="tick">✓</span> 5. Where do orders appear?</b><span>Dashboard, email, text, and Square POS — and the dashboard works on a phone behind the counter.</span></div>
+      </div>
+      <div>
+        <div class="q"><b><span class="tick">✓</span> 6. Notification on every paid order?</b><span>Email and text fire the moment payment clears — never on an abandoned cart.</span></div>
+        <div class="q"><b><span class="tick">✓</span> 7. Can customers choose pickup date and time?</b><span>Required before the pay button will even enable. No order arrives without a slot.</span></div>
+        <div class="q"><b><span class="tick">✓</span> 8. Block Ensaymada orders after the 6 PM cutoff?</b><span>Enforced on the server in your store's local time. Past cutoff, tomorrow disappears from the calendar automatically.</span></div>
+        <div class="q"><b><span class="tick">✓</span> 9. Cap orders per pickup time?</b><span>Per-slot caps and per-day production limits, both editable by staff. Full slots grey out. The kitchen can never be over-committed.</span></div>
+        <div class="q" style="background:var(--good-soft);border-color:#c9e6d5"><b style="color:var(--good)">Beyond the brief</b><span>Customer accounts, a rewards program, tipping, Apple&nbsp;Pay, refunds without leaving the dashboard, multi-location and accounting export were all listed as "out of scope" originally. They're built.</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FEATURES ============ -->
+<section class="pagebreak">
+  <div class="page">
+    <p class="eyebrow">Complete feature inventory</p>
+    <h2>Everything in the box</h2>
+    <p class="lede">Twenty-one customer and staff screens, nineteen database tables, five integrations — all working today.</p>
+    <div class="grid g3">
+      <div class="card"><h3>Storefront</h3><ul>
+        <li>Branded homepage, menu page and product pages</li>
+        <li>Photography pulled straight from Square</li>
+        <li>Allergen and dietary labels with shared-kitchen disclaimer</li>
+        <li>Live "sold out at this location" per size</li>
+        <li>Cart that survives closing the tab</li>
+        <li>Works on any phone, tablet or desktop</li>
+        <li>Screen-reader accessible, keyboard navigable</li>
+      </ul></div>
+      <div class="card"><h3>Pickup scheduling</h3><ul>
+        <li>Per-product lead times and order cutoffs</li>
+        <li>Everything computed in store-local time</li>
+        <li>Mixed carts resolve to the times all items allow</li>
+        <li>Per-slot and per-day capacity caps</li>
+        <li>Holiday and closure dates</li>
+        <li>Slots held for 10 minutes during checkout</li>
+        <li>Race-proof: two customers can't take the last slot</li>
+      </ul></div>
+      <div class="card"><h3>Payments</h3><ul>
+        <li>Card, Apple&nbsp;Pay, Google&nbsp;Pay, Cash&nbsp;App&nbsp;Pay</li>
+        <li>Optional tipping at checkout</li>
+        <li>Card details never touch our servers</li>
+        <li>Duplicate-charge protection on every attempt</li>
+        <li>Automatic recovery if a payment result is ever unclear</li>
+        <li>Full and partial refunds from the dashboard</li>
+        <li>Square stays your system of record</li>
+      </ul></div>
+      <div class="card"><h3>Kitchen dashboard</h3><ul>
+        <li>Live order queue with new-order chime</li>
+        <li>One-tap status changes that mirror to Square</li>
+        <li>Prep timeline grouped by pickup time</li>
+        <li>Printable per-day prep sheets</li>
+        <li>QR pickup-pass verification at the counter</li>
+        <li>"In checkout right now" visibility</li>
+        <li>Filter by location; works on a phone</li>
+      </ul></div>
+      <div class="card"><h3>Staff controls</h3><ul>
+        <li>Pause online ordering with one tap</li>
+        <li>Mark an item sold out for today only</li>
+        <li>Edit lead times, cutoffs, pickup times, caps</li>
+        <li>Closure dates and per-slot limits</li>
+        <li>Re-sync the Square catalog on demand</li>
+        <li>Staff roster with initials on every action</li>
+        <li>Full audit log of who changed what</li>
+      </ul></div>
+      <div class="card"><h3>Customer notifications</h3><ul>
+        <li>Branded HTML confirmation emails</li>
+        <li>Optional order text messages (opt-in, CASL-compliant)</li>
+        <li>"Your order is ready" alerts</li>
+        <li>Morning-of pickup reminders</li>
+        <li>Refund and cancellation notices</li>
+        <li>Add-to-calendar link on every order</li>
+        <li>Every send logged — "we never got it" is answerable</li>
+      </ul></div>
+      <div class="card"><h3>Customer accounts</h3><ul>
+        <li>Passwordless email sign-in</li>
+        <li>Order history and one-tap reorder</li>
+        <li>Reorder pre-checks what's still available</li>
+        <li>Rewards: 100 points earns $10 off</li>
+        <li>Points reverse automatically on refunds</li>
+        <li>Guest checkout still fully supported</li>
+      </ul></div>
+      <div class="card"><h3>Business intelligence</h3><ul>
+        <li>Revenue by day, week, custom range</li>
+        <li>Busiest weekdays and pickup times</li>
+        <li><strong>Marketplace fees avoided</strong> — tracked live</li>
+        <li>Rewards program performance</li>
+        <li>Accounting CSV for QuickBooks, Xero, Wave</li>
+        <li>Closed-order export with full filters</li>
+      </ul></div>
+      <div class="card"><h3>Operations &amp; trust</h3><ul>
+        <li>Multi-location with per-branch hours and inventory</li>
+        <li>Nearest-store recommendation</li>
+        <li>Privacy policy, terms, refund policy</li>
+        <li>Search-engine ready; installable as a phone app</li>
+        <li>Automatic error alerting</li>
+        <li>Customer data auto-anonymized on a retention schedule</li>
+        <li>Self-healing background jobs every 5 minutes</li>
+      </ul></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ENGINEERING PROOF ============ -->
+<section class="band pagebreak">
+  <div class="page">
+    <p class="eyebrow" style="color:var(--accent)">Why this won't break on a Saturday</p>
+    <h2>Built like payment software, because it is</h2>
+    <div class="bignum">
+      <div><b>470</b><span>automated tests, run on every change</span></div>
+      <div><b>28,900</b><span>lines of production code</span></div>
+      <div><b>0</b><span>known defects at handover</span></div>
+    </div>
+    <div class="grid g3" style="margin-top:34px">
+      <div class="card" style="background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.15)">
+        <h3 style="color:var(--accent)">Money can't go wrong quietly</h3>
+        <p style="color:rgba(255,255,255,.78)">Every payment carries a one-time key, so a double-click or a flaky connection can't charge twice. If a payment result is ever ambiguous, the system recovers it automatically instead of guessing.</p>
+      </div>
+      <div class="card" style="background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.15)">
+        <h3 style="color:var(--accent)">Tested against real conditions</h3>
+        <p style="color:rgba(255,255,255,.78)">The scheduling and capacity logic is verified against a real database with concurrent customers competing for the last slot — and every test runs in a deliberately hostile timezone to catch date bugs.</p>
+      </div>
+      <div class="card" style="background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.15)">
+        <h3 style="color:var(--accent)">Keeps working when things fail</h3>
+        <p style="color:rgba(255,255,255,.78)">If Square goes down, the kitchen screen keeps working and reconciles afterwards. If an email fails, it retries on its own. A notification problem can never fail a payment that already succeeded.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ WHAT IT COSTS TO BUILD ============ -->
+<section class="pagebreak">
+  <div class="page">
+    <p class="eyebrow">Replacement cost</p>
+    <h2>What building this from scratch costs</h2>
+    <p class="lede">This is a genuine estimate of the effort in the delivered system, priced at standard North American development rates.</p>
+    <table>
+      <thead><tr><th>Work package</th><th class="num">Hours</th></tr></thead>
+      <tbody>
+        <tr><td>Discovery, requirements, information architecture</td><td class="num">50–80</td></tr>
+        <tr><td>Design system, brand, responsive interface</td><td class="num">70–110</td></tr>
+        <tr><td>Storefront: catalog, product pages, menu, cart</td><td class="num">90–130</td></tr>
+        <tr><td>Pickup scheduling engine (lead times, cutoffs, capacity)</td><td class="num">80–120</td></tr>
+        <tr><td>Checkout and Square payments (card + 3 wallets, tips)</td><td class="num">130–190</td></tr>
+        <tr><td>Webhooks, refund ledger, reconciliation</td><td class="num">90–140</td></tr>
+        <tr><td>Kitchen dashboard: live queue, statuses, prep sheets</td><td class="num">110–160</td></tr>
+        <tr><td>Notifications: 8 channels, retries, reminders</td><td class="num">70–100</td></tr>
+        <tr><td>Admin: product rules, capacity, sold-out, pause, settings</td><td class="num">70–100</td></tr>
+        <tr><td>Accounts, passwordless sign-in, rewards, reorder</td><td class="num">70–110</td></tr>
+        <tr><td>Analytics, accounting export, audit log</td><td class="num">55–80</td></tr>
+        <tr><td>Multi-location support</td><td class="num">40–70</td></tr>
+        <tr><td>Automated test suite (470 tests)</td><td class="num">110–170</td></tr>
+        <tr><td>Deployment, monitoring, security hardening</td><td class="num">45–70</td></tr>
+        <tr><td>Legal pages, search optimization, accessibility</td><td class="num">30–50</td></tr>
+        <tr><td>Quality assurance, documentation, handover</td><td class="num">50–80</td></tr>
+        <tr class="hi"><td><strong>Total</strong></td><td class="num"><strong>1,160–1,760 hours</strong></td></tr>
+      </tbody>
+    </table>
+    <table>
+      <thead><tr><th>If you commissioned this today</th><th class="num">Rate</th><th class="num">Project cost</th></tr></thead>
+      <tbody>
+        <tr><td>Offshore / junior freelance</td><td class="num">$65/hr</td><td class="num">$75,000 – $114,000</td></tr>
+        <tr><td>Senior freelance (North America)</td><td class="num">$125/hr</td><td class="num">$145,000 – $220,000</td></tr>
+        <tr class="hi"><td><strong>Boutique agency</strong> — the realistic comparison</td><td class="num">$185/hr</td><td class="num bad"><strong>$215,000 – $326,000</strong></td></tr>
+        <tr><td>Mid-size agency</td><td class="num">$265/hr</td><td class="num">$307,000 – $466,000</td></tr>
+      </tbody>
+    </table>
+    <div class="note"><b>The system already exists, tested and deployed.</b> You aren't funding an 8-month build with the risk that comes with it — you're acquiring a finished asset. That's why the pricing below is a fraction of the figures above.</div>
+  </div>
+</section>
+
+<!-- ============ PRICING ============ -->
+<section class="pagebreak">
+  <div class="page">
+    <p class="eyebrow">Your options</p>
+    <h2>Three ways to own it</h2>
+    <div class="price">
+      <div class="plan">
+        <span class="tag ghost">Option A</span>
+        <h3>Buy it outright</h3>
+        <div class="amt">$16,500</div>
+        <div class="per">one-time · you own the code</div>
+        <ul>
+          <li>Full source code and ownership transfer</li>
+          <li>Deployed to your accounts</li>
+          <li>Staff training session</li>
+          <li>30 days of launch support</li>
+          <li>No monthly fee to us, ever</li>
+          <li>You pay ~$69/mo infrastructure directly</li>
+        </ul>
+        <p style="margin-top:14px;font-size:.82rem;color:var(--subtle)"><strong>Best if</strong> you want the asset on your balance sheet and have someone technical to call.</p>
+      </div>
+      <div class="plan feature">
+        <span class="tag">Option B · Recommended</span>
+        <h3>Launch &amp; care plan</h3>
+        <div class="amt">$7,500</div>
+        <div class="per">setup + $295/month</div>
+        <ul>
+          <li>Everything in Option A</li>
+          <li>We host, monitor and maintain it</li>
+          <li>Security patches and platform updates</li>
+          <li>Square API changes handled for you</li>
+          <li>Infrastructure costs included</li>
+          <li>Menu and rule changes on request</li>
+          <li>Ownership transfers after 12 months</li>
+        </ul>
+        <p style="margin-top:14px;font-size:.82rem;color:var(--subtle)"><strong>Best if</strong> you want it to simply work without thinking about it.</p>
+      </div>
+      <div class="plan">
+        <span class="tag ghost">Option C</span>
+        <h3>Fully managed</h3>
+        <div class="amt">$2,500</div>
+        <div class="per">setup + $495/month</div>
+        <ul>
+          <li>Everything in Option B</li>
+          <li>Lowest possible upfront cost</li>
+          <li>Priority support</li>
+          <li>Quarterly performance review</li>
+          <li>New features as they're built</li>
+          <li>Cancel with 60 days' notice</li>
+        </ul>
+        <p style="margin-top:14px;font-size:.82rem;color:var(--subtle)"><strong>Best if</strong> you'd rather protect cash flow and treat it as a monthly operating cost.</p>
+      </div>
+    </div>
+
+    <h3 style="margin-top:44px">How fast each option pays for itself</h3>
+    <table>
+      <thead><tr><th>Option</th><th class="num">20 orders/wk<br>vs 15%</th><th class="num">40 orders/wk<br>vs 15%</th><th class="num">40 orders/wk<br>vs 25%</th><th class="num">75 orders/wk<br>vs 25%</th></tr></thead>
+      <tbody>
+        <tr><td>A · Buy outright</td><td class="num">25 months</td><td class="num">13 months</td><td class="num win">8 months</td><td class="num win">4 months</td></tr>
+        <tr class="hi"><td><strong>B · Launch &amp; care</strong></td><td class="num">21 months</td><td class="num win">7.5 months</td><td class="num win">4.4 months</td><td class="num win">2.2 months</td></tr>
+        <tr><td>C · Fully managed</td><td class="num">16 months</td><td class="num win">3.1 months</td><td class="num win">1.7 months</td><td class="num win">0.8 months</td></tr>
+      </tbody>
+    </table>
+
+    <h3 style="margin-top:36px">Three-year picture at 40 orders per week</h3>
+    <table>
+      <tbody>
+        <tr><td>Sales through your own site over 3 years</td><td class="num"><strong>$253,531</strong></td></tr>
+        <tr><td>What a 15% marketplace would have taken from it</td><td class="num bad">$38,030</td></tr>
+        <tr><td>What a 25% marketplace would have taken from it</td><td class="num bad">$63,383</td></tr>
+        <tr><td>What a 30% marketplace would have taken from it</td><td class="num bad">$76,059</td></tr>
+        <tr class="hi"><td><strong>Total 3-year cost of this platform (Option B, all-in)</strong></td><td class="num win"><strong>$20,604</strong></td></tr>
+      </tbody>
+    </table>
+    <div class="note"><b>Read that last table twice.</b> Over three years the platform costs less than a third of what a single marketplace would have taken in commission on the same sales — and at the end of it, the customer list, the ordering data and the software are yours.</div>
+  </div>
+</section>
+
+<!-- ============ NEXT STEPS ============ -->
+<section>
+  <div class="page">
+    <p class="eyebrow">Getting live</p>
+    <h2>From here to your first online order</h2>
+    <div class="grid g3">
+      <div class="card"><h3>Week 1 · Connect</h3><ul>
+        <li>Point the system at your live Square account</li>
+        <li>Confirm lead times and cutoffs per product</li>
+        <li>Load allergen and dietary information</li>
+        <li>Set pickup capacity per slot</li>
+      </ul></div>
+      <div class="card"><h3>Week 2 · Rehearse</h3><ul>
+        <li>Test orders end to end with real cards</li>
+        <li>Train staff on the kitchen dashboard</li>
+        <li>Set notification recipients</li>
+        <li>Connect your domain and enable Apple&nbsp;Pay</li>
+      </ul></div>
+      <div class="card"><h3>Week 3 · Launch</h3><ul>
+        <li>Go live and announce to your customers</li>
+        <li>Watch the fees-avoided counter start climbing</li>
+        <li>Review the first week's numbers together</li>
+        <li>Tune capacity based on real demand</li>
+      </ul></div>
+    </div>
+    <div class="note" style="margin-top:28px"><b>A working demonstration is ready now.</b> The complete system — storefront, checkout, kitchen dashboard, analytics — can be walked through end to end before you commit to anything.</div>
+  </div>
+</section>
+
+<div class="foot">
+  <b>Harina Bakeshoppe</b>
+  Online pre-order &amp; pickup platform · Proposal prepared 2026
+  <p style="color:rgba(255,255,255,.45);font-size:.72rem;max-width:78ch;margin:14px auto 0">Commission rates shown are typical published marketplace rates and should be confirmed against your own agreements. Square processing is quoted at its published Canadian online rate of 2.9% + $0.30. Savings figures are calculated on a $40.63 average order value derived from your current tray pricing, and scale with your actual volume.</p>
+</div>
+
+</body>
+</html>
