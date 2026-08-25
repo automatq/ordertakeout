@@ -5,6 +5,7 @@ import { useEffect, useId, useState, useTransition } from "react";
 import { saveProductRulesAction, type AdminResult } from "@/app/actions/admin";
 import { AlertIcon, CheckIcon } from "@/components/ui/icons";
 import { useToast } from "@/components/ui/toast";
+import { slugFromName } from "@/lib/admin/validate";
 import type { ProductRuleRow } from "@/lib/admin/queries";
 import {
   ALLERGEN_LABELS,
@@ -129,7 +130,7 @@ export function ProductRulesForm({
         <Field
           label="URL name"
           name="slug"
-          defaultValue={existing?.slug ?? suggestSlug(productName)}
+          defaultValue={existing?.slug ?? slugFromName(productName)}
           hint="Appears in the product link"
           errors={errors?.["slug"]}
         />
@@ -150,12 +151,20 @@ export function ProductRulesForm({
           errors={errors?.["orderCutoffTime"]}
         />
         <Field
-          label="Max trays per day"
+          label="Max per day"
           name="maxUnitsPerDay"
           type="number"
           defaultValue={existing?.maxUnitsPerDay?.toString() ?? ""}
           hint="Leave blank for no limit"
           errors={errors?.["maxUnitsPerDay"]}
+        />
+        <Field
+          label="Menu position"
+          name="sortOrder"
+          type="number"
+          defaultValue={String(existing?.sortOrder ?? 0)}
+          hint="Low numbers first; ties fall back to alphabetical"
+          errors={errors?.["sortOrder"]}
         />
       </div>
 
@@ -406,10 +415,4 @@ function Field({
   );
 }
 
-function suggestSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60);
-}
+

@@ -8,6 +8,8 @@ import {
   addAvailabilityOverride,
   addBlackoutDate,
   applyProductRulesBulk,
+  isSlugConflict,
+  productIdForSlug,
   clearSlotCapacity,
   removeAvailabilityOverride,
   removeBlackoutDate,
@@ -74,19 +76,44 @@ export async function saveProductRulesAction(formData: FormData): Promise<AdminR
     };
   }
 
-  await saveProductRules({
-    productId: parsed.data.productId,
-    slug: parsed.data.slug,
-    leadTimeDays: parsed.data.leadTimeDays,
-    orderCutoffTime: parsed.data.orderCutoffTime,
-    allowedPickupTimes: times.times,
-    maxUnitsPerDay: parsed.data.maxUnitsPerDay,
-    isOrderable: parsed.data.isOrderable,
-    descriptionMd: parsed.data.descriptionMd ?? null,
-    heroImageUrl: parsed.data.heroImageUrl ?? null,
-    allergens: parsed.data.allergens,
-    dietaryTags: parsed.data.dietaryTags,
-  });
+  /* Pre-check so a duplicate URL name says so, instead of surfacing a raw
+     unique violation the form reports as "check your connection". */
+  const slugOwner = await productIdForSlug(parsed.data.slug);
+  if (slugOwner && slugOwner !== parsed.data.productId) {
+    return {
+      ok: false,
+      error: "Another product already uses that URL name.",
+      fieldErrors: { slug: ["Already taken — try adding the size or flavour"] },
+    };
+  }
+
+  try {
+    await saveProductRules({
+      productId: parsed.data.productId,
+      slug: parsed.data.slug,
+      sortOrder: parsed.data.sortOrder,
+      leadTimeDays: parsed.data.leadTimeDays,
+      orderCutoffTime: parsed.data.orderCutoffTime,
+      allowedPickupTimes: times.times,
+      maxUnitsPerDay: parsed.data.maxUnitsPerDay,
+      isOrderable: parsed.data.isOrderable,
+      descriptionMd: parsed.data.descriptionMd ?? null,
+      heroImageUrl: parsed.data.heroImageUrl ?? null,
+      allergens: parsed.data.allergens,
+      dietaryTags: parsed.data.dietaryTags,
+    });
+  } catch (cause) {
+    /* Two saves racing on the same name: the pre-check passed for both and the
+       database settled it. Same message, so the outcome reads identically. */
+    if (isSlugConflict(cause)) {
+      return {
+        ok: false,
+        error: "Another product already uses that URL name.",
+        fieldErrors: { slug: ["Already taken — try adding the size or flavour"] },
+      };
+    }
+    throw cause;
+  }
 
   updateTag(PRODUCT_CONFIG_TAG);
 

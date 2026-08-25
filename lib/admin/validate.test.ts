@@ -273,3 +273,35 @@ describe("bulk product configuration", () => {
     expect(parsed.success).toBe(false);
   });
 });
+
+describe("menu position", () => {
+  const base = {
+    productId: "P1",
+    slug: "pandesal",
+    leadTimeDays: "0",
+    orderCutoffTime: "20:00",
+    pickupTimes: "06:00",
+    maxUnitsPerDay: "",
+    isOrderable: "true",
+    allergens: "",
+    dietaryTags: "",
+  };
+
+  it("accepts a position and defaults a blank or absent one to zero", () => {
+    // The column existed from the first migration and nothing ever wrote to it,
+    // so every row kept 0 and the menu was permanently alphabetical.
+    const withValue = productRulesSchema.safeParse({ ...base, sortOrder: "3" });
+    expect(withValue.success && withValue.data.sortOrder).toBe(3);
+
+    const blank = productRulesSchema.safeParse({ ...base, sortOrder: "" });
+    expect(blank.success && blank.data.sortOrder).toBe(0);
+
+    const absent = productRulesSchema.safeParse(base);
+    expect(absent.success && absent.data.sortOrder).toBe(0);
+  });
+
+  it("rejects a negative or fractional position", () => {
+    expect(productRulesSchema.safeParse({ ...base, sortOrder: "-1" }).success).toBe(false);
+    expect(productRulesSchema.safeParse({ ...base, sortOrder: "1.5" }).success).toBe(false);
+  });
+});

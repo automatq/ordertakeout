@@ -178,9 +178,35 @@ export async function applyProductRulesBulk(
  * An upsert because the same form serves both cases: configuring a product that
  * Square has but we've never seen, and editing one that already exists.
  */
+/** The unique index behind `products_config.slug`. */
+const PRODUCT_SLUG_UNIQUE_CONSTRAINT = "products_config_slug_key";
+
+/**
+ * Whether a failed save was two products claiming one URL name.
+ *
+ * The pre-check in the action catches the ordinary case and can name the
+ * offender; this covers the gap between that read and the write, where the
+ * database is the only real arbiter.
+ */
+export function isSlugConflict(cause: unknown): boolean {
+  const error = cause as { code?: unknown; constraint?: unknown };
+  return error?.code === "23505" && error?.constraint === PRODUCT_SLUG_UNIQUE_CONSTRAINT;
+}
+
+/** Which product currently owns a URL name, if any. */
+export async function productIdForSlug(slug: string): Promise<string | null> {
+  const [row] = await db()
+    .select({ productId: productsConfig.squareCatalogObjectId })
+    .from(productsConfig)
+    .where(eq(productsConfig.slug, slug))
+    .limit(1);
+  return row?.productId ?? null;
+}
+
 export async function saveProductRules(input: {
   productId: string;
   slug: string;
+  sortOrder: number;
   leadTimeDays: number;
   orderCutoffTime: StoreTime;
   allowedPickupTimes: StoreTime[];
@@ -194,6 +220,7 @@ export async function saveProductRules(input: {
   const values = {
     squareCatalogObjectId: input.productId,
     slug: input.slug,
+    sortOrder: input.sortOrder,
     leadTimeDays: input.leadTimeDays,
     orderCutoffTime: input.orderCutoffTime,
     allowedPickupTimes: input.allowedPickupTimes,

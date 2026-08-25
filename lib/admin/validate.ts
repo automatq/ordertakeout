@@ -75,6 +75,16 @@ export const productRulesSchema = z.object({
     .union([z.literal(""), z.coerce.number().int().min(1).max(MAX_UNITS_PER_DAY)])
     .transform((value) => (value === "" ? null : value)),
   isOrderable: z.enum(["true", "false"]).transform((value) => value === "true"),
+  /**
+   * Menu position, low first. The column has existed since the first migration
+   * and nothing ever wrote to it, so every row kept the default 0 and the
+   * storefront fell back to its alphabetical tiebreak — fine for three trays,
+   * useless for a full menu where staff want bread before cake.
+   */
+  sortOrder: z
+    .union([z.literal(""), z.coerce.number().int().min(0).max(9999)])
+    .optional()
+    .transform((value) => (value === "" || value === undefined ? 0 : value)),
   descriptionMd: z.string().trim().max(2000).optional(),
   /**
    * Staff override for the product photo.
