@@ -12,8 +12,6 @@ import { matchProductConfig } from "@/lib/demo/product-config";
 import { serverEnv } from "@/lib/env";
 import { reportError } from "@/lib/monitoring/report";
 import { squareClient } from "@/lib/square/client";
-import { getInStockVariationIds } from "@/lib/inventory/server";
-import { getStoreLocation } from "@/lib/locations/server";
 
 import { parseAllergens, parseDietaryTags, type Allergen, type DietaryTag } from "./dietary";
 import { attachImageUrls, collectImageIds, extractImageUrls } from "./images";
@@ -248,26 +246,6 @@ export async function getStoreCatalog(): Promise<StoreCatalog> {
 export async function getOrderableProducts(): Promise<StoreCatalog> {
   const catalog = await getStoreCatalog();
   return { ...catalog, products: catalog.products.filter((p) => p.rule.isOrderable) };
-}
-
-/** Catalog enriched with live inventory for one validated pickup location. */
-export async function getOrderableProductsForLocation(locationId: string): Promise<StoreCatalog> {
-  const catalog = await getOrderableProducts();
-  if (catalog.error) return catalog;
-  if (!(await getStoreLocation(locationId))) {
-    return { ...catalog, products: [], error: "Pickup location is not active" };
-  }
-  const inStock = await getInStockVariationIds(
-    locationId,
-    catalog.products.flatMap((product) => product.variants.map((variant) => variant.id)),
-  );
-  return {
-    ...catalog,
-    products: catalog.products.map((product) => ({
-      ...product,
-      variants: product.variants.map((variant) => ({ ...variant, available: inStock.has(variant.id) })),
-    })),
-  };
 }
 
 export async function getProductBySlug(slug: string): Promise<StoreProduct | null> {

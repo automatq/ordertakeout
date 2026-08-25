@@ -1,5 +1,6 @@
 import {
   addCalendarDays,
+  addMinutesToTime,
   compareDates,
   compareTimes,
   normalizeTime,
@@ -36,6 +37,12 @@ export interface ProductRule {
   /** Units of this product that can be produced in one day. Null = unlimited. */
   maxUnitsPerDay: number | null;
   isOrderable: boolean;
+  /**
+   * Minutes the kitchen needs before this item can be collected, for same-day
+   * ordering ("ready in 20 minutes"). Optional so existing callers read as
+   * before; absent means it can be collected at the next offered time.
+   */
+  minimumPrepMinutes?: number;
 }
 
 export interface CartLine {
@@ -70,7 +77,9 @@ export type SlotUnavailableReason =
   | "blackout"
   | "slot_full"
   | "product_daily_capacity"
-  | "product_sold_out";
+  | "product_sold_out"
+  /** Same-day only: this time is already in the past, or inside the prep window. */
+  | "time_passed";
 
 export interface SlotAvailability {
   time: StoreTime;
@@ -190,6 +199,12 @@ export function computeAvailability(input: AvailabilityInput): AvailabilityResul
     };
   }
 
+  /* The slowest item gates same-day collection, mirroring how earliestDate
+     takes the max of the per-product lead times. Null means the prep window
+     runs past midnight, so nothing is collectable today at all. */
+  const prepMinutes = Math.max(0, ...cartRules.map(({ rule }) => rule.minimumPrepMinutes ?? 0));
+  const earliestTimeToday = addMinutesToTime(nowTime, prepMinutes);
+
   const lastDate = addCalendarDays(today, horizonDays);
   const days: DayAvailability[] = [];
 
@@ -199,6 +214,8 @@ export function computeAvailability(input: AvailabilityInput): AvailabilityResul
     date = addCalendarDays(date, 1)
   ) {
     days.push(buildDay(date, offeredTimes, cartRules, {
+      today,
+      earliestTimeToday,
       blackoutDates,
       productDateBlocks,
       slotUsage,
@@ -219,7 +236,11 @@ type CapacityContext = Pick<
   | "slotCapacityOverrides"
   | "defaultSlotCapacity"
   | "productDayUsage"
->;
+> & {
+  today: StoreDate;
+  /** Earliest collectable time today (now + prep). Null once prep passes midnight. */
+  earliestTimeToday: StoreTime | null;
+};
 
 function buildDay(
   date: StoreDate,
@@ -265,6 +286,18 @@ function buildDay(
   }
 
   const slots = offeredTimes.map((time): SlotAvailability => {
+    /* A time that has already passed must never be offered. This was invisible
+       while every product had leadTimeDays >= 1, because that guarantees each
+       offered date is in the future — but at lead time 0 the engine happily
+       offered this morning's slots at 3 PM, and validatePickupSelection ran the
+       same code so the server accepted them too. */
+    if (
+      date === ctx.today &&
+      (ctx.earliestTimeToday === null || compareTimes(time, ctx.earliestTimeToday) < 0)
+    ) {
+      return { time, available: false, reason: "time_passed" };
+    }
+
     const key = slotKey(date, time);
     const capacity = ctx.slotCapacityOverrides.get(key) ?? ctx.defaultSlotCapacity;
     const used = ctx.slotUsage.get(key) ?? 0;

@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  availableInventoryAfterHolds,
-  inventoryShortages,
-  isInStockCount,
-  normalizeInventoryRequests,
-} from "./map";
+import { VARIANT_AVAILABILITY_LIMIT, availableInventoryAfterHolds, inventoryShortages, isInStockCount, normalizeInventoryRequests, variantAvailabilityBatches } from "./map";
 
 describe("isInStockCount", () => {
   it("treats only positive location inventory as available", () => {
@@ -86,5 +81,38 @@ describe("availableInventoryAfterHolds", () => {
       ["OPEN", 5],
       ["MISSING", 0],
     ]);
+  });
+});
+
+describe("variantAvailabilityBatches", () => {
+  const ids = (count: number) => Array.from({ length: count }, (_, i) => `V${i}`);
+
+  it("sends one request for a catalog inside the limit", () => {
+    expect(variantAvailabilityBatches(ids(VARIANT_AVAILABILITY_LIMIT))).toHaveLength(1);
+    expect(variantAvailabilityBatches([])).toEqual([]);
+  });
+
+  it("splits a catalog past the limit instead of failing the request", () => {
+    // Regression: the grid sent every variant on the page in one call while the
+    // action capped the array. Past the cap the parse failed, availability came
+    // back unknown, and every product rendered as in stock until checkout.
+    expect(variantAvailabilityBatches(ids(VARIANT_AVAILABILITY_LIMIT + 1))).toHaveLength(2);
+    expect(variantAvailabilityBatches(ids(500))).toHaveLength(3);
+  });
+
+  it("preserves every id exactly once across batches", () => {
+    const input = ids(453);
+    const flattened = variantAvailabilityBatches(input).flat();
+    expect(flattened).toEqual(input);
+    expect(new Set(flattened).size).toBe(input.length);
+  });
+
+  it("never emits a batch the action would reject", () => {
+    for (const size of [1, 199, 200, 201, 999]) {
+      for (const batch of variantAvailabilityBatches(ids(size))) {
+        expect(batch.length).toBeLessThanOrEqual(VARIANT_AVAILABILITY_LIMIT);
+        expect(batch.length).toBeGreaterThan(0);
+      }
+    }
   });
 });

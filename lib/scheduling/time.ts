@@ -87,6 +87,20 @@ export const compareDates = (a: StoreDate, b: StoreDate): number => a.localeComp
 export const compareTimes = (a: StoreTime, b: StoreTime): number => a.localeCompare(b);
 
 /**
+ * Add minutes to a store-local wall-clock time.
+ *
+ * Returns null when the result crosses midnight rather than wrapping. Wrapping
+ * would turn "20 minutes after 23:50" into 00:10 *today* — a time that already
+ * passed — which is exactly the class of bug this helper exists to prevent.
+ */
+export function addMinutesToTime(time: StoreTime, minutes: number): StoreTime | null {
+  const [hours, mins] = normalizeTime(time).split(":");
+  const total = Number(hours) * 60 + Number(mins) + minutes;
+  if (!Number.isFinite(total) || total < 0 || total >= 24 * 60) return null;
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+
+/**
  * Convert a store-local date + time into a real instant, for Square's
  * `pickup_at` field. This is the one direction where DST genuinely matters, and
  * date-fns-tz resolves it against the zone's rules.

@@ -1,3 +1,30 @@
+/**
+ * Variant ids accepted by one availability lookup.
+ *
+ * Exported so the client chunks by the same number the server enforces. They
+ * used to be implicit and separate: the grid sent every variant on the page
+ * while the action capped at 100, so a catalog past ~101 variants failed its
+ * zod parse, the grid fell back to "availability unknown", and every product
+ * silently rendered as in stock. A customer only discovered the truth at
+ * checkout. Keep this the single source for both sides.
+ */
+export const VARIANT_AVAILABILITY_LIMIT = 200;
+
+/**
+ * Split variant ids into requests the availability action will actually accept.
+ *
+ * Pure and exported so the batching is testable — the original bug was a silent
+ * one (an over-limit request failed its parse and the grid rendered everything
+ * as in stock), and silent failures need a test that would have caught them.
+ */
+export function variantAvailabilityBatches(variantIds: readonly string[]): string[][] {
+  const batches: string[][] = [];
+  for (let start = 0; start < variantIds.length; start += VARIANT_AVAILABILITY_LIMIT) {
+    batches.push(variantIds.slice(start, start + VARIANT_AVAILABILITY_LIMIT));
+  }
+  return batches;
+}
+
 /** Whether a Square inventory-count record makes a variation purchasable. */
 export function isInStockCount(count: { catalogObjectId?: string | null; quantity?: string | null }): boolean {
   return Boolean(count.catalogObjectId && Number(count.quantity ?? "0") > 0);

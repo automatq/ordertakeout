@@ -523,3 +523,129 @@ describe("per-day 86 (staff 'sold out today')", () => {
     });
   });
 });
+
+/* -------------------------------------------------------------------------- */
+
+describe("same-day ordering (lead time 0)", () => {
+  /** Everyday bread: orderable today, collectable across the whole trading day. */
+  const PANDESAL: ProductRule = {
+    productId: "pandesal",
+    leadTimeDays: 0,
+    orderCutoffTime: "20:00",
+    allowedPickupTimes: ["06:00", "09:00", "12:00", "15:00", "18:00"],
+    maxUnitsPerDay: null,
+    isOrderable: true,
+  };
+
+  const sameDayInput = (overrides: Partial<AvailabilityInput> = {}) =>
+    makeInput({
+      cart: [{ productId: PANDESAL.productId, quantity: 1 }],
+      rules: [PANDESAL],
+      ...overrides,
+    });
+
+  it("never offers a pickup time that has already passed", () => {
+    // Regression: buildDay never received the current time, so at 3 PM the
+    // engine offered this morning's 06:00, 09:00 and 12:00 slots. It stayed
+    // hidden because every product had leadTimeDays >= 1, which guarantees the
+    // offered date is in the future.
+    const result = expectOk(computeAvailability(sameDayInput({ now: at("2026-03-02", "15:00") })));
+    const today = result.days.find((day) => day.date === "2026-03-02")!;
+
+    expect(today.slots.filter((slot) => slot.available).map((slot) => slot.time)).toEqual([
+      "15:00",
+      "18:00",
+    ]);
+    for (const time of ["06:00", "09:00", "12:00"]) {
+      expect(today.slots.find((slot) => slot.time === time)).toMatchObject({
+        available: false,
+        reason: "time_passed",
+      });
+    }
+  });
+
+  it("refuses a passed time at checkout, not just in the calendar", () => {
+    // validatePickupSelection runs the same engine, and claimSlot re-validates
+    // through it — so the server-side guard must reject this too.
+    const result = validatePickupSelection(sameDayInput({ now: at("2026-03-02", "15:00") }), {
+      date: "2026-03-02",
+      time: "09:00",
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      rejection: { kind: "slot_unavailable", reason: "time_passed" },
+    });
+  });
+
+  it("still offers a slot at exactly the current time", () => {
+    const result = expectOk(computeAvailability(sameDayInput({ now: at("2026-03-02", "15:00") })));
+    const today = result.days.find((day) => day.date === "2026-03-02")!;
+    expect(today.slots.find((slot) => slot.time === "15:00")?.available).toBe(true);
+  });
+
+  it("holds back slots inside the prep window", () => {
+    const result = expectOk(
+      computeAvailability(
+        sameDayInput({
+          now: at("2026-03-02", "14:50"),
+          rules: [{ ...PANDESAL, minimumPrepMinutes: 20 }],
+        }),
+      ),
+    );
+    const today = result.days.find((day) => day.date === "2026-03-02")!;
+
+    // 15:00 is only 10 minutes away and the kitchen needs 20.
+    expect(today.slots.find((slot) => slot.time === "15:00")).toMatchObject({
+      available: false,
+      reason: "time_passed",
+    });
+    expect(today.slots.find((slot) => slot.time === "18:00")?.available).toBe(true);
+  });
+
+  it("closes the day entirely when the prep window runs past midnight", () => {
+    const result = expectOk(
+      computeAvailability(
+        sameDayInput({
+          now: at("2026-03-02", "23:50"),
+          // Past the 20:00 cutoff, so today is gone anyway — pin the cutoff open
+          // to isolate the midnight-wrap behaviour.
+          rules: [{ ...PANDESAL, orderCutoffTime: "23:59", minimumPrepMinutes: 30 }],
+        }),
+      ),
+    );
+    const today = result.days.find((day) => day.date === "2026-03-02");
+
+    expect(today?.hasAvailability).toBe(false);
+    expect(today?.slots.every((slot) => slot.reason === "time_passed")).toBe(true);
+  });
+
+  it("gates a mixed cart on the slowest item's prep time", () => {
+    const result = expectOk(
+      computeAvailability(
+        sameDayInput({
+          now: at("2026-03-02", "14:30"),
+          cart: [
+            { productId: "pandesal", quantity: 1 },
+            { productId: "hot-pie", quantity: 1 },
+          ],
+          rules: [
+            { ...PANDESAL, minimumPrepMinutes: 0 },
+            { ...PANDESAL, productId: "hot-pie", minimumPrepMinutes: 45 },
+          ],
+        }),
+      ),
+    );
+    const today = result.days.find((day) => day.date === "2026-03-02")!;
+
+    // 15:00 is 30 minutes out; the pie needs 45.
+    expect(today.slots.find((slot) => slot.time === "15:00")?.available).toBe(false);
+    expect(today.slots.find((slot) => slot.time === "18:00")?.available).toBe(true);
+  });
+
+  it("leaves future days untouched", () => {
+    const result = expectOk(computeAvailability(sameDayInput({ now: at("2026-03-02", "15:00") })));
+    const tomorrow = result.days.find((day) => day.date === "2026-03-03")!;
+    expect(tomorrow.slots.every((slot) => slot.available)).toBe(true);
+  });
+});
