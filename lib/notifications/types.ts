@@ -19,6 +19,8 @@ export interface OrderNotification {
   items: { quantity: number; name: string }[];
   note: string | null;
   trackingUrl?: string | null;
+  /** SMS-sized form of trackingUrl — a full one costs most of a 160-char segment. */
+  trackingShortUrl?: string | null;
   /** Per-order consent to transactional texts. */
   customerSmsOptIn?: boolean;
 }

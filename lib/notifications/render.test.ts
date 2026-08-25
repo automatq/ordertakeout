@@ -207,18 +207,56 @@ describe("renderCustomerSms", () => {
     expect(body).toMatch(/^[\x20-\x7E]*$/);
   });
 
-  it("drops the link before ever truncating the message", () => {
+  it("shortens the message rather than dropping the link", () => {
+    // Regression: the link used to be appended only if the whole message fit,
+    // so a long branch name silently cost the customer their pickup pass.
+    const link = `https://harina.example/orders/PT-1001?key=${"x".repeat(80)}`;
     const body = renderCustomerSms({
       kind: "order_ready",
       order: {
         ...base,
         pickupLocationName: "The Extremely Long Location Name At The Far End Of Town Plaza",
-        trackingUrl: `https://harina.example/orders/PT-1001?key=${"x".repeat(80)}`,
+        trackingUrl: link,
+        trackingShortUrl: null,
       },
     });
     expect(body).not.toBeNull();
     expect(body!.length).toBeLessThanOrEqual(SMS_SEGMENT_LIMIT);
-    expect(body).not.toContain("https://");
+    expect(body).toContain(link);
+    expect(body).toContain("PT-1001");
+  });
+
+  it("never truncates the URL itself, even with no room for prose", () => {
+    // Half a link looks clickable and isn't — worse than saying less.
+    const link = `https://harina.example/o/${"x".repeat(120)}`;
+    const body = renderCustomerSms({
+      kind: "order_ready",
+      order: { ...base, trackingUrl: link, trackingShortUrl: null },
+    });
+    expect(body).toContain(link);
+  });
+
+  it("prefers the short link over the full tracking URL", () => {
+    const body = renderCustomerSms({
+      kind: "order_ready",
+      order: { ...base, trackingShortUrl: "https://harina.example/o/1001abcd" },
+    });
+    expect(body).toContain("https://harina.example/o/1001abcd");
+    expect(body).not.toContain("key=abc123");
+  });
+
+  it("texts the paid confirmation, link included", () => {
+    // The confirmation carries the tracking link at the moment the customer
+    // most wants it; email used to be its only channel.
+    const body = renderCustomerSms({
+      kind: "order_paid",
+      order: { ...base, trackingShortUrl: "https://harina.example/o/1001abcd" },
+    });
+    expect(body).not.toBeNull();
+    expect(body!.length).toBeLessThanOrEqual(SMS_SEGMENT_LIMIT);
+    expect(body).toContain("PT-1001");
+    expect(body).toContain("https://harina.example/o/1001abcd");
+    expect(body).toMatch(/^[\x20-\x7E]*$/);
   });
 
   it("strips non-ASCII from fancy location names", () => {
@@ -229,7 +267,12 @@ describe("renderCustomerSms", () => {
     expect(body).toMatch(/^[\x20-\x7E]*$/);
   });
 
-  it("returns null for kinds customers are not texted about", () => {
-    expect(renderCustomerSms({ kind: "order_paid", order: base })).toBeNull();
+  it("returns null for a kind it has no copy for", () => {
+    // Defensive branch: a future event kind must not silently text something
+    // generic. Cast because every kind in the union is currently handled.
+    const unknown = { kind: "order_escheated", order: base } as unknown as Parameters<
+      typeof renderCustomerSms
+    >[0];
+    expect(renderCustomerSms(unknown)).toBeNull();
   });
 });

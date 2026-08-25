@@ -3,6 +3,7 @@ import "server-only";
 import { and, inArray, lt, sql } from "drizzle-orm";
 
 import { sweepMagicLinkTokens } from "@/lib/accounts/magic-link";
+import { sweepPhoneSignInCodes } from "@/lib/accounts/phone-sign-in";
 import { db } from "@/lib/db";
 import { notificationLog, orders, rateLimits, webhookEvents } from "@/lib/db/schema";
 import { serverEnv } from "@/lib/env";
@@ -43,17 +44,20 @@ export async function runFastMaintenance() {
 
 /** The full daily run: everything in the fast pass plus pruning and PII retention. */
 export async function runMaintenance() {
-  const [fast, operationalRows, anonymizedOrders, magicLinkRows] = await Promise.all([
-    runFastMaintenance(),
-    pruneOperationalData(),
-    anonymizeExpiredCustomerData(),
-    sweepMagicLinkTokens(),
-  ]);
+  const [fast, operationalRows, anonymizedOrders, magicLinkRows, phoneCodeRows] =
+    await Promise.all([
+      runFastMaintenance(),
+      pruneOperationalData(),
+      anonymizeExpiredCustomerData(),
+      sweepMagicLinkTokens(),
+      sweepPhoneSignInCodes(),
+    ]);
   return {
     ...fast,
     operationalRows,
     anonymizedOrders,
     magicLinkRows,
+    phoneCodeRows,
   };
 }
 

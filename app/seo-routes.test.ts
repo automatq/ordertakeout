@@ -46,7 +46,7 @@ describe("robots", () => {
     const result = robots();
     expect(result.rules).toMatchObject({
       allow: "/",
-      disallow: ["/staff", "/api/", "/checkout", "/cart", "/account", "/orders"],
+      disallow: ["/staff", "/api/", "/checkout", "/cart", "/account", "/orders", "/o/"],
     });
     expect(result.sitemap).toBe("https://harinabakeshoppe.com/sitemap.xml");
   });

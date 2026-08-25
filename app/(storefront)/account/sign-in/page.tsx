@@ -16,7 +16,8 @@ export default function SignInPage() {
           <p className="eyebrow">My account</p>
           <h1 className="font-display text-ink text-4xl font-normal uppercase">Sign in</h1>
           <p className="text-ink-muted text-sm">
-            Enter the email you order with and we&rsquo;ll send you a one-time sign-in link.
+            No password needed. We&rsquo;ll send a one-time code or link to the number or
+            email you order with.
           </p>
         </header>
 

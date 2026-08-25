@@ -8,7 +8,7 @@ import { db } from "@/lib/db";
 import { notificationLog, orderItems, orderRefunds, orders } from "@/lib/db/schema";
 import { reportError } from "@/lib/monitoring/report";
 import { normalizeTime } from "@/lib/scheduling/time";
-import { orderTrackingUrl } from "@/lib/orders/access";
+import { orderShortUrl, orderTrackingUrl } from "@/lib/orders/access";
 
 import { CHANNELS } from "./channels";
 import type {
@@ -204,6 +204,7 @@ export async function buildOrderNotification(
     items: items.map((item) => ({ quantity: item.quantity, name: item.nameSnapshot })),
     note: order.customerNote,
     trackingUrl: orderTrackingUrl(order.id, order.orderNumber),
+    trackingShortUrl: orderShortUrl(order.id, order.orderNumber),
     customerSmsOptIn: order.customerSmsOptIn,
   };
 }

@@ -28,6 +28,10 @@ vi.mock("@/lib/orders/transitions", () => ({
 vi.mock("@/lib/orders/create", () => ({
   recoverStalePaymentAttempts: mocks.recoverStalePaymentAttempts,
 }));
+vi.mock("@/lib/accounts/phone-sign-in", () => ({
+  sweepPhoneSignInCodes: async () => 0,
+}));
+
 vi.mock("@/lib/accounts/magic-link", () => ({
   sweepMagicLinkTokens: async () => 0,
 }));

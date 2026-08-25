@@ -203,7 +203,13 @@ export const customerAccounts = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("customer_accounts_email_key").on(t.email)],
+  (t) => [
+    uniqueIndex("customer_accounts_email_key").on(t.email),
+    /* Phone sign-in resolves an account by number. Deliberately NOT unique:
+       a household can share one phone across two accounts, and the sign-in
+       path treats that ambiguity as a refusal rather than a guess. */
+    index("customer_accounts_phone_idx").on(t.phone),
+  ],
 );
 
 export const orders = pgTable(
@@ -361,6 +367,33 @@ export const magicLinkTokens = pgTable(
     uniqueIndex("magic_link_tokens_hash_key").on(t.tokenHash),
     index("magic_link_tokens_expires_idx").on(t.expiresAt),
     index("magic_link_tokens_account_idx").on(t.customerAccountId),
+  ],
+);
+
+/**
+ * Six-digit SMS sign-in codes.
+ *
+ * Only a salted hash is stored, like magic-link tokens. The `attempts` counter
+ * is the load-bearing control: six digits is a million possibilities, which is
+ * trivially brute-forced without a cap, so the code is burned after a handful
+ * of wrong guesses regardless of expiry.
+ */
+export const phoneSignInCodes = pgTable(
+  "phone_sign_in_codes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    customerAccountId: uuid("customer_account_id")
+      .notNull()
+      .references(() => customerAccounts.id, { onDelete: "cascade" }),
+    codeHash: text("code_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    attempts: integer("attempts").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("phone_sign_in_codes_account_idx").on(t.customerAccountId),
+    index("phone_sign_in_codes_expires_idx").on(t.expiresAt),
   ],
 );
 

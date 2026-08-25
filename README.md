@@ -333,6 +333,29 @@ can never fail a payment that has already gone through.
 - **The store's SMS is capped to one 160-character segment**, dropping items with a
   "+N more" suffix. A message that silently spills into three segments triples the bill on
   every order.
+- **Customer texts keep the link and shorten the words.** A full tracking URL is ~95 of the
+  160 characters, so appending it "if it fits" meant it never did — every text went out
+  without the one thing that opens the pickup pass. Texts now carry a short link
+  (`/o/<code>`, ~47 characters) and trim the sentence around it; the URL itself is never
+  truncated, because half a link looks clickable and isn't.
+
+## Customer sign-in
+
+Two passwordless methods, both single-use and rate limited per IP and per identifier.
+
+- **Text me a code** (default). Six digits, ten-minute expiry, killed after five wrong
+  guesses — six digits is a million possibilities, so bounding the guesses is what makes it
+  safe, not the expiry. Preferred on phones because a magic link tapped inside a mail app
+  often opens in a different browser than the customer started in, landing the session
+  where they aren't; a code typed into the open tab can't miss, and `autocomplete=
+  "one-time-code"` makes it a one-tap autofill.
+- **Email me a link.** Fifteen-minute expiry, consumed by a button POST so inbox scanners
+  can't burn it with a GET. Email stays the durable identity and the fallback.
+
+`customer_accounts.phone` is deliberately **not** unique — a household can register two
+accounts against one number. Phone sign-in refuses an ambiguous number rather than guessing
+which member is holding the phone; those customers use email, which is always on screen
+beside it. Neither method reveals whether an account exists.
 
 ## Staff dashboard
 

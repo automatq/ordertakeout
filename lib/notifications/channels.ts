@@ -158,7 +158,13 @@ export async function sendCustomerSms(event: NotificationEvent): Promise<Channel
     return skip("sms_customer");
   }
   if (!event.order.customerSmsOptIn) return skip("sms_customer");
+  /* order_paid is included deliberately: the confirmation is the one message
+     that carries the tracking link at the moment the customer most wants it,
+     and email was previously its only channel. Everything here is
+     transactional — order state the customer asked to be told about — never
+     marketing. */
   if (
+    event.kind !== "order_paid" &&
     event.kind !== "order_ready" &&
     event.kind !== "order_canceled" &&
     event.kind !== "order_refunded" &&
