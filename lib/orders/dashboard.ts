@@ -20,6 +20,7 @@ import { addCalendarDays, normalizeTime, storeToday, type StoreDate, type StoreT
 import { getStoreLocationsSafe } from "@/lib/locations/server";
 import { listPauseSettings, type PauseOverview } from "@/lib/settings/pause";
 import type { StoreLocation } from "@/lib/locations/types";
+import { listSlotCapacityDefaults } from "@/lib/settings/capacity";
 import { DEFAULT_MAX_ORDERS_PER_SLOT } from "@/lib/store";
 
 /**
@@ -140,11 +141,68 @@ export function groupDashboardOrders(
  * Defaults to a window around today rather than everything: staff care about
  * what's coming, and the query must stay cheap as order history grows.
  */
+/**
+ * How many orders a pickup slot can take, across the locations on screen.
+ *
+ * Four things can answer this and the order matters:
+ *
+ *   1. a per-date row for that location   — staff capped one branch on one day
+ *   2. a per-date row for all locations   — staff capped everyone on one day
+ *   3. the location's configured default  — set in Settings
+ *   4. the shop-wide configured default   — set in Settings
+ *   5. the compiled-in fallback           — nothing has ever been configured
+ *
+ * A per-date row beating the standing default is the whole point of the
+ * per-date control; if it did not, closing a single afternoon would be
+ * impossible without changing the everyday number.
+ *
+ * Pure, and exported, because it used to be a closure resolving step 3 and 4 to
+ * a hardcoded 5. The storefront honoured what the bakery set, this screen did
+ * not, and the two quietly disagreed — a shop with a 30-order default saw
+ * "1 of 15" here. Nobody would have found that except by adding up the numbers.
+ */
+export function resolveSlotCapacity(
+  date: StoreDate,
+  time: StoreTime,
+  representedLocations: readonly string[],
+  sources: {
+    perDate: readonly {
+      squareLocationId: string | null;
+      pickupDate: string;
+      pickupTime: string;
+      maxOrders: number;
+    }[];
+    defaults: readonly { locationId: string | null; maxOrdersPerSlot: number }[];
+  },
+): number {
+  // Postgres hands back HH:mm:ss where the UI uses HH:mm.
+  const normalized = normalizeTime(time);
+  const perDateFor = (id: string | null) =>
+    sources.perDate.find(
+      (row) =>
+        row.squareLocationId === id &&
+        row.pickupDate === date &&
+        normalizeTime(row.pickupTime) === normalized,
+    )?.maxOrders;
+
+  const everywhereToday = perDateFor(null);
+  const globalDefault = sources.defaults.find((row) => row.locationId === null)?.maxOrdersPerSlot;
+  const defaultFor = (id: string) =>
+    sources.defaults.find((row) => row.locationId === id)?.maxOrdersPerSlot ??
+    globalDefault ??
+    DEFAULT_MAX_ORDERS_PER_SLOT;
+
+  return representedLocations.reduce(
+    (total, id) => total + (perDateFor(id) ?? everywhereToday ?? defaultFor(id)),
+    0,
+  );
+}
+
 export async function getDashboardData(daysAhead = 7, locationId?: string): Promise<DashboardData> {
   const today = storeToday(new Date(), serverEnv().STORE_TIMEZONE);
   const until = addCalendarDays(today, daysAhead);
 
-  const [rows, locations, ruleRows, capacityRows] = await Promise.all([
+  const [rows, locations, ruleRows, capacityRows, capacityDefaults] = await Promise.all([
     db()
       .select()
       .from(orders)
@@ -174,6 +232,7 @@ export async function getDashboardData(daysAhead = 7, locationId?: string): Prom
             : undefined,
         ),
       ),
+    listSlotCapacityDefaults(),
   ]);
 
   const [items, verifications] = await Promise.all([
@@ -202,32 +261,19 @@ export async function getDashboardData(daysAhead = 7, locationId?: string): Prom
     ),
   ];
 
-  const capacityFor = (date: StoreDate, time: StoreTime): number => {
-    const normalized = normalizeTime(time);
-    const globalOverride = capacityRows.find(
-      (row) =>
-        row.squareLocationId === null &&
-        row.pickupDate === date &&
-        normalizeTime(row.pickupTime) === normalized,
-    )?.maxOrders;
-    const representedLocations = locationId
-      ? [locationId]
-      : locations.length
-        ? locations.map((location) => location.id)
-        : rowLocationIds.length
-          ? rowLocationIds
-          : ["legacy"];
+  const representedLocations = locationId
+    ? [locationId]
+    : locations.length
+      ? locations.map((location) => location.id)
+      : rowLocationIds.length
+        ? rowLocationIds
+        : ["legacy"];
 
-    return representedLocations.reduce((total, id) => {
-      const ownOverride = capacityRows.find(
-        (row) =>
-          row.squareLocationId === id &&
-          row.pickupDate === date &&
-          normalizeTime(row.pickupTime) === normalized,
-      )?.maxOrders;
-      return total + (ownOverride ?? globalOverride ?? DEFAULT_MAX_ORDERS_PER_SLOT);
-    }, 0);
-  };
+  const capacityFor = (date: StoreDate, time: StoreTime): number =>
+    resolveSlotCapacity(date, time, representedLocations, {
+      perDate: capacityRows,
+      defaults: capacityDefaults,
+    });
 
   const days: DayGroup[] = [...byDate.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
