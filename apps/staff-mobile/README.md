@@ -40,6 +40,7 @@ build must talk HTTPS — which the deployed site does anyway.
 | Pickup queue | Grouped by day and slot, polls every 15s, pull to refresh |
 | Scanner | Camera or typed order number → check the name → hand over |
 | Service | Pause ordering, and say what has run out today |
+| Prep | What to bake, per day, totals first |
 
 ## The lock
 
@@ -151,11 +152,32 @@ failed is the one outcome worth ruling out.
 The work is shared with the web dashboard — `lib/staff/service-controls.ts` — so
 a rule like "you cannot mark something sold out for yesterday" exists once.
 
-## What's next, in order
+## Prep
 
-1. **The prep timeline.**
-2. **Haptics on a successful scan.** A counter is loud and staff are not looking
-   at the screen while they reach for a box.
+The same orders as the queue, pivoted. The queue is a list you work down at the
+counter; prep is what somebody reads at five in the morning, and at that hour
+"4 × 25pc Cheese" is useful where a column of customer names is not. Totals
+first, slot breakdown underneath.
+
+The totals are summed on the server by the same function the web timeline uses.
+Re-adding them from the order items on the phone would be a second answer to
+"what do we make today", and the two would disagree the first time an order was
+cancelled — which is the expensive direction of that mistake.
+
+The web draws lanes across a horizontal rail. That does not survive a phone:
+sixty pickup times become sixty columns nobody can scan. Vertical sections here,
+and only days that actually have orders. It polls every minute rather than every
+fifteen seconds — nothing here changes between orders in a way anyone acts on,
+and this screen gets left open on a bench.
+
+## What's next
+
+**Haptics on a successful scan.** A counter is loud and staff are not looking at
+the screen while they reach for a box.
+
+Beyond that the staff app covers what the Phase 3 plan scoped for it. Sales
+analytics, the settings forms, the print sheet and the audit log stay on the web
+dashboard on purpose — see the top of this file.
 
 expo-router goes in with pickup verification. At two screens it would be configuration
 without a payoff; navigation is a piece of state in `App.tsx` until then.

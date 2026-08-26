@@ -35,6 +35,8 @@ export interface QueueOrder {
 export interface QueueDay {
   date: string;
   orderCount: number;
+  /** Totals per product, biggest first — what the kitchen bakes from. */
+  production: { name: string; quantity: number }[];
   slots: { time: string; capacity: number; orders: QueueOrder[] }[];
 }
 

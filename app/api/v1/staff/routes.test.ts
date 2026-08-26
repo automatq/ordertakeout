@@ -15,7 +15,12 @@ const mocks = vi.hoisted(() => ({
   recordAudit: vi.fn(async () => {}),
 }));
 
-vi.mock("@/lib/orders/dashboard", () => ({ getDashboardData: mocks.getDashboardData }));
+/* Only the query is stubbed. summariseProduction is pure and is the thing the
+   production tests below are actually checking, so it stays real. */
+vi.mock("@/lib/orders/dashboard", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/orders/dashboard")>()),
+  getDashboardData: mocks.getDashboardData,
+}));
 vi.mock("@/lib/env", () => ({ serverEnv: mocks.serverEnv }));
 vi.mock("@/lib/audit/log", () => ({ recordAudit: mocks.recordAudit }));
 vi.mock("@/lib/security/rate-limit", () => ({
@@ -189,6 +194,41 @@ describe("GET /api/v1/staff/orders", () => {
     expect(order.pickupDate).toBe("2026-08-26");
     // HH:mm on the wire, whatever shape the column came back in.
     expect(order.pickupTime).toBe("16:00");
+  });
+
+  it("totals the day's production for the kitchen", async () => {
+    mocks.getDashboardData.mockResolvedValue(
+      dashboardData([
+        dashboardOrder({ id: "a", items: [{ nameSnapshot: "Ensaymada tray", quantity: 2 }] }),
+        dashboardOrder({ id: "b", items: [{ nameSnapshot: "Ensaymada tray", quantity: 3 }] }),
+        dashboardOrder({ id: "c", items: [{ nameSnapshot: "Hopia box", quantity: 1 }] }),
+      ]),
+    );
+    const response = await GET(queueRequest({ authorization: `Bearer ${await validToken()}` }));
+    const { data } = await response.json();
+    // Biggest first, so the thing that takes longest to bake reads first.
+    expect(data.days[0].production).toEqual([
+      { name: "Ensaymada tray", quantity: 5 },
+      { name: "Hopia box", quantity: 1 },
+    ]);
+  });
+
+  it("leaves cancelled orders out of the production totals", async () => {
+    /* Baking for an order nobody is collecting is the expensive direction of
+       this mistake. */
+    mocks.getDashboardData.mockResolvedValue(
+      dashboardData([
+        dashboardOrder({ id: "a", items: [{ nameSnapshot: "Ensaymada tray", quantity: 2 }] }),
+        dashboardOrder({
+          id: "b",
+          status: "canceled",
+          items: [{ nameSnapshot: "Ensaymada tray", quantity: 9 }],
+        }),
+      ]),
+    );
+    const response = await GET(queueRequest({ authorization: `Bearer ${await validToken()}` }));
+    const { data } = await response.json();
+    expect(data.days[0].production).toEqual([{ name: "Ensaymada tray", quantity: 2 }]);
   });
 });
 

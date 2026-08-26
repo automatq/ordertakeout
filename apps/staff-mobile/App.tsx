@@ -6,6 +6,7 @@ import { Locked } from "./src/screens/Locked";
 import { Login } from "./src/screens/Login";
 import { Queue } from "./src/screens/Queue";
 import { Service } from "./src/screens/Service";
+import { Timeline } from "./src/screens/Timeline";
 import { Scan } from "./src/screens/Scan";
 import {
   canUseBiometrics,
@@ -46,7 +47,7 @@ type Phase =
   | { kind: "locked"; failed: boolean }
   | { kind: "signedIn"; token: string; protection: Protection };
 
-type Screen = "queue" | "scan" | "service";
+type Screen = "queue" | "scan" | "service" | "prep";
 
 export default function App() {
   const [phase, setPhase] = useState<Phase>({ kind: "restoring" });
@@ -149,6 +150,8 @@ export default function App() {
       ) : phase.kind === "signedIn" ? (
         screen === "scan" ? (
           <Scan token={phase.token} onClose={() => setScreen("queue")} />
+        ) : screen === "prep" ? (
+          <Timeline token={phase.token} onClose={() => setScreen("queue")} />
         ) : screen === "service" ? (
           <Service
             token={phase.token}
@@ -163,6 +166,7 @@ export default function App() {
             onSignedOut={signOut}
             onScan={() => setScreen("scan")}
             onService={() => setScreen("service")}
+            onPrep={() => setScreen("prep")}
           />
         )
       ) : (

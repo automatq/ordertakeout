@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { summariseProduction } from "@/lib/orders/dashboard";
 import type { DashboardData, DashboardOrder } from "@/lib/orders/dashboard";
 import type { PickupVerificationPreview } from "@/lib/orders/pickup-verification";
 import { normalizeTime } from "@/lib/scheduling/time";
@@ -65,6 +66,11 @@ export const queueDaySchema = z
   .object({
     date: z.string(),
     orderCount: z.number().int(),
+    /* What the kitchen bakes from. Summed server-side with the same function the
+       web timeline uses, rather than re-added from `items` on the phone — two
+       implementations of "what do we make today" is exactly the kind of thing
+       that quietly disagrees, and cancelled orders are the reason it would. */
+    production: z.array(queueItemSchema),
     slots: z.array(queueSlotSchema),
   })
   .strict();
@@ -115,6 +121,7 @@ export function toQueueResponse(data: DashboardData): QueueResponse {
     days: data.days.map((day) => ({
       date: day.date,
       orderCount: day.orderCount,
+      production: summariseProduction(day.slots.flatMap((slot) => slot.orders)),
       slots: day.slots.map((slot) => ({
         time: slot.time,
         capacity: slot.capacity,
