@@ -6,13 +6,11 @@ import { z } from "zod";
 import { requireStaffSession } from "@/lib/auth/guard";
 import { revokeDevice } from "@/lib/auth/device-session";
 import {
-  addAvailabilityOverride,
   addBlackoutDate,
   applyProductRulesBulk,
   isSlugConflict,
   productIdForSlug,
   clearSlotCapacity,
-  removeAvailabilityOverride,
   removeBlackoutDate,
   saveProductRules,
   setSlotCapacity,
@@ -30,14 +28,19 @@ import { CATALOG_TAG, PRODUCT_CONFIG_TAG, getStoreCatalog } from "@/lib/catalog/
 import { getStoreLocation } from "@/lib/locations/server";
 import { recordAudit } from "@/lib/audit/log";
 import { saveStaffMember, setStaffMemberActive } from "@/lib/staff/roster";
+import {
+  clearSoldOut,
+  markSoldOut,
+  pauseInputSchema,
+  pauseOrdering,
+  soldOutInputSchema,
+} from "@/lib/staff/service-controls";
 import { serverEnv } from "@/lib/env";
-import { storeToday } from "@/lib/scheduling/time";
 import {
   NOTIFY_RECIPIENTS_KEY,
   notificationRecipientsSchema,
 } from "@/lib/settings/notifications";
 import { setSlotCapacityDefault } from "@/lib/settings/capacity";
-import { setOrderingPause } from "@/lib/settings/pause";
 import { setSetting, SETTINGS_TAG } from "@/lib/settings/store";
 
 /**
@@ -367,109 +370,35 @@ export async function resyncCatalogAction(): Promise<AdminResult> {
   return { ok: true };
 }
 
-const pauseActionSchema = z.object({
-  scope: z.union([z.literal("global"), z.object({ locationId: z.string().min(1) })]),
-  paused: z.boolean(),
-  note: z.string().trim().max(200).optional(),
-  /** Optional auto-resume, minutes from now. */
-  resumeMinutes: z.number().int().min(5).max(24 * 60).optional(),
-  staffInitials: z.string().trim().max(6).optional(),
-});
-
-/** One-tap "stop taking orders" from the dashboard header (and settings). */
+/**
+ * One-tap "stop taking orders" from the dashboard header (and settings).
+ *
+ * A thin adapter: authorise, hand the parsed input to the shared service, and
+ * translate the result into what the forms expect. The staff app's API route is
+ * the same three lines with a different notion of "authorise" and "report".
+ */
 export async function setOrderingPauseAction(input: unknown): Promise<AdminResult> {
   await requireStaffSession();
-  const parsed = pauseActionSchema.safeParse(input);
+  const parsed = pauseInputSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Check the pause details." };
-
-  const { scope, paused, note, resumeMinutes, staffInitials } = parsed.data;
-  if (scope !== "global" && !(await getStoreLocation(scope.locationId))) {
-    return { ok: false, error: "That pickup location is no longer active." };
-  }
-
-  const initials = staffInitials?.trim().toUpperCase() || null;
-  await setOrderingPause(scope, {
-    paused,
-    note: paused ? note?.trim() || null : null,
-    resumeAt: paused && resumeMinutes
-      ? new Date(Date.now() + resumeMinutes * 60_000).toISOString()
-      : null,
-    setBy: initials,
-  });
-  updateTag(SETTINGS_TAG);
-
-  await recordAudit({
-    actorType: "staff",
-    actorInitials: initials,
-    action: paused ? "ordering.paused" : "ordering.resumed",
-    entityType: scope === "global" ? "store" : "location",
-    entityId: scope === "global" ? "global" : scope.locationId,
-    metadata: { note: note?.trim() || null, resumeMinutes: resumeMinutes ?? null },
-  });
-  return { ok: true };
+  return pauseOrdering(parsed.data, updateTag);
 }
-
-const eightySixSchema = z.object({
-  productId: z.string().min(1),
-  /** Explicit location ids — the quick action fans out one row per location. */
-  locationIds: z.array(z.string().min(1)).min(1).max(20),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  reason: z.string().trim().max(120).optional(),
-  staffInitials: z.string().trim().max(6).optional(),
-});
 
 /** "Sold out today": block one product for one date without touching its permanent settings. */
 export async function add86Action(input: unknown): Promise<AdminResult> {
   await requireStaffSession();
-  const parsed = eightySixSchema.safeParse(input);
+  const parsed = soldOutInputSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Check the product, date, and locations." };
-
-  const { productId, locationIds, date, reason, staffInitials } = parsed.data;
-  const today = storeToday(new Date(), serverEnv().STORE_TIMEZONE);
-  if (date < today) return { ok: false, error: "Pick today or a future date." };
-  for (const locationId of locationIds) {
-    if (!(await getStoreLocation(locationId))) {
-      return { ok: false, error: "One of those pickup locations is no longer active." };
-    }
-  }
-
-  const initials = staffInitials?.trim().toUpperCase() || null;
-  for (const locationId of locationIds) {
-    await addAvailabilityOverride({
-      productId,
-      locationId,
-      date,
-      reason: reason?.trim() || null,
-      createdBy: initials,
-    });
-  }
-  updateTag(PRODUCT_CONFIG_TAG);
-  await recordAudit({
-    actorType: "staff",
-    actorInitials: initials,
-    action: "product.86ed",
-    entityType: "product",
-    entityId: productId,
-    metadata: { date, locationIds, reason: reason?.trim() || null },
-  });
-  return { ok: true };
+  return markSoldOut(parsed.data, updateTag);
 }
 
 export async function remove86Action(input: unknown): Promise<AdminResult> {
   await requireStaffSession();
-  const parsed = z.object({ id: z.uuid(), staffInitials: z.string().trim().max(6).optional() }).safeParse(input);
+  const parsed = z
+    .object({ id: z.uuid(), staffInitials: z.string().trim().max(6).optional() })
+    .safeParse(input);
   if (!parsed.success) return { ok: false, error: "That entry no longer exists." };
-
-  await removeAvailabilityOverride(parsed.data.id);
-  updateTag(PRODUCT_CONFIG_TAG);
-  await recordAudit({
-    actorType: "staff",
-    actorInitials: parsed.data.staffInitials?.trim().toUpperCase() || null,
-    action: "product.86_removed",
-    entityType: "product",
-    entityId: parsed.data.id,
-  });
-  return { ok: true };
+  return clearSoldOut(parsed.data.id, updateTag, parsed.data.staffInitials);
 }
 
 const staffMemberSchema = z.object({

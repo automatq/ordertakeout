@@ -39,6 +39,7 @@ build must talk HTTPS — which the deployed site does anyway.
 | Locked | Face ID / Touch ID / passcode, with a way back to the password |
 | Pickup queue | Grouped by day and slot, polls every 15s, pull to refresh |
 | Scanner | Camera or typed order number → check the name → hand over |
+| Service | Pause ordering, and say what has run out today |
 
 ## The lock
 
@@ -128,9 +129,31 @@ with the web App Router, and near-free universal links — is for the customer a
 which has magic links and short links to catch. Revisit it there, or here once
 SDK 57's tree settles.
 
+## Service controls
+
+Pausing and "sold out" live on one screen because they are the same moment: the
+oven died, or the ube ran out, and somebody has to say so before the next order
+arrives. Any delay is an order the shop cannot fill, so nothing is behind a menu.
+
+A branch toggle is disabled while the whole shop is paused, and says "Paused
+everywhere". Turning it on there would change nothing a customer could see, so
+offering it would be a lie.
+
+Marking something sold out applies to every branch at once. Per-location is more
+precise and the web dashboard offers it — but the person tapping this is standing
+in one shop, has just looked in one empty tray, and cannot answer for anywhere
+else. The careful version belongs on a keyboard.
+
+Every change refetches rather than patching local state. These controls decide
+whether the shop is taking money; a toggle that looks flipped when the write
+failed is the one outcome worth ruling out.
+
+The work is shared with the web dashboard — `lib/staff/service-controls.ts` — so
+a rule like "you cannot mark something sold out for yesterday" exists once.
+
 ## What's next, in order
 
-1. **86 / pause**, then the prep timeline.
+1. **The prep timeline.**
 2. **Haptics on a successful scan.** A counter is loud and staff are not looking
    at the screen while they reach for a box.
 

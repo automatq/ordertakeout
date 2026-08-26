@@ -22,11 +22,13 @@ export function Queue({
   protection,
   onSignedOut,
   onScan,
+  onService,
 }: {
   token: string;
   protection: Protection;
   onSignedOut: () => void;
   onScan: () => void;
+  onService: () => void;
 }) {
   const [data, setData] = useState<QueueData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -104,9 +106,14 @@ export function Queue({
               : "Everything's been started"}
           </Text>
         </View>
-        <Pressable onPress={onSignedOut} hitSlop={12}>
-          <Text style={styles.signOut}>Sign out</Text>
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable onPress={onService} hitSlop={12}>
+            <Text style={styles.signOut}>Service</Text>
+          </Pressable>
+          <Pressable onPress={onSignedOut} hitSlop={12}>
+            <Text style={styles.signOutMuted}>Sign out</Text>
+          </Pressable>
+        </View>
       </View>
 
       {/* The counter's main action, so it sits above the list rather than behind
@@ -213,7 +220,9 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
   title: { fontSize: 30, fontWeight: "700", color: theme.ink },
   subtitle: { fontSize: 15, color: theme.inkMuted, marginTop: 2 },
-  signOut: { fontSize: 15, color: theme.brand, fontWeight: "600", paddingTop: 8 },
+  headerActions: { flexDirection: "row", gap: 16, paddingTop: 8 },
+  signOut: { fontSize: 15, color: theme.brand, fontWeight: "600" },
+  signOutMuted: { fontSize: 15, color: theme.inkSubtle, fontWeight: "600" },
   staleBanner: {
     backgroundColor: theme.warnSurface,
     color: theme.warn,

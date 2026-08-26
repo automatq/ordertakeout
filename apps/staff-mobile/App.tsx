@@ -5,6 +5,7 @@ import { StatusBar } from "expo-status-bar";
 import { Locked } from "./src/screens/Locked";
 import { Login } from "./src/screens/Login";
 import { Queue } from "./src/screens/Queue";
+import { Service } from "./src/screens/Service";
 import { Scan } from "./src/screens/Scan";
 import {
   canUseBiometrics,
@@ -45,11 +46,14 @@ type Phase =
   | { kind: "locked"; failed: boolean }
   | { kind: "signedIn"; token: string; protection: Protection };
 
-type Screen = "queue" | "scan";
+type Screen = "queue" | "scan" | "service";
 
 export default function App() {
   const [phase, setPhase] = useState<Phase>({ kind: "restoring" });
   const [screen, setScreen] = useState<Screen>("queue");
+  /* Bumped when service controls change, so the queue refetches instead of
+     showing a state the shop just left. */
+  const [revision, setRevision] = useState(0);
 
   const lock = useCallback(() => {
     /* Dropping the token from memory *is* the lock. Getting it back means asking
@@ -145,12 +149,20 @@ export default function App() {
       ) : phase.kind === "signedIn" ? (
         screen === "scan" ? (
           <Scan token={phase.token} onClose={() => setScreen("queue")} />
+        ) : screen === "service" ? (
+          <Service
+            token={phase.token}
+            onClose={() => setScreen("queue")}
+            onChanged={() => setRevision((n) => n + 1)}
+          />
         ) : (
           <Queue
+            key={revision}
             token={phase.token}
             protection={phase.protection}
             onSignedOut={signOut}
             onScan={() => setScreen("scan")}
+            onService={() => setScreen("service")}
           />
         )
       ) : (

@@ -161,3 +161,60 @@ export const confirmPickup = (
     headers: { Authorization: `Bearer ${token}` },
     body: JSON.stringify({ intent: "confirm", method, value, staffInitials }),
   });
+
+
+export interface ServiceLocation {
+  id: string;
+  name: string;
+  paused: boolean;
+  note: string | null;
+  resumeAt: string | null;
+}
+
+export interface SoldOutEntry {
+  id: string;
+  productId: string;
+  productName: string;
+  locationId: string | null;
+  locationName: string;
+  reason: string | null;
+}
+
+export interface ServiceState {
+  today: string;
+  global: { paused: boolean; note: string | null; resumeAt: string | null };
+  locations: ServiceLocation[];
+  soldOut: SoldOutEntry[];
+  products: { id: string; name: string }[];
+}
+
+/** A change the server declined, with a sentence for the counter. */
+export type Applied = { applied: true } | { applied: false; reason: string };
+
+const authed = (token: string) => ({ Authorization: `Bearer ${token}` });
+
+export const fetchService = (token: string) =>
+  request<ServiceState>("/staff/service", { headers: authed(token) });
+
+const post = (token: string, body: unknown) =>
+  request<Applied>("/staff/service", {
+    method: "POST",
+    headers: authed(token),
+    body: JSON.stringify(body),
+  });
+
+export const setPaused = (
+  token: string,
+  scope: "global" | { locationId: string },
+  paused: boolean,
+  note?: string,
+) => post(token, { intent: "pause", scope, paused, ...(note ? { note } : {}) });
+
+export const markSoldOut = (
+  token: string,
+  productId: string,
+  locationIds: string[],
+  date: string,
+) => post(token, { intent: "sold-out", productId, locationIds, date });
+
+export const putBackOn = (token: string, id: string) => post(token, { intent: "back-on", id });
