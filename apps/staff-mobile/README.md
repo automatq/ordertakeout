@@ -35,24 +35,49 @@ build must talk HTTPS — which the deployed site does anyway.
 
 | Screen | State |
 |---|---|
-| Sign in | Password → bearer token, stored in the Keychain |
+| Sign in | Password → bearer token |
+| Locked | Face ID / Touch ID / passcode, with a way back to the password |
 | Pickup queue | Grouped by day and slot, polls every 15s, pull to refresh |
+
+## The lock
+
+The token is stored with `requireAuthentication`, not guarded by a call to
+`authenticateAsync()`. The difference is the whole security value:
+`authenticateAsync()` returns a JavaScript boolean, and anyone running a patched
+bundle can make it return `true`. `requireAuthentication` makes the OS refuse to
+release the bytes, and there is no boolean in that path to patch.
+
+Locking is therefore just dropping the token from memory. Getting it back means
+asking the OS again, which *is* the prompt.
+
+It locks after ten idle minutes, where idle means no touches — the queue
+refreshes itself every fifteen seconds, so anything keyed on network activity
+would hold the session open forever. Backgrounded time is measured by wall clock
+rather than a timer, because timers do not run reliably while suspended and a
+tablet shut in a drawer overnight would otherwise come back unlocked.
+
+Set `EXPO_PUBLIC_LOCK_MINUTES` to watch it happen without waiting ten minutes.
+
+Two failure modes are handled because they would otherwise strand a shop:
+
+- **A newly enrolled fingerprint invalidates the stored item permanently.** From
+  JavaScript that is indistinguishable from someone cancelling the prompt, so
+  both land on the lock screen and it offers "Use the password instead".
+- **A handset with no passcode or biometric** cannot enforce any of this. The
+  app stores the token at the weaker level and says so on a permanent red strip,
+  rather than implying a protection it does not have.
 
 ## What's next, in order
 
-1. **Biometric gate and idle auto-lock.** The token is in SecureStore but not
-   behind `requireAuthentication`, and there is no auto-lock. Three people share
-   a counter tablet that sits face-up showing customer names, phone numbers and
-   order values. This matters more than any new screen.
-2. **Per-device revocation.** The token is signed with the shared staff
+1. **Per-device revocation.** The token is signed with the shared staff
    password, so a lost handset can only be revoked by rotating it — which signs
    out every tablet mid-shift, which means nobody ever will. Needs the
    `staff_devices` table.
-3. **Pickup verification.** The biggest native win: scanning a customer's pass
+2. **Pickup verification.** The biggest native win: scanning a customer's pass
    with the camera instead of reading an order number aloud.
-4. **86 / pause**, then the prep timeline.
+3. **86 / pause**, then the prep timeline.
 
-expo-router goes in with screen 3. At two screens it would be configuration
+expo-router goes in with pickup verification. At two screens it would be configuration
 without a payoff; navigation is a piece of state in `App.tsx` until then.
 
 ## Shared code

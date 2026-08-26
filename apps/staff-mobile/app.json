@@ -12,6 +12,13 @@
     "android": {
       "package": "com.harinabakeshoppe.staff"
     },
-    "plugins": ["expo-secure-store"]
+    "plugins": [
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": "Unlock Harina Staff to see today's pickups."
+        }
+      ]
+    ]
   }
 }

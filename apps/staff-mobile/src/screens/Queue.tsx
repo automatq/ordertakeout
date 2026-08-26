@@ -10,13 +10,22 @@ import {
 } from "react-native";
 
 import { fetchQueue, type Queue as QueueData, type QueueOrder } from "../api";
+import type { Protection } from "../session";
 import { formatDate, formatMoney, formatTime } from "../format";
 import { statusStyle, theme } from "../theme";
 
 /** How often the queue refreshes itself while the screen is open. */
 const POLL_MS = 15_000;
 
-export function Queue({ token, onSignedOut }: { token: string; onSignedOut: () => void }) {
+export function Queue({
+  token,
+  protection,
+  onSignedOut,
+}: {
+  token: string;
+  protection: Protection;
+  onSignedOut: () => void;
+}) {
   const [data, setData] = useState<QueueData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -101,6 +110,17 @@ export function Queue({ token, onSignedOut }: { token: string; onSignedOut: () =
       {/* Shown above the list, not instead of it — the stale queue is still
           the most useful thing on screen while the connection is down. */}
       {error ? <Text style={styles.staleBanner}>{error} Showing the last update.</Text> : null}
+
+      {/* A tablet with no passcode holds a staff token nothing is guarding. That
+          is worth a permanent strip rather than a note in a settings screen
+          nobody opens — the same reasoning as a smoke alarm with the battery
+          out. */}
+      {protection === "device-only" ? (
+        <Text style={styles.insecureBanner}>
+          This device has no passcode or fingerprint, so the app can't lock itself. Anyone
+          holding it can read every order.
+        </Text>
+      ) : null}
 
       {empty ? (
         <View style={styles.empty}>
@@ -189,6 +209,14 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 12,
     fontSize: 13,
+  },
+  insecureBanner: {
+    backgroundColor: "#fee2e2",
+    color: theme.danger,
+    padding: 12,
+    borderRadius: 12,
+    fontSize: 13,
+    lineHeight: 18,
   },
   errorTitle: { fontSize: 16, color: theme.ink },
   retry: { backgroundColor: theme.brand, borderRadius: 999, paddingHorizontal: 24, paddingVertical: 12 },
