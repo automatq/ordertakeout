@@ -8,6 +8,7 @@ import { ProductRulesForm } from "@/components/staff/product-rules-form";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SearchIcon } from "@/components/ui/icons";
 import type { ProductRuleRow } from "@/lib/admin/queries";
+import { UNCATEGORISED } from "@/lib/catalog/categories";
 
 /**
  * The ordering-rules list.
@@ -25,6 +26,8 @@ export interface RuleListItem {
   id: string;
   name: string;
   imageUrl: string | null;
+  /** Square's category, or null when the item has none. */
+  categoryName: string | null;
   rule?: ProductRuleRow;
   unconfigured: boolean;
 }
@@ -35,19 +38,30 @@ export function ProductRulesList({ products }: { products: RuleListItem[] }) {
   const [bulkMode, setBulkMode] = useState(false);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
 
+  const [category, setCategory] = useState("");
+
   const unconfiguredCount = products.filter((p) => p.unconfigured).length;
+
+  /* Category is the natural unit for bulk setup — everything in "Breads" wants
+     the same rule — and "Select all shown" respects the filter, so filtering
+     then selecting is the whole workflow. */
+  const categories = useMemo(
+    () => [...new Set(products.map((product) => product.categoryName ?? UNCATEGORISED))].sort(),
+    [products],
+  );
 
   const visible = useMemo(() => {
     const term = search.trim().toLowerCase();
     return products.filter((product) => {
       if (unconfiguredOnly && !product.unconfigured) return false;
+      if (category && (product.categoryName ?? UNCATEGORISED) !== category) return false;
       if (!term) return true;
       return (
         product.name.toLowerCase().includes(term) ||
         (product.rule?.slug ?? "").toLowerCase().includes(term)
       );
     });
-  }, [products, search, unconfiguredOnly]);
+  }, [products, search, unconfiguredOnly, category]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -80,6 +94,22 @@ export function ProductRulesList({ products }: { products: RuleListItem[] }) {
             />
           </div>
         </div>
+
+        {categories.length > 1 ? (
+          <label className="flex flex-col gap-1.5">
+            <span className="text-ink-subtle text-sm font-medium">Category</span>
+            <select
+              value={category}
+              onChange={(event) => setCategory(event.target.value)}
+              className="input"
+            >
+              <option value="">All categories</option>
+              {categories.map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </label>
+        ) : null}
 
         {unconfiguredCount > 0 ? (
           <label className="text-ink flex items-center gap-2 pb-3 text-sm">
