@@ -64,7 +64,13 @@ export function buildContentSecurityPolicy({
     "object-src 'none'",
     "frame-ancestors 'none'",
     "form-action 'self'",
-    `script-src 'self' 'unsafe-inline'${production ? "" : " 'unsafe-eval'"} ${square.sdk} ${WALLET_SCRIPT_SOURCES.join(" ")}`,
+    /* 'wasm-unsafe-eval' is required for the staff QR scanner's WASM decoder,
+       which stands in for BarcodeDetector on browsers that don't ship it (all
+       of WebKit, so every iPad in the kitchen). It is far narrower than
+       'unsafe-eval': it permits WebAssembly compilation and nothing else, and
+       without it Chrome blocks the decoder outright in production, where
+       'unsafe-eval' is absent. */
+    `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${production ? "" : " 'unsafe-eval'"} ${square.sdk} ${WALLET_SCRIPT_SOURCES.join(" ")}`,
     `style-src 'self' 'unsafe-inline' ${square.sdk}`,
     `img-src 'self' data: blob: ${PRODUCT_IMAGE_CSP_SOURCES.join(" ")}`,
     `font-src 'self' data: ${SQUARE_FONT_SOURCES.join(" ")}`,

@@ -40,3 +40,6 @@ coverage/
 # local PDF/report scratch (never committed)
 output/
 tmp/
+
+# Copied from node_modules at build time — see scripts/copy-barcode-wasm.mjs
+public/wasm/

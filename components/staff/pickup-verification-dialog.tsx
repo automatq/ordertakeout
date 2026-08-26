@@ -18,9 +18,34 @@ declare global {
 }
 
 function cameraSupported(): boolean {
-  return typeof window !== "undefined" &&
-    typeof window.BarcodeDetector === "function" &&
-    Boolean(navigator.mediaDevices?.getUserMedia);
+  /* Only the camera itself is a hard requirement now. This also required
+     window.BarcodeDetector, which Chromium ships and WebKit does not — so on
+     the store's iPads the scan button silently reported "not supported" and
+     staff fell back to the scanner gun or typing the number. */
+  return typeof window !== "undefined" && Boolean(navigator.mediaDevices?.getUserMedia);
+}
+
+/**
+ * The native detector where it exists, a WASM decoder where it does not.
+ *
+ * Imported lazily so the ~500 KB decoder is fetched only when a staff member
+ * actually presses "Use camera" — never on the storefront, and never on the
+ * order queue that this dialog opens from.
+ */
+async function loadDetector(): Promise<DetectorConstructor> {
+  if (typeof window.BarcodeDetector === "function") return window.BarcodeDetector;
+
+  const { BarcodeDetector, setZXingModuleOverrides } = await import(
+    "@sec-ant/barcode-detector/pure"
+  );
+  /* Serve the decoder from our own origin. Left alone the library resolves it
+     to /reader/zxing_reader.wasm — a path we do not serve, so the fetch 404s
+     and the scanner fails with no useful message. Pinning it here also keeps
+     the request same-origin, which the CSP's connect-src allows, and means a
+     library version bump cannot silently move the path out from under us.
+     scripts/copy-barcode-wasm.mjs keeps the copy in sync with the package. */
+  setZXingModuleOverrides({ locateFile: () => "/wasm/zxing_reader.wasm" });
+  return BarcodeDetector as unknown as DetectorConstructor;
 }
 
 type Method = "qr" | "manual";
@@ -107,20 +132,22 @@ export function PickupVerificationDialog({
 
   async function startCamera() {
     if (!cameraSupported()) {
-      setCameraError("Camera scanning is not supported in this browser. Use the scanner input or enter the order number.");
+      setCameraError("This browser can't use the camera. Use the scanner input or enter the order number.");
       return;
     }
     setCameraError(null);
     stopCamera();
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
-        audio: false,
-      });
+      const [stream, Constructor] = await Promise.all([
+        navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" } },
+          audio: false,
+        }),
+        loadDetector(),
+      ]);
       streamRef.current = stream;
       const video = videoRef.current;
-      const Constructor = window.BarcodeDetector;
-      if (!video || !Constructor) throw new Error("Camera scanning is unavailable.");
+      if (!video) throw new Error("Camera scanning is unavailable.");
       video.srcObject = stream;
       await video.play();
       const detector = new Constructor({ formats: ["qr_code"] });

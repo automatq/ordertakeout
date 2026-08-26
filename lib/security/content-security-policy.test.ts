@@ -51,6 +51,20 @@ describe("Square Web Payments CSP", () => {
     expect(policy).not.toContain("pci-connect.squareupsandbox.com");
   });
 
+  it("allows WebAssembly compilation in production for the QR decoder", () => {
+    // The staff scanner's fallback decoder is WASM. Chrome blocks
+    // WebAssembly under CSP unless script-src permits it, and production has
+    // no 'unsafe-eval' to fall back on — so without this the scanner fails
+    // only in production, on exactly the browsers that needed the fallback.
+    const production = buildContentSecurityPolicy({
+      production: true,
+      squareEnvironment: "production",
+    });
+    expect(directive(production, "script-src")).toContain("'wasm-unsafe-eval'");
+    // Narrower than unsafe-eval on purpose: WASM only, no JS eval.
+    expect(directive(production, "script-src")).not.toContain("'unsafe-eval'");
+  });
+
   it("allows unsafe-eval only for Next development tooling", () => {
     expect(
       buildContentSecurityPolicy({ production: false, squareEnvironment: "sandbox" }),
