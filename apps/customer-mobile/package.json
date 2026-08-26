@@ -2,24 +2,29 @@
   "name": "harina-customer-mobile",
   "version": "0.1.0",
   "private": true,
-  "description": "Harina Bakeshoppe — order ahead and collect.",
+  "description": "Harina Bakeshoppe \u2014 order ahead and collect.",
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
     "ios": "expo run:ios",
     "android": "expo run:android",
     "prebuild": "expo prebuild --clean",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "expo": "57.0.16",
+    "expo-linking": "~57.0.8",
     "expo-secure-store": "57.0.1",
     "expo-status-bar": "57.0.1",
     "react": "19.2.3",
-    "react-native": "0.86.2"
+    "react-native": "0.86.2",
+    "react-native-qrcode-svg": "^6.3.21",
+    "react-native-svg": "15.15.4"
   },
   "devDependencies": {
     "@types/react": "~19.2.18",
-    "typescript": "~5.9.3"
+    "typescript": "~5.9.3",
+    "vitest": "^4.1.11"
   }
 }

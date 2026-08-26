@@ -31,10 +31,14 @@ export function Menu({
   locationId,
   onOpen,
   onChangeShop,
+  savedOrderNumber,
+  onOpenOrder,
 }: {
   locationId: string | null;
   onOpen: (product: MenuProduct) => void;
   onChangeShop: () => void;
+  savedOrderNumber: string | null;
+  onOpenOrder: () => void;
 }) {
   const [data, setData] = useState<MenuData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -66,6 +70,14 @@ export function Menu({
       <View style={styles.centre}>
         {error ? (
           <>
+            {/* Before the apology, because somebody with an order to collect and
+                no signal opened the app for exactly one reason, and a menu they
+                cannot load is not it. This is the case the offline pass exists
+                for; hiding it behind a network call would defeat the whole
+                point. */}
+            {savedOrderNumber ? (
+              <SavedOrderCard orderNumber={savedOrderNumber} onPress={onOpenOrder} />
+            ) : null}
             <Text style={styles.error}>{error}</Text>
             <Pressable onPress={onRefresh} style={styles.retry}>
               <Text style={styles.retryText}>Try again</Text>
@@ -89,6 +101,12 @@ export function Menu({
       <Text style={styles.title}>Harina Bakeshoppe</Text>
       <Text style={styles.subtitle}>Order ahead, collect in store.</Text>
 
+      {/* Above the menu, because somebody with an order to collect opened the
+          app to collect it, not to browse. */}
+      {savedOrderNumber ? (
+        <SavedOrderCard orderNumber={savedOrderNumber} onPress={onOpenOrder} />
+      ) : null}
+
       {error ? <Text style={styles.staleBanner}>{error} Showing the last menu.</Text> : null}
 
       {/* Said once, at the top, rather than repeated on every card — and it is a
@@ -110,6 +128,24 @@ export function Menu({
         </View>
       ))}
     </ScrollView>
+  );
+}
+
+function SavedOrderCard({
+  orderNumber,
+  onPress,
+}: {
+  orderNumber: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.orderCard, pressed && styles.pressed]}
+    >
+      <Text style={styles.orderCardTitle}>Your order {orderNumber}</Text>
+      <Text style={styles.orderCardBody}>Tap to show your collection code</Text>
+    </Pressable>
   );
 }
 
@@ -156,7 +192,7 @@ function ProductCard({ product, onPress }: { product: MenuProduct; onPress: () =
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.canvas },
   content: { padding: 16, paddingTop: 64, paddingBottom: 48, gap: 16 },
-  centre: { flex: 1, backgroundColor: theme.canvas, alignItems: "center", justifyContent: "center", gap: 16 },
+  centre: { flex: 1, backgroundColor: theme.canvas, alignItems: "center", justifyContent: "center", gap: 16, padding: 24 },
   title: { fontSize: 30, fontWeight: "700", color: theme.ink },
   subtitle: { fontSize: 16, color: theme.inkMuted, marginTop: -10 },
   error: { fontSize: 16, color: theme.ink, textAlign: "center", paddingHorizontal: 24 },
@@ -176,6 +212,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     fontSize: 14,
   },
+  orderCard: { backgroundColor: theme.brand, borderRadius: 20, padding: 16, gap: 2, alignSelf: "stretch" },
+  orderCardTitle: { fontSize: 17, fontWeight: "700", color: "#fff" },
+  orderCardBody: { fontSize: 14, color: "#ffffffcc" },
   shopBanner: {
     color: theme.brand,
     fontWeight: "600",

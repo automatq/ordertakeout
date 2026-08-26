@@ -9,6 +9,7 @@ The customer app. Order ahead, collect in store.
 | Pickup shop | Where you collect from, remembered |
 | Menu | Everything the shop sells, grouped, with honest stock |
 | Product | Sizes, prices, allergens, how far ahead to order |
+| Order | Your order and the code that collects it, with or without signal |
 
 **Checkout is absent rather than half-built.** It needs a Square sandbox
 application id — `.env.local` currently holds the placeholder `demo-not-use` —
@@ -68,15 +69,43 @@ a pickup-date calculation. Those are store-local and stay strings. This one is
 "what day is it where you are standing", which is the right question for someone
 deciding whether to walk over.
 
+## The pickup pass, and why it is in an app at all
+
+The pass is a static signature over the order. It does not expire and needs no
+network to be valid, so the app stores it the moment the order is opened and can
+show it in a shop with thick walls and no bars — which is exactly where a website
+fails somebody.
+
+That only works if the *route to it* is offline too, and at first it was not: the
+app opened on the menu, the menu could not load, and the error state offered
+nothing but "Try again". Somebody standing at a counter with no signal, whose one
+reason for opening the app was the code, hit a dead end. Found by killing the
+server and launching it. The saved-order card now renders above the failure as
+well as above the menu.
+
+The order screen shows the stored copy first and refreshes behind it, in that
+order deliberately: the one moment it has to work is the moment a network call
+would be spinning. When the refresh fails it says so — a stale total is fine, a
+stale "ready to collect" is the sort of thing people plan a trip around.
+
+## Getting into the app
+
+Deep links, for now: `harina://orders/PT-ABC123?key=…`. The confirmation email
+and SMS already carry the order number and the signed key that opens it, and
+`parseDeepLink` accepts the website and short-link shapes too, so the same URLs
+work unchanged once universal links are configured.
+
+That parsing is the one piece of this app with unit tests. Deep links are
+otherwise only ever exercised by hand, badly, and getting one wrong sends
+somebody who tapped a link in their confirmation email to the wrong screen —
+which nobody notices until a customer says so.
+
 ## What's next, in order
 
-1. **Order lookup and the offline pickup pass.** The pass is a static signed
-   string, so it can be stored at order time and shown with no signal — which is
-   exactly when you need it, standing in a shop.
-3. **Sign in** — magic link, SMS code, passkey. This is where universal links
+1. **Sign in** — magic link, SMS code, passkey. This is where universal links
    matter, and where expo-router would have earned its keep; see the staff app's
    README for why it is not installed.
-3. **Checkout**, once there is a Square sandbox id and a device to prove the
+2. **Checkout**, once there is a Square sandbox id and a device to prove the
    card sheet on.
 
 ## Shared code

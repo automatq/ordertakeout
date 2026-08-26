@@ -100,3 +100,41 @@ export interface PickupShop {
 }
 
 export const fetchShops = () => request<{ shops: PickupShop[] }>("/locations");
+
+
+export interface OrderLine {
+  name: string;
+  quantity: number;
+  unitPriceCents: number;
+  totalPriceCents: number;
+}
+
+export interface CustomerOrder {
+  orderNumber: string;
+  status: string;
+  customerName: string;
+  pickupDate: string;
+  pickupTime: string;
+  pickup: { name: string | null; address: string | null; city: string | null; phone: string | null };
+  items: OrderLine[];
+  subtotalCents: number;
+  taxCents: number;
+  tipCents: number;
+  totalCents: number;
+  currency: string;
+  customerNote: string | null;
+  /** Null once there is nothing left to collect. */
+  pickupPass: string | null;
+}
+
+export type OrderLookup = { found: true; order: CustomerOrder } | { found: false };
+
+/**
+ * Fetch one order using the key from its confirmation link.
+ *
+ * Every failure — wrong key, no key, no such order — comes back as
+ * `{ found: false }` with a 200, deliberately. There is nothing here for the
+ * client to distinguish, and nothing it should try to.
+ */
+export const fetchOrder = (orderNumber: string, key: string) =>
+  request<OrderLookup>(`/orders/${encodeURIComponent(orderNumber)}?key=${encodeURIComponent(key)}`);

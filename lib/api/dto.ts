@@ -330,3 +330,57 @@ export function toPickupShop(location: StoreLocation): PickupShop {
     })),
   };
 }
+
+
+/**
+ * One order, for the customer who placed it.
+ *
+ * The narrowest DTO here, because `OrderWithItems` is the rawest thing in the
+ * codebase — 43 columns of Square ids, payment attempt keys, refund state and a
+ * staff note. A customer needs about a dozen of them.
+ */
+export const orderItemLineSchema = z
+  .object({
+    name: z.string(),
+    quantity: z.number().int(),
+    unitPriceCents: z.number().int(),
+    totalPriceCents: z.number().int(),
+  })
+  .strict();
+
+export const customerOrderSchema = z
+  .object({
+    orderNumber: z.string(),
+    status: z.string(),
+    customerName: z.string(),
+    pickupDate: z.string(),
+    pickupTime: z.string(),
+    pickup: z
+      .object({
+        name: z.string().nullable(),
+        address: z.string().nullable(),
+        city: z.string().nullable(),
+        phone: z.string().nullable(),
+      })
+      .strict(),
+    items: z.array(orderItemLineSchema),
+    subtotalCents: z.number().int(),
+    taxCents: z.number().int(),
+    tipCents: z.number().int(),
+    totalCents: z.number().int(),
+    currency: z.string(),
+    customerNote: z.string().nullable(),
+    /**
+     * The signed string behind the QR code, or null when there is nothing to
+     * collect — unpaid, cancelled, or already handed over.
+     *
+     * It is a static signature over the order, not a session: it does not
+     * expire and needs no network to be useful. That is the whole point. The
+     * app stores it when the order is placed and can show it in a shop with no
+     * signal, which is exactly the moment somebody needs it.
+     */
+    pickupPass: z.string().nullable(),
+  })
+  .strict();
+
+export type CustomerOrder = z.infer<typeof customerOrderSchema>;

@@ -5,8 +5,14 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "newArchEnabled": true,
-    "ios": { "bundleIdentifier": "com.harinabakeshoppe.app", "supportsTablet": false },
-    "android": { "package": "com.harinabakeshoppe.app" },
-    "plugins": []
+    "ios": {
+      "bundleIdentifier": "com.harinabakeshoppe.app",
+      "supportsTablet": false
+    },
+    "android": {
+      "package": "com.harinabakeshoppe.app"
+    },
+    "plugins": [],
+    "scheme": "harina"
   }
 }
