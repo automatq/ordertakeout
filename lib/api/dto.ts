@@ -3,6 +3,7 @@ import { z } from "zod";
 import { summariseProduction } from "@/lib/orders/dashboard";
 import type { DashboardData, DashboardOrder } from "@/lib/orders/dashboard";
 import type { PickupVerificationPreview } from "@/lib/orders/pickup-verification";
+import type { StoreProduct } from "@/lib/catalog/types";
 import { normalizeTime } from "@/lib/scheduling/time";
 
 /**
@@ -176,5 +177,107 @@ export function toPickupPreview(preview: PickupVerificationPreview): PickupPrevi
     pickupLocationName: preview.pickupLocationName,
     itemCount: preview.itemCount,
     method: preview.method,
+  };
+}
+
+
+/**
+ * The menu, for the customer app.
+ *
+ * Narrower than the storefront's own product type on purpose. `StoreProduct`
+ * carries the whole `ProductRule` — max units per day, whether it is orderable
+ * at all, the raw sort order — which is how the shop is run, not what a customer
+ * needs to choose a cake.
+ */
+export const menuVariantSchema = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    priceCents: z.number().int(),
+    currency: z.string(),
+    /**
+     * Null means "we do not know", not "yes".
+     *
+     * Availability is only known once a pickup location is chosen, and offline
+     * the app has nothing to go on. A stale menu is survivable; telling somebody
+     * a sold-out cake is available, taking their money, and having nothing to
+     * hand over is not.
+     */
+    available: z.boolean().nullable(),
+  })
+  .strict();
+
+export const menuProductSchema = z
+  .object({
+    id: z.string(),
+    slug: z.string(),
+    name: z.string(),
+    description: z.string().nullable(),
+    imageUrl: z.string().nullable(),
+    /** Allergens are a fixed vocabulary; empty means "not stated", never "free from". */
+    allergens: z.array(z.string()),
+    dietaryTags: z.array(z.string()),
+    /** How far ahead this has to be ordered, and by when on that day. */
+    leadTimeDays: z.number().int(),
+    orderCutoffTime: z.string(),
+    variants: z.array(menuVariantSchema),
+  })
+  .strict();
+
+export const menuGroupSchema = z
+  .object({ category: z.string(), products: z.array(menuProductSchema) })
+  .strict();
+
+export const menuResponseSchema = z
+  .object({
+    locationId: z.string().nullable(),
+    groups: z.array(menuGroupSchema),
+  })
+  .strict();
+
+export type MenuProduct = z.infer<typeof menuProductSchema>;
+export type MenuResponse = z.infer<typeof menuResponseSchema>;
+
+/**
+ * Make an image path usable by something that is not a browser.
+ *
+ * Product images may be a Square CDN URL or a path into our own /public — and a
+ * path is only meaningful to a client sitting on the same origin. A native app
+ * is not, so `<Image src="/harina/ube-bars.webp">` renders nothing at all, which
+ * is a menu of grey rectangles.
+ *
+ * Absolute URLs are left alone. Anything else is resolved against the base the
+ * caller supplies.
+ */
+export function absoluteImageUrl(url: string | null, base: string): string | null {
+  if (!url) return null;
+  if (/^https?:\/\//i.test(url)) return url;
+  return `${base.replace(/\/$/, "")}${url.startsWith("/") ? "" : "/"}${url}`;
+}
+
+export function toMenuProduct(
+  product: StoreProduct,
+  availability: ReadonlyMap<string, boolean> | null,
+  base: string,
+): MenuProduct {
+  return {
+    id: product.id,
+    slug: product.slug,
+    name: product.name,
+    description: product.descriptionMd ?? product.description,
+    /* One image. The app shows a single photo per product and shipping the whole
+       array would be bytes nobody renders. */
+    imageUrl: absoluteImageUrl(product.heroImageUrl ?? product.imageUrls[0] ?? null, base),
+    allergens: product.allergens,
+    dietaryTags: product.dietaryTags,
+    leadTimeDays: product.rule.leadTimeDays,
+    orderCutoffTime: product.rule.orderCutoffTime,
+    variants: product.variants.map((variant) => ({
+      id: variant.id,
+      name: variant.name,
+      priceCents: variant.priceCents,
+      currency: variant.currency,
+      available: availability ? (availability.get(variant.id) ?? false) : null,
+    })),
   };
 }
