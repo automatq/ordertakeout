@@ -264,6 +264,15 @@ describeIfDb("configured slot capacity reaches the availability engine", () => {
   let loadAvailabilityInput: typeof import("./queries").loadAvailabilityInput;
   let setSlotCapacityDefault: typeof import("@/lib/settings/capacity").setSlotCapacityDefault;
   let client: import("postgres").Sql;
+  let listSlotCapacityDefaults: typeof import("@/lib/settings/capacity").listSlotCapacityDefaults;
+  let saved: { locationId: string | null; maxOrdersPerSlot: number }[] = [];
+  const OWNED = new Set<string | null>([null, LOCATION_A, LOCATION_B]);
+
+  const KEYS = [
+    "capacity.slot-default.global",
+    `capacity.slot-default.${LOCATION_A}`,
+    `capacity.slot-default.${LOCATION_B}`,
+  ];
 
   beforeAll(async () => {
     process.env.DATABASE_URL = TEST_DATABASE_URL;
@@ -275,27 +284,32 @@ describeIfDb("configured slot capacity reaches the availability engine", () => {
 
     ({ db } = await import("@/lib/db"));
     ({ loadAvailabilityInput } = await import("./queries"));
-    ({ setSlotCapacityDefault } = await import("@/lib/settings/capacity"));
+    ({ setSlotCapacityDefault, listSlotCapacityDefaults } = await import(
+      "@/lib/settings/capacity"
+    ));
 
     const postgres = (await import("postgres")).default;
     client = postgres(TEST_DATABASE_URL!, { prepare: false });
+
+    /* The global key is not this suite's to own — TEST_DATABASE_URL may point at
+       a shared database whose store has a real capacity set, and deleting it
+       would quietly reset the whole shop to five orders a slot. Snapshot first,
+       put it back afterwards. */
+    saved = (await listSlotCapacityDefaults()).filter((row) => OWNED.has(row.locationId));
     await clearDefaults();
   });
 
   afterAll(async () => {
     if (!TEST_DATABASE_URL) return;
     await clearDefaults();
+    for (const row of saved) {
+      await setSlotCapacityDefault(row.locationId, row.maxOrdersPerSlot);
+    }
     await client.end();
   });
 
-  /* Scoped to this suite's own keys: a shared database may be someone's real
-     store, and blanket-deleting the prefix would silently reset their capacity. */
   async function clearDefaults() {
-    await client`DELETE FROM app_settings WHERE key IN (
-      'capacity.slot-default.global',
-      ${"capacity.slot-default." + LOCATION_A},
-      ${"capacity.slot-default." + LOCATION_B}
-    )`;
+    await client`DELETE FROM app_settings WHERE key = ANY(${KEYS})`;
   }
 
   const load = (locationId: string | undefined) =>
