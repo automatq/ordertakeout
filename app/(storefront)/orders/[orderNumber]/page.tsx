@@ -18,6 +18,7 @@ import { hasStaffSession } from "@/lib/auth/guard";
 import { verifyOrderAccessToken } from "@/lib/orders/access";
 import { customerCancellationEligibility } from "@/lib/orders/cancellation";
 import { CancelOrder } from "@/components/orders/cancel-order";
+import { OfflinePassRegistration } from "@/components/orders/offline-pass";
 import { PickupPass } from "@/components/orders/pickup-pass";
 import { getOrderableProducts } from "@/lib/catalog/server";
 import { primaryImage, sizedImage } from "@/lib/catalog/images";
@@ -230,7 +231,12 @@ async function OrderDetail({ params, searchParams }: PageProps) {
           </section>
 
           <OrderProgress status={order.status} />
-          {paid && order.status !== "completed" ? <PickupPass value={createPickupPass(order.id, order.orderNumber)} /> : null}
+          {paid && order.status !== "completed" ? (
+            <>
+              <PickupPass value={createPickupPass(order.id, order.orderNumber)} />
+              <OfflinePassRegistration />
+            </>
+          ) : null}
           {paid && hasCustomerAccess && key ? <CreateAccount orderNumber={order.orderNumber} accessToken={key} /> : null}
           <OrderRefresher live={live} />
           {cancellation?.allowed && key ? (
