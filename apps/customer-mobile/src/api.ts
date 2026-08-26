@@ -87,3 +87,16 @@ export function availabilityOf(product: MenuProduct): "available" | "sold-out" |
   if (product.variants.some((variant) => variant.available === null)) return "unknown";
   return product.variants.some((variant) => variant.available) ? "available" : "sold-out";
 }
+
+
+export interface PickupShop {
+  id: string;
+  name: string;
+  address: string;
+  city: string | null;
+  phone: string | null;
+  coordinates: { latitude: number; longitude: number } | null;
+  hours: { dayOfWeek: string; startTime: string; endTime: string }[];
+}
+
+export const fetchShops = () => request<{ shops: PickupShop[] }>("/locations");

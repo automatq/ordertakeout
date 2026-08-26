@@ -4,6 +4,7 @@ import { summariseProduction } from "@/lib/orders/dashboard";
 import type { DashboardData, DashboardOrder } from "@/lib/orders/dashboard";
 import type { PickupVerificationPreview } from "@/lib/orders/pickup-verification";
 import type { StoreProduct } from "@/lib/catalog/types";
+import type { StoreLocation } from "@/lib/locations/types";
 import { normalizeTime } from "@/lib/scheduling/time";
 
 /**
@@ -278,6 +279,54 @@ export function toMenuProduct(
       priceCents: variant.priceCents,
       currency: variant.currency,
       available: availability ? (availability.get(variant.id) ?? false) : null,
+    })),
+  };
+}
+
+
+/**
+ * Pickup shops, for the customer app's location picker.
+ *
+ * `StoreLocation` also carries currency and an ISO country code, which exist for
+ * the digital wallets' payment request. Nothing on a picker screen needs them,
+ * so they stay out — the same reasoning as everywhere else here: a field only
+ * crosses the wire when somebody decides it should.
+ */
+export const pickupHoursSchema = z
+  .object({ dayOfWeek: z.string(), startTime: z.string(), endTime: z.string() })
+  .strict();
+
+export const pickupShopSchema = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    address: z.string(),
+    city: z.string().nullable(),
+    phone: z.string().nullable(),
+    /** For "20 minutes away" later; null where Square has no coordinates. */
+    coordinates: z.object({ latitude: z.number(), longitude: z.number() }).strict().nullable(),
+    hours: z.array(pickupHoursSchema),
+  })
+  .strict();
+
+export const pickupShopsResponseSchema = z
+  .object({ shops: z.array(pickupShopSchema) })
+  .strict();
+
+export type PickupShop = z.infer<typeof pickupShopSchema>;
+
+export function toPickupShop(location: StoreLocation): PickupShop {
+  return {
+    id: location.id,
+    name: location.name,
+    address: location.address,
+    city: location.city,
+    phone: location.phone,
+    coordinates: location.coordinates,
+    hours: location.businessHours.map((period) => ({
+      dayOfWeek: period.dayOfWeek,
+      startTime: period.startTime,
+      endTime: period.endTime,
     })),
   };
 }

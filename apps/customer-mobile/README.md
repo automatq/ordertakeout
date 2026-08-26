@@ -6,6 +6,7 @@ The customer app. Order ahead, collect in store.
 
 | Screen | State |
 |---|---|
+| Pickup shop | Where you collect from, remembered |
 | Menu | Everything the shop sells, grouped, with honest stock |
 | Product | Sizes, prices, allergens, how far ahead to order |
 
@@ -52,17 +53,30 @@ machine. A real handset needs an address on the same network:
 EXPO_PUBLIC_API_URL=http://192.168.1.42:3000
 ```
 
+## Choosing a shop
+
+The first thing the app asks, because until it is answered nothing can be said
+about stock — and "we don't know" against every price is a poor first impression
+for a bakery that does in fact have the cake.
+
+Skippable, and it says so. Somebody deciding whether this place is worth a trip
+should not have to commit to a branch first; the menu handles not knowing. The
+choice is remembered, so it is asked once rather than every launch.
+
+Opening hours are shown for *today in the device's timezone* — deliberately not
+a pickup-date calculation. Those are store-local and stay strings. This one is
+"what day is it where you are standing", which is the right question for someone
+deciding whether to walk over.
+
 ## What's next, in order
 
-1. **Pickup shop picker.** Everything about stock is unknown until this exists,
-   and it is one screen.
-2. **Order lookup and the offline pickup pass.** The pass is a static signed
+1. **Order lookup and the offline pickup pass.** The pass is a static signed
    string, so it can be stored at order time and shown with no signal — which is
    exactly when you need it, standing in a shop.
 3. **Sign in** — magic link, SMS code, passkey. This is where universal links
    matter, and where expo-router would have earned its keep; see the staff app's
    README for why it is not installed.
-4. **Checkout**, once there is a Square sandbox id and a device to prove the
+3. **Checkout**, once there is a Square sandbox id and a device to prove the
    card sheet on.
 
 ## Shared code

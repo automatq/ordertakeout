@@ -30,9 +30,11 @@ import { theme } from "../theme";
 export function Menu({
   locationId,
   onOpen,
+  onChangeShop,
 }: {
   locationId: string | null;
   onOpen: (product: MenuProduct) => void;
+  onChangeShop: () => void;
 }) {
   const [data, setData] = useState<MenuData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -89,12 +91,15 @@ export function Menu({
 
       {error ? <Text style={styles.staleBanner}>{error} Showing the last menu.</Text> : null}
 
-      {/* Said once, at the top, rather than repeated on every card. */}
-      {data.locationId === null ? (
-        <Text style={styles.unknownBanner}>
-          Choose a pickup shop to see what's in stock today.
+      {/* Said once, at the top, rather than repeated on every card — and it is a
+          button, because the sentence is useless without a way to act on it. */}
+      <Pressable onPress={onChangeShop} style={({ pressed }) => [pressed && styles.pressed]}>
+        <Text style={data.locationId === null ? styles.unknownBanner : styles.shopBanner}>
+          {data.locationId === null
+            ? "Choose a pickup shop to see what's in stock today."
+            : "Change pickup shop"}
         </Text>
-      ) : null}
+      </Pressable>
 
       {data.groups.map((group) => (
         <View key={group.category} style={styles.group}>
@@ -170,6 +175,12 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 12,
     fontSize: 14,
+  },
+  shopBanner: {
+    color: theme.brand,
+    fontWeight: "600",
+    fontSize: 14,
+    paddingVertical: 4,
   },
   group: { gap: 10 },
   groupTitle: {
