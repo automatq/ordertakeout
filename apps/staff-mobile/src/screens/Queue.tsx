@@ -21,10 +21,12 @@ export function Queue({
   token,
   protection,
   onSignedOut,
+  onScan,
 }: {
   token: string;
   protection: Protection;
   onSignedOut: () => void;
+  onScan: () => void;
 }) {
   const [data, setData] = useState<QueueData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -106,6 +108,15 @@ export function Queue({
           <Text style={styles.signOut}>Sign out</Text>
         </Pressable>
       </View>
+
+      {/* The counter's main action, so it sits above the list rather than behind
+          a menu. Someone is standing there waiting. */}
+      <Pressable
+        onPress={onScan}
+        style={({ pressed }) => [styles.scanButton, pressed && styles.scanPressed]}
+      >
+        <Text style={styles.scanText}>Scan a pickup pass</Text>
+      </Pressable>
 
       {/* Shown above the list, not instead of it — the stale queue is still
           the most useful thing on screen while the connection is down. */}
@@ -210,6 +221,14 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     fontSize: 13,
   },
+  scanButton: {
+    backgroundColor: theme.brand,
+    borderRadius: 999,
+    paddingVertical: 16,
+    alignItems: "center",
+  },
+  scanPressed: { opacity: 0.85 },
+  scanText: { color: "#fff", fontWeight: "700", fontSize: 16 },
   insecureBanner: {
     backgroundColor: "#fee2e2",
     color: theme.danger,

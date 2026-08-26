@@ -5,6 +5,7 @@ import { StatusBar } from "expo-status-bar";
 import { Locked } from "./src/screens/Locked";
 import { Login } from "./src/screens/Login";
 import { Queue } from "./src/screens/Queue";
+import { Scan } from "./src/screens/Scan";
 import {
   canUseBiometrics,
   clearToken,
@@ -18,11 +19,23 @@ import { theme } from "./src/theme";
 import { useIdleLock } from "./src/useIdleLock";
 
 /**
- * Two screens and a lock, so navigation is a piece of state rather than a router.
+ * Four screens, and navigation is a piece of state rather than a router.
  *
- * The Phase 3 plan picks expo-router for file-based parity with the web App
- * Router, and that earns its keep once there are pickup verification, the prep
- * timeline and 86/pause to move between. It goes in with the third screen.
+ * The Phase 3 plan picks expo-router, and this was the point at which it was
+ * meant to go in. It came back out. On Expo SDK 57, expo-router pulls @expo/ui,
+ * which pulls react-native-reanimated 4.6, which requires
+ * react-native-worklets 0.12 — while the expo-modules-core that ships with the
+ * same SDK is written against worklets <=0.10 and fails to compile against 0.12
+ * (`no member named 'executeSync'`). Those constraints are mutually exclusive,
+ * and pinning around them means fighting Expo's own dependency tree.
+ *
+ * That is a poor trade for a four-screen staff app. The router's real value —
+ * file-based parity with the web App Router, and near-free universal links —
+ * is for the customer app, which has magic links and short links to catch.
+ * Revisit it there, or here once SDK 57's tree settles.
+ *
+ * Sign-in and the lock are deliberately not navigable. A locked app should have
+ * nowhere to go, and no gesture should be able to land past them.
  */
 
 type Phase =
@@ -32,14 +45,21 @@ type Phase =
   | { kind: "locked"; failed: boolean }
   | { kind: "signedIn"; token: string; protection: Protection };
 
+type Screen = "queue" | "scan";
+
 export default function App() {
   const [phase, setPhase] = useState<Phase>({ kind: "restoring" });
+  const [screen, setScreen] = useState<Screen>("queue");
 
   const lock = useCallback(() => {
-    /* Dropping the token from memory *is* the lock. Getting it back means
-       asking the OS again, which is the biometric prompt — there is no
-       JavaScript boolean anywhere in that path to tamper with. */
-    setPhase((current) => (current.kind === "signedIn" ? { kind: "locked", failed: false } : current));
+    /* Dropping the token from memory *is* the lock. Getting it back means asking
+       the OS again, which is the biometric prompt — there is no JavaScript
+       boolean anywhere in that path to tamper with. */
+    setPhase((current) =>
+      current.kind === "signedIn" ? { kind: "locked", failed: false } : current,
+    );
+    // Never come back from a lock straight into a live camera.
+    setScreen("queue");
   }, []);
 
   const touch = useIdleLock(phase.kind === "signedIn", lock);
@@ -69,13 +89,14 @@ export default function App() {
         return;
       }
 
-      /* There is a session, and the OS is guarding it. Land on the lock screen
+      /* There is a session and the OS is guarding it. Land on the lock screen
          rather than prompting during launch: an unexplained Face ID sheet over a
          blank app is alarming, and cancelling it would leave nothing on screen. */
       if (canUseBiometrics()) {
         if (active) setPhase({ kind: "locked", failed: false });
         return;
       }
+
       const result = await loadToken();
       if (!active) return;
       setPhase(
@@ -94,11 +115,13 @@ export default function App() {
        than after a restart silently asks for the password again. */
     const protection = await saveToken(token);
     setPhase({ kind: "signedIn", token, protection });
+    setScreen("queue");
   }, []);
 
   const signOut = useCallback(async () => {
     await clearToken();
     setPhase({ kind: "signedOut" });
+    setScreen("queue");
   }, []);
 
   return (
@@ -111,7 +134,8 @@ export default function App() {
         return false;
       }}
     >
-      <StatusBar style="dark" />
+      <StatusBar style={screen === "scan" && phase.kind === "signedIn" ? "light" : "dark"} />
+
       {phase.kind === "restoring" ? (
         <View style={styles.centre}>
           <ActivityIndicator color={theme.brand} />
@@ -119,7 +143,16 @@ export default function App() {
       ) : phase.kind === "locked" ? (
         <Locked onUnlock={unlock} onSignOut={signOut} failed={phase.failed} />
       ) : phase.kind === "signedIn" ? (
-        <Queue token={phase.token} protection={phase.protection} onSignedOut={signOut} />
+        screen === "scan" ? (
+          <Scan token={phase.token} onClose={() => setScreen("queue")} />
+        ) : (
+          <Queue
+            token={phase.token}
+            protection={phase.protection}
+            onSignedOut={signOut}
+            onScan={() => setScreen("scan")}
+          />
+        )
       ) : (
         <Login onSignedIn={signIn} />
       )}

@@ -48,7 +48,8 @@ function dashboardOrder(overrides: Record<string, unknown> = {}) {
     customerPhone: "+16475550101",
     customerAccountId: "acct-9",
     pickupDate: "2026-08-26",
-    pickupTime: "16:00",
+    // As Postgres actually returns it, so the DTO's normalising is exercised.
+    pickupTime: "16:00:00",
     status: "paid",
     subtotalCents: 2500,
     taxCents: 325,
@@ -186,6 +187,7 @@ describe("GET /api/v1/staff/orders", () => {
     const { data } = await response.json();
     const order = data.days[0].slots[0].orders[0];
     expect(order.pickupDate).toBe("2026-08-26");
+    // HH:mm on the wire, whatever shape the column came back in.
     expect(order.pickupTime).toBe("16:00");
   });
 });

@@ -38,6 +38,7 @@ build must talk HTTPS — which the deployed site does anyway.
 | Sign in | Password → bearer token |
 | Locked | Face ID / Touch ID / passcode, with a way back to the password |
 | Pickup queue | Grouped by day and slot, polls every 15s, pull to refresh |
+| Scanner | Camera or typed order number → check the name → hand over |
 
 ## The lock
 
@@ -93,11 +94,45 @@ that asks for the password every morning gets the password written on a sticky
 note beside it. The long life is only defensible *because* revocation exists —
 the answer to a lost device is to revoke it, not to hope it expires.
 
+## The scanner
+
+Two steps, deliberately. The scan finds the order; a person still reads the name
+back before anything is marked collected. Going straight from a good scan to
+"collected" would make the pass alone enough to take somebody else's order, and
+passes get forwarded, screenshotted and left open on shared phones.
+
+The scanned string crosses the wire exactly as it came off the QR code. Parsing
+and signature checking stay on the server, so a patched build cannot talk its way
+past them — verified against a real pass with one character of the signature
+changed, and against a valid signature moved onto a different order number. Both
+are refused, because the signature covers the order id.
+
+Manual entry sits *beside* the camera rather than behind a failure. A floury
+lens, a cracked screen, a flat battery — none of those are exceptional at a
+bakery counter, and making staff fail twice before offering the keyboard is its
+own kind of rudeness. There is a torch toggle for the same reason.
+
+## Why there is no router
+
+The Phase 3 plan picks expo-router, and this was the point it was meant to go in.
+It came back out.
+
+On Expo SDK 57, `expo-router` pulls `@expo/ui` → `react-native-reanimated@4.6`,
+which requires `react-native-worklets@0.12`. The `expo-modules-core` that ships
+with the *same SDK* is written against worklets ≤0.10 and fails to compile
+against 0.12 (`no member named 'executeSync'`). Those constraints are mutually
+exclusive; pinning around them means fighting Expo's own dependency tree.
+
+For four screens that is a bad trade. The router's real value — file-based parity
+with the web App Router, and near-free universal links — is for the customer app,
+which has magic links and short links to catch. Revisit it there, or here once
+SDK 57's tree settles.
+
 ## What's next, in order
 
-1. **Pickup verification.** The biggest native win: scanning a customer's pass
-   with the camera instead of reading an order number aloud.
-2. **86 / pause**, then the prep timeline.
+1. **86 / pause**, then the prep timeline.
+2. **Haptics on a successful scan.** A counter is loud and staff are not looking
+   at the screen while they reach for a box.
 
 expo-router goes in with pickup verification. At two screens it would be configuration
 without a payoff; navigation is a piece of state in `App.tsx` until then.

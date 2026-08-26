@@ -1,6 +1,8 @@
 import { z } from "zod";
 
 import type { DashboardData, DashboardOrder } from "@/lib/orders/dashboard";
+import type { PickupVerificationPreview } from "@/lib/orders/pickup-verification";
+import { normalizeTime } from "@/lib/scheduling/time";
 
 /**
  * What a staff client is allowed to see.
@@ -85,7 +87,10 @@ function toQueueOrder(order: DashboardOrder): QueueOrder {
     customerName: order.customerName,
     customerPhone: order.customerPhone,
     pickupDate: order.pickupDate,
-    pickupTime: order.pickupTime,
+    /* Postgres `time` columns come back as HH:mm:ss while everything else in the
+       app uses HH:mm. Normalising here means one shape on the wire instead of
+       every client having to tolerate both. */
+    pickupTime: normalizeTime(order.pickupTime),
     status: order.status,
     totalCents: order.totalCents,
     currency: order.currency,
@@ -116,5 +121,53 @@ export function toQueueResponse(data: DashboardData): QueueResponse {
         orders: slot.orders.map(toQueueOrder),
       })),
     })),
+  };
+}
+
+
+/**
+ * Pickup verification, for the staff app's scanner.
+ *
+ * `PickupVerificationPreview` is already a hand-built shape rather than a
+ * database row, so this mapping is close to one-to-one. It exists anyway, for
+ * the same reason as the queue DTO: the day somebody widens that type to carry
+ * "just one more field" from the order row, this is what stops it reaching a
+ * phone, and the `.strict()` schema is what makes the test fail.
+ */
+export const pickupPreviewSchema = z
+  .object({
+    orderId: z.string(),
+    orderNumber: z.string(),
+    customerName: z.string(),
+    pickupDate: z.string(),
+    pickupTime: z.string(),
+    pickupLocationName: z.string().nullable(),
+    itemCount: z.number().int(),
+    method: z.enum(["qr", "manual"]),
+  })
+  .strict();
+
+export const pickupVerifiedSchema = z
+  .object({
+    orderId: z.string(),
+    orderNumber: z.string(),
+    /* Collection succeeded but Square did not hear about it. Staff must be told,
+       because the order is handed over either way and the books will disagree. */
+    squareWarning: z.string().optional(),
+  })
+  .strict();
+
+export type PickupPreview = z.infer<typeof pickupPreviewSchema>;
+
+export function toPickupPreview(preview: PickupVerificationPreview): PickupPreview {
+  return {
+    orderId: preview.orderId,
+    orderNumber: preview.orderNumber,
+    customerName: preview.customerName,
+    pickupDate: preview.pickupDate,
+    pickupTime: normalizeTime(preview.pickupTime),
+    pickupLocationName: preview.pickupLocationName,
+    itemCount: preview.itemCount,
+    method: preview.method,
   };
 }

@@ -113,3 +113,51 @@ export const fetchQueue = (token: string) =>
 
 export const apiBase = BASE;
 export const accent = theme.brand;
+
+
+export interface PickupPreview {
+  orderId: string;
+  orderNumber: string;
+  customerName: string;
+  pickupDate: string;
+  pickupTime: string;
+  pickupLocationName: string | null;
+  itemCount: number;
+  method: "qr" | "manual";
+}
+
+export type PreviewResult =
+  | { found: true; order: PickupPreview }
+  /** Found nothing, or found something that cannot be collected. */
+  | { found: false; reason: string };
+
+export type ConfirmResult =
+  | { verified: true; orderId: string; orderNumber: string; squareWarning?: string }
+  | { verified: false; reason: string };
+
+/**
+ * Look up a pass without handing anything over.
+ *
+ * The scanned string goes across exactly as it came off the QR code. Parsing and
+ * signature checking stay on the server, so a patched build cannot talk its way
+ * past them.
+ */
+export const previewPickup = (token: string, method: "qr" | "manual", value: string) =>
+  request<PreviewResult>("/staff/pickup", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ intent: "preview", method, value }),
+  });
+
+/** Hand the order over, attributed to whoever did it. */
+export const confirmPickup = (
+  token: string,
+  method: "qr" | "manual",
+  value: string,
+  staffInitials: string,
+) =>
+  request<ConfirmResult>("/staff/pickup", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ intent: "confirm", method, value, staffInitials }),
+  });

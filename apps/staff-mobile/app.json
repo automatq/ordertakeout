@@ -18,6 +18,12 @@
         {
           "faceIDPermission": "Unlock Harina Staff to see today's pickups."
         }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Harina Staff uses the camera to scan pickup passes at the counter."
+        }
       ]
     ]
   }

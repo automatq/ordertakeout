@@ -2,7 +2,7 @@
   "name": "harina-staff-mobile",
   "version": "0.1.0",
   "private": true,
-  "description": "Harina Bakeshoppe staff app — the twenty minutes around a pickup.",
+  "description": "Harina Bakeshoppe staff app \u2014 the twenty minutes around a pickup.",
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "expo": "57.0.16",
+    "expo-camera": "~57.0.4",
     "expo-device": "~57.0.1",
     "expo-secure-store": "57.0.1",
     "expo-status-bar": "57.0.1",
