@@ -104,8 +104,27 @@ describe("manifest", () => {
     const result = manifest();
     expect(result.display).toBe("standalone");
     expect(result.icons).toEqual([
-      { src: "/harina/icon-192.png", sizes: "192x192", type: "image/png" },
-      { src: "/harina/icon-512.png", sizes: "512x512", type: "image/png" },
+      { src: "/harina/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/harina/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      {
+        src: "/harina/icon-maskable-512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "maskable",
+      },
     ]);
+  });
+
+  it("ships a maskable icon so Android launchers do not clip the crest", () => {
+    // The "any" icons are a circle touching the canvas edge; a squircle mask
+    // crops it and leaves transparent corners.
+    const maskable = manifest().icons!.filter((icon) => icon.purpose === "maskable");
+    expect(maskable).toHaveLength(1);
+  });
+
+  it("keeps theme_color aligned with the viewport meta", () => {
+    // These colour adjacent surfaces — address bar and installed title bar.
+    // Disagreeing makes the installed app frame the page instead of continuing it.
+    expect(manifest().theme_color).toBe("#f5f1e9");
   });
 });
