@@ -134,6 +134,13 @@
       "when": 1787760340635,
       "tag": "0018_lowly_shinko_yamashiro",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1787772420780,
+      "tag": "0019_shocking_fallen_one",
+      "breakpoints": true
     }
   ]
 }

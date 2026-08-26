@@ -1,7 +1,9 @@
 import { z } from "zod";
 
-import { createSessionToken, safeEqual, sessionMaxAgeSeconds } from "@/lib/auth/session";
+import { safeEqual } from "@/lib/auth/session";
+import { registerDevice } from "@/lib/auth/device-session";
 import { serverEnv } from "@/lib/env";
+import { recordAudit } from "@/lib/audit/log";
 import { fail, ok } from "@/lib/api/envelope";
 import { consumeRateLimit, requestFingerprint } from "@/lib/security/rate-limit";
 
@@ -12,13 +14,19 @@ import { consumeRateLimit, requestFingerprint } from "@/lib/security/rate-limit"
  * itself is identical — the same HMAC over the same expiry, verified by the same
  * function — so there is one notion of a staff session rather than two.
  *
- * Known gap, deliberately not solved here: the token is signed with the shared
- * password, so a lost handset can only be revoked by rotating that password,
- * which signs out every counter tablet at once. That is the staff_devices table
- * in the Phase 3 plan, and it should land before real devices carry these.
+ * The token is per-device: signing in registers a row in staff_devices with its
+ * own secret, and revoking that row invalidates this token alone. The shared
+ * password authorises the sign-in and is then out of the picture, so losing a
+ * handset no longer means signing out every tablet in the shop.
  */
 
-const bodySchema = z.object({ password: z.string().min(1) });
+const bodySchema = z.object({
+  password: z.string().min(1),
+  /* What the shop will see in the device list. Trimmed and bounded because it is
+     rendered on a staff screen and supplied by the client. */
+  deviceLabel: z.string().trim().min(1).max(60).optional(),
+  platform: z.enum(["ios", "android"]).optional(),
+});
 
 export async function POST(request: Request): Promise<Response> {
   /* Same dual-axis limit as the web action. A phone on carrier NAT shares an
@@ -50,8 +58,25 @@ export async function POST(request: Request): Promise<Response> {
     return fail("unauthorized", "That password isn't right.");
   }
 
+  /* One row per sign-in, not per handset. Signing in twice on the same tablet
+     makes two devices, which is the honest record — the first token is still
+     live until someone revokes it, and pretending otherwise would hide a
+     session that really does exist. */
+  const device = await registerDevice(
+    parsed.data.deviceLabel ?? "Staff device",
+    parsed.data.platform ?? null,
+  );
+
+  await recordAudit({
+    actorType: "staff",
+    action: "staff_device.registered",
+    entityType: "staff_device",
+    entityId: device.deviceId,
+    metadata: { label: parsed.data.deviceLabel ?? null, platform: parsed.data.platform ?? null },
+  });
+
   return ok({
-    token: await createSessionToken(serverEnv().STAFF_DASHBOARD_PASSWORD),
-    expiresInSeconds: sessionMaxAgeSeconds(),
+    token: device.token,
+    expiresInSeconds: Math.floor((device.expiresAt.getTime() - Date.now()) / 1000),
   });
 }

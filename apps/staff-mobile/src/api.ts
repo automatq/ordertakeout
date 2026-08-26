@@ -1,3 +1,6 @@
+import { Platform } from "react-native";
+import * as Device from "expo-device";
+
 import { theme } from "./theme";
 
 /**
@@ -79,11 +82,31 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<Result<
   return { ok: true, data: envelope.data as T };
 }
 
+/**
+ * Sign in, naming this handset so it can be revoked on its own later.
+ *
+ * The label is only ever read by a person deciding which device to cut off, and
+ * "iPhone" three times over makes that decision impossible. `Device.deviceName`
+ * is what the owner called it — "Ana's iPhone", "Counter iPad" — which is
+ * exactly the distinguishing detail needed. It falls back to something with the
+ * platform in it rather than nothing.
+ */
 export const signIn = (password: string) =>
   request<{ token: string; expiresInSeconds: number }>("/staff/session", {
     method: "POST",
-    body: JSON.stringify({ password }),
+    body: JSON.stringify({
+      password,
+      deviceLabel: deviceLabel(),
+      platform: Platform.OS === "ios" || Platform.OS === "android" ? Platform.OS : undefined,
+    }),
   });
+
+function deviceLabel(): string {
+  const name = Device.deviceName?.trim();
+  if (name) return name.slice(0, 60);
+  const model = Device.modelName?.trim();
+  return (model ? `${model} (unnamed)` : `${Platform.OS} device`).slice(0, 60);
+}
 
 export const fetchQueue = (token: string) =>
   request<Queue>("/staff/orders", { headers: { Authorization: `Bearer ${token}` } });

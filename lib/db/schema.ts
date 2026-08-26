@@ -327,6 +327,46 @@ export const orderItems = pgTable(
  * row rather than a mutable field on `orders`. It preserves the proof used at
  * the counter independently from the order's lifecycle timestamps.
  */
+/**
+ * A phone or tablet signed in to the staff app.
+ *
+ * The reason this table exists is revocation. Staff sessions are signed with the
+ * shared dashboard password, so the only way to invalidate one is to rotate that
+ * password — which signs out every counter tablet at once, mid-shift. The
+ * practical consequence is that nobody ever does it, and a handset that walks
+ * out of the shop keeps working until its token expires.
+ *
+ * Each device therefore gets its own secret, and its token is signed with that
+ * rather than the shared password. Deleting or revoking the row makes the token
+ * unverifiable on its own, without touching any other device, and without the
+ * shared password being involved at all.
+ */
+export const staffDevices = pgTable(
+  "staff_devices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Shown in the staff device list — "Counter iPad", "Ana's phone". */
+    label: text("label").notNull(),
+    platform: text("platform"),
+    /**
+     * Per-device HMAC key. Never leaves the server: the device holds only a
+     * token signed with it, so a stolen database row cannot be replayed as a
+     * token and a stolen token cannot be traced back to a key.
+     */
+    secret: text("secret").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * Written lazily — at most once every fifteen minutes per device — because
+     * the queue polls every fifteen seconds and this would otherwise be a
+     * database write on the hottest path in the app.
+     */
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Set rather than deleted, so the audit log still resolves the device. */
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [index("staff_devices_last_seen_idx").on(t.lastSeenAt)],
+);
+
 export const pickupVerifications = pgTable(
   "pickup_verifications",
   {

@@ -17,6 +17,11 @@ import Link from "next/link";
 import { listAvailabilityOverrides, listBlackoutDates, listOperationalIssues, listProductRules, listSlotCapacity } from "@/lib/admin/queries";
 import { SoldOutList } from "@/components/staff/sold-out-list";
 import { StaffRoster } from "@/components/staff/staff-roster";
+import {
+  StaffDevices,
+  type StaffDeviceView,
+} from "@/components/staff/staff-devices";
+import { listStaffDevices } from "@/lib/auth/device-session";
 import { NotificationSettings } from "@/components/staff/notification-settings";
 import { listStaffMembers } from "@/lib/staff/roster";
 import { getNotificationRecipients } from "@/lib/settings/notifications";
@@ -26,6 +31,7 @@ import { CatalogReadinessPanel } from "@/components/staff/catalog-readiness";
 import { getCatalogReadiness } from "@/lib/catalog/readiness";
 import { primaryImage } from "@/lib/catalog/images";
 import { getStoreLocationsSafe } from "@/lib/locations/server";
+import { formatStoreDate, relativeTime, storeToday } from "@/lib/scheduling/time";
 import {
   FALLBACK_SLOT_CAPACITY,
   listSlotCapacityDefaults,
@@ -46,6 +52,7 @@ const SECTIONS = [
   { id: "soldout", label: "Sold out today" },
   { id: "closures", label: "Closures" },
   { id: "capacity", label: "Slot capacity" },
+  { id: "devices", label: "Devices" },
   { id: "notifications", label: "Notifications" },
   { id: "staff", label: "Staff" },
 ] as const;
@@ -93,6 +100,7 @@ async function Settings() {
     roster,
     recipients,
     capacityDefaults,
+    devices,
   ] = await Promise.all([
     getStoreCatalog(),
     listProductRules(),
@@ -104,6 +112,7 @@ async function Settings() {
     listStaffMembers(),
     getNotificationRecipients(),
     listSlotCapacityDefaults(),
+    listStaffDevices(),
   ]);
 
   const env = serverEnv();
@@ -149,6 +158,17 @@ async function Settings() {
       effective: configuredCapacity.get(location.id) ?? globalCapacity,
     })),
   ];
+
+  /* Formatted on the server: "3 hours ago" computed in the browser would be a
+     hydration mismatch, and the exact minute is not what anyone reads this for. */
+  const deviceViews: StaffDeviceView[] = devices.map((device) => ({
+    id: device.id,
+    label: device.label,
+    platform: device.platform,
+    lastSeen: relativeTime(device.lastSeenAt),
+    addedOn: formatStoreDate(storeToday(device.createdAt, env.STORE_TIMEZONE), "short"),
+    revoked: device.revokedAt !== null,
+  }));
 
   const rulesById = new Map(rules.map((rule) => [rule.productId, rule]));
 
@@ -245,6 +265,10 @@ async function Settings() {
       <section id="capacity" className="flex scroll-mt-24 flex-col gap-6">
         <SlotCapacityDefaults rows={capacityRows} />
         <SlotCapacity slots={slots} defaultCap={globalCapacity} locations={locations} />
+      </section>
+
+      <section id="devices" className="scroll-mt-24">
+        <StaffDevices devices={deviceViews} />
       </section>
 
       <section id="notifications" className="flex scroll-mt-24 flex-col gap-4">

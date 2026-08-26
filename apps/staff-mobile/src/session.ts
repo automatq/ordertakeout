@@ -1,3 +1,4 @@
+import { Platform, Settings } from "react-native";
 import * as SecureStore from "expo-secure-store";
 
 /**
@@ -28,6 +29,8 @@ const KEY = "harina.staff.token";
  * being there already suggests.
  */
 const PRESENT = "harina.staff.token.present";
+/** Lives in NSUserDefaults, which — unlike the Keychain — dies with the app. */
+const INSTALL_MARKER = "harina.staff.install";
 
 /** What is actually protecting the token on this device. */
 export type Protection = "biometric" | "device-only";
@@ -116,6 +119,29 @@ export async function loadToken(): Promise<LoadResult> {
   } catch {
     return { kind: "absent" };
   }
+}
+
+/**
+ * Forget a session left behind by a previous install.
+ *
+ * iOS keeps Keychain items when an app is deleted. Reinstalling therefore comes
+ * back still signed in, which is not what deleting an app means to anyone — and
+ * it makes "uninstall it and start again", the universal first move when
+ * something is wrong, quietly do nothing.
+ *
+ * NSUserDefaults *is* wiped on uninstall, so its emptiness is the signal. Android
+ * clears app data including the Keystore, so this is an iOS problem only.
+ *
+ * Deliberately runs before anything reads the token, so a reinstalled app sees a
+ * clean slate rather than a lock screen for a session it cannot explain.
+ */
+export async function forgetPreviousInstall(): Promise<void> {
+  if (Platform.OS !== "ios") return;
+
+  if (Settings.get(INSTALL_MARKER)) return;
+
+  await clearToken();
+  Settings.set({ [INSTALL_MARKER]: true });
 }
 
 export async function clearToken(): Promise<void> {

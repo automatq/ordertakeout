@@ -2,18 +2,34 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { queueResponseSchema } from "@/lib/api/dto";
 
+const VALID_TOKEN = "device-1.9999999999999.signature";
+
 const mocks = vi.hoisted(() => ({
   getDashboardData: vi.fn(),
   serverEnv: vi.fn(() => ({ STAFF_DASHBOARD_PASSWORD: "correct-horse" })),
   consumeRateLimit: vi.fn(async () => ({ allowed: true })),
   requestFingerprint: vi.fn(async () => "test-fingerprint"),
+  registerDevice: vi.fn(),
+  verifyDeviceToken: vi.fn(),
+  touchDevice: vi.fn(async () => {}),
+  recordAudit: vi.fn(async () => {}),
 }));
 
 vi.mock("@/lib/orders/dashboard", () => ({ getDashboardData: mocks.getDashboardData }));
 vi.mock("@/lib/env", () => ({ serverEnv: mocks.serverEnv }));
+vi.mock("@/lib/audit/log", () => ({ recordAudit: mocks.recordAudit }));
 vi.mock("@/lib/security/rate-limit", () => ({
   consumeRateLimit: mocks.consumeRateLimit,
   requestFingerprint: mocks.requestFingerprint,
+}));
+/* Stubbed at the token layer so the header parsing in lib/api/context.ts is
+   still the real thing — that is what the identical-401 test is about. The
+   signing, expiry and revocation logic is tested against a real database in
+   lib/auth/device-session.integration.test.ts. */
+vi.mock("@/lib/auth/device-session", () => ({
+  registerDevice: mocks.registerDevice,
+  verifyDeviceToken: mocks.verifyDeviceToken,
+  touchDevice: mocks.touchDevice,
 }));
 
 const { GET } = await import("./orders/route");
@@ -73,11 +89,7 @@ function dashboardData(orders = [dashboardOrder()]) {
   };
 }
 
-/** A token the route will accept, signed the way the real sign-in signs it. */
-async function validToken(): Promise<string> {
-  const { createSessionToken } = await import("@/lib/auth/session");
-  return createSessionToken("correct-horse");
-}
+const validToken = async (): Promise<string> => VALID_TOKEN;
 
 const queueRequest = (headers: Record<string, string> = {}) =>
   new Request("http://localhost/api/v1/staff/orders", { headers });
@@ -87,6 +99,18 @@ beforeEach(() => {
   mocks.getDashboardData.mockResolvedValue(dashboardData());
   mocks.consumeRateLimit.mockClear();
   mocks.consumeRateLimit.mockResolvedValue({ allowed: true });
+
+  mocks.verifyDeviceToken.mockReset();
+  mocks.verifyDeviceToken.mockImplementation(async (token?: string) =>
+    token === VALID_TOKEN ? { deviceId: "device-1" } : null,
+  );
+  mocks.registerDevice.mockReset();
+  mocks.registerDevice.mockResolvedValue({
+    deviceId: "device-1",
+    token: VALID_TOKEN,
+    expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60_000),
+  });
+  mocks.recordAudit.mockClear();
 });
 
 describe("GET /api/v1/staff/orders", () => {
@@ -97,8 +121,8 @@ describe("GET /api/v1/staff/orders", () => {
       GET(queueRequest({ authorization: "Basic abc" })),
       GET(queueRequest({ authorization: "Bearer" })),
       GET(queueRequest({ authorization: "Bearer 9999999999999.forged" })),
-      // Correctly shaped and correctly signed, but for the wrong secret.
-      GET(queueRequest({ authorization: `Bearer ${await (await import("@/lib/auth/session")).createSessionToken("wrong-secret")}` })),
+      // Well-formed, but the device was revoked or never existed.
+      GET(queueRequest({ authorization: "Bearer device-9.9999999999999.signature" })),
     ]);
 
     const bodies = await Promise.all(responses.map((r) => r.text()));
@@ -114,11 +138,16 @@ describe("GET /api/v1/staff/orders", () => {
     expect(response.status).toBe(200);
   });
 
-  it("rejects an expired token", async () => {
-    const { createSessionToken } = await import("@/lib/auth/session");
-    const longExpired = await createSessionToken("correct-horse", Date.now() - 90 * 24 * 60 * 60_000);
-    const response = await GET(queueRequest({ authorization: `Bearer ${longExpired}` }));
-    expect(response.status).toBe(401);
+  it("records that the device is still in use", async () => {
+    await GET(queueRequest({ authorization: `Bearer ${await validToken()}` }));
+    expect(mocks.touchDevice).toHaveBeenCalledWith("device-1");
+  });
+
+  it("does not fail the request when recording last-seen fails", async () => {
+    // A kitchen screen should not go blank because a bookkeeping write lost.
+    mocks.touchDevice.mockRejectedValueOnce(new Error("database busy"));
+    const response = await GET(queueRequest({ authorization: `Bearer ${await validToken()}` }));
+    expect(response.status).toBe(200);
   });
 
   it("serialises through the DTO and never echoes the raw row", async () => {
@@ -178,6 +207,29 @@ describe("POST /api/v1/staff/session", () => {
     const { data } = await response.json();
     const queue = await GET(queueRequest({ authorization: `Bearer ${data.token}` }));
     expect(queue.status).toBe(200);
+  });
+
+  it("registers the handset so it can be revoked on its own later", async () => {
+    await post({ password: "correct-horse", deviceLabel: "Counter iPad", platform: "ios" });
+    expect(mocks.registerDevice).toHaveBeenCalledWith("Counter iPad", "ios");
+    expect(mocks.recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "staff_device.registered", entityId: "device-1" }),
+    );
+  });
+
+  it("never registers a device for a failed sign-in", async () => {
+    // Otherwise the device list fills with rows for people who guessed wrong.
+    await post({ password: "hunter2" });
+    await post({ password: "" });
+    expect(mocks.registerDevice).not.toHaveBeenCalled();
+  });
+
+  it("rejects a label that is empty, blank or absurdly long", async () => {
+    for (const deviceLabel of ["", "   ", "x".repeat(61)]) {
+      const response = await post({ password: "correct-horse", deviceLabel });
+      expect(response.status).toBe(400);
+    }
+    expect(mocks.registerDevice).not.toHaveBeenCalled();
   });
 
   it("rejects the wrong password without saying why", async () => {

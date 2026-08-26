@@ -23,7 +23,7 @@ export const DEMO_PRODUCTS: CatalogProduct[] = [
     description:
       "Soft, buttery brioche rolls topped with cheese or ube, baked fresh for your party.",
     imageIds: [],
-    imageUrls: ["/harina/ube-pandesal.webp", "/harina/freshly-baked.webp"],
+    imageUrls: ["/harina/ensaymada-tray.webp"],
     categoryId: "DEMO_CAT_TRAYS",
     categoryName: "Party Trays",
     variants: [
@@ -66,7 +66,7 @@ export const DEMO_PRODUCTS: CatalogProduct[] = [
     name: "Hopia Ube / Hopia Baboy",
     description: "Flaky bean-filled pastries, in ube or classic baboy.",
     imageIds: [],
-    imageUrls: ["/harina/hopia-pirat-baboy.webp"],
+    imageUrls: ["/harina/hopia-ube.webp", "/harina/hopia-pirat-baboy.webp"],
     categoryId: "DEMO_CAT_TRAYS",
     categoryName: "Party Trays",
     variants: [

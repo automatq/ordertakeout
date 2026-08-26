@@ -1,4 +1,4 @@
-import { hasStaffBearer } from "@/lib/api/context";
+import { staffDeviceFromRequest } from "@/lib/api/context";
 import { toQueueResponse } from "@/lib/api/dto";
 import { ok, unauthorized } from "@/lib/api/envelope";
 import { getDashboardData } from "@/lib/orders/dashboard";
@@ -12,7 +12,7 @@ import { getDashboardData } from "@/lib/orders/dashboard";
  * a bearer token, which is the control that matters.
  */
 export async function GET(request: Request): Promise<Response> {
-  if (!(await hasStaffBearer(request))) return unauthorized();
+  if (!(await staffDeviceFromRequest(request))) return unauthorized();
 
   const url = new URL(request.url);
   const locationId = url.searchParams.get("locationId") ?? undefined;

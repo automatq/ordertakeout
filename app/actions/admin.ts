@@ -4,6 +4,7 @@ import { updateTag } from "next/cache";
 import { z } from "zod";
 
 import { requireStaffSession } from "@/lib/auth/guard";
+import { revokeDevice } from "@/lib/auth/device-session";
 import {
   addAvailabilityOverride,
   addBlackoutDate,
@@ -252,6 +253,38 @@ export async function setSlotCapacityDefaultAction(input: unknown): Promise<Admi
     entityType: "location",
     entityId: parsed.data.locationId,
     metadata: { maxOrdersPerSlot: parsed.data.maxOrdersPerSlot },
+  });
+
+  return { ok: true };
+}
+
+/**
+ * Cut off one phone or tablet.
+ *
+ * The point of the staff_devices table: before it, the only way to invalidate a
+ * staff session was to change the shared password, which signed out every
+ * counter tablet at once. Revoking here stops exactly one device and touches
+ * nothing else.
+ */
+export async function revokeStaffDeviceAction(input: unknown): Promise<AdminResult> {
+  await requireStaffSession();
+
+  const parsed = z.object({ deviceId: z.uuid() }).safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "That device is no longer listed." };
+  }
+
+  const revoked = await revokeDevice(parsed.data.deviceId);
+  if (!revoked) {
+    // Already revoked, or gone. Say so rather than claiming to have acted.
+    return { ok: false, error: "That device had already been signed out." };
+  }
+
+  await recordAudit({
+    actorType: "staff",
+    action: "staff_device.revoked",
+    entityType: "staff_device",
+    entityId: parsed.data.deviceId,
   });
 
   return { ok: true };

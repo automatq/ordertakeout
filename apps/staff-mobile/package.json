@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "expo": "57.0.16",
+    "expo-device": "~57.0.1",
     "expo-secure-store": "57.0.1",
     "expo-status-bar": "57.0.1",
     "react": "19.2.3",

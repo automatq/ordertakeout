@@ -66,16 +66,38 @@ Two failure modes are handled because they would otherwise strand a shop:
 - **A handset with no passcode or biometric** cannot enforce any of this. The
   app stores the token at the weaker level and says so on a permanent red strip,
   rather than implying a protection it does not have.
+- **iOS keeps Keychain items when an app is deleted.** A reinstall would
+  otherwise come back still signed in — which is not what deleting an app means
+  to anyone, and it makes "uninstall it and try again" quietly do nothing.
+  NSUserDefaults *is* wiped, so its emptiness is the signal to clear the
+  Keychain first. Android removes app data on uninstall, so this is iOS only.
+  Found by uninstalling during testing and getting a lock screen instead of a
+  sign-in screen.
+
+## Revocation
+
+Signing in registers a row in `staff_devices` with its own secret, and the token
+is signed with that rather than the shared password. Revoking the row from
+**Settings → Devices** on the web dashboard stops exactly that handset,
+immediately, and touches nothing else — no other tablet signs out and the shared
+password never changes.
+
+The label comes from `Device.deviceName`, because "iPhone" three times over
+makes the revoke decision impossible and "Ana's iPhone" makes it obvious.
+
+Signing in twice on one tablet makes two rows. That is the honest record: the
+first token is still live until somebody revokes it.
+
+Tokens last thirty days rather than the web session's twelve hours. A tablet
+that asks for the password every morning gets the password written on a sticky
+note beside it. The long life is only defensible *because* revocation exists —
+the answer to a lost device is to revoke it, not to hope it expires.
 
 ## What's next, in order
 
-1. **Per-device revocation.** The token is signed with the shared staff
-   password, so a lost handset can only be revoked by rotating it — which signs
-   out every tablet mid-shift, which means nobody ever will. Needs the
-   `staff_devices` table.
-2. **Pickup verification.** The biggest native win: scanning a customer's pass
+1. **Pickup verification.** The biggest native win: scanning a customer's pass
    with the camera instead of reading an order number aloud.
-3. **86 / pause**, then the prep timeline.
+2. **86 / pause**, then the prep timeline.
 
 expo-router goes in with pickup verification. At two screens it would be configuration
 without a payoff; navigation is a piece of state in `App.tsx` until then.

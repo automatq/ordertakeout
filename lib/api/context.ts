@@ -1,29 +1,35 @@
 import "server-only";
 
-import { verifySessionToken } from "@/lib/auth/session";
-import { serverEnv } from "@/lib/env";
+import { touchDevice, verifyDeviceToken } from "@/lib/auth/device-session";
 
 /**
- * The Next-specific surface of a request, resolved one way for a bearer client.
+ * The Next-specific surface of a request, resolved for a bearer client.
  *
  * The web guard in lib/auth/guard.ts reads a cookie and `redirect()`s. Neither
  * works for a phone: it never sends the cookie, and a 302 to /staff/login is not
- * something a JSON client can act on. So the same token check is exposed here
- * against the Authorization header, returning a boolean instead of redirecting.
+ * something a JSON client can act on.
  *
- * Same token, same secret, same verification — only the transport differs. That
- * matters: it means there is one definition of "signed in as staff" rather than
- * two that can drift apart.
+ * Bearer tokens are per-device rather than the shared cookie token, so that a
+ * lost handset can be revoked without rotating the password every counter tablet
+ * depends on. See lib/auth/device-session.ts.
  */
-export async function hasStaffBearer(request: Request): Promise<boolean> {
+export async function staffDeviceFromRequest(request: Request): Promise<string | null> {
   const header = request.headers.get("authorization");
-  if (!header) return false;
+  if (!header) return null;
 
   /* Case-insensitive scheme, exactly one space: some HTTP clients send "bearer".
      Anything else is malformed rather than merely wrong, and is rejected the
      same way so neither case is distinguishable from the outside. */
   const match = /^Bearer (.+)$/i.exec(header.trim());
-  if (!match) return false;
+  if (!match) return null;
 
-  return verifySessionToken(serverEnv().STAFF_DASHBOARD_PASSWORD, match[1]);
+  const session = await verifyDeviceToken(match[1]);
+  if (!session) return null;
+
+  /* Cheap and lazy — see touchDevice. Deliberately not awaited into the response
+     path: a slow write should not delay a kitchen screen, and a failed one
+     should not fail the request. */
+  void touchDevice(session.deviceId).catch(() => {});
+
+  return session.deviceId;
 }

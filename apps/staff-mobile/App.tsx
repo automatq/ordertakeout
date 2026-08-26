@@ -8,6 +8,7 @@ import { Queue } from "./src/screens/Queue";
 import {
   canUseBiometrics,
   clearToken,
+  forgetPreviousInstall,
   hasStoredToken,
   loadToken,
   saveToken,
@@ -57,6 +58,10 @@ export default function App() {
   useEffect(() => {
     let active = true;
     void (async () => {
+      /* Before anything reads the token: on iOS the Keychain outlives the app,
+         so a reinstall would otherwise come back holding the old session. */
+      await forgetPreviousInstall();
+
       /* Nobody has signed in on this handset, so go straight to the password
          rather than showing a lock screen for a session that does not exist. */
       if (!(await hasStoredToken())) {
