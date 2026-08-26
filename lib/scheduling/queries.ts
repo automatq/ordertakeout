@@ -15,8 +15,8 @@ import {
 } from "@/lib/db/schema";
 import { serverEnv } from "@/lib/env";
 import { getStoreLocation } from "@/lib/locations/server";
+import { getSlotCapacityDefault } from "@/lib/settings/capacity";
 import {
-  DEFAULT_MAX_ORDERS_PER_SLOT,
   MAX_ORDER_HORIZON_DAYS,
   SLOT_HOLD_TTL_MINUTES,
 } from "@/lib/store";
@@ -118,6 +118,10 @@ export async function loadAvailabilityInput(
   const lastDate = addCalendarDays(today, horizonDays);
 
   const rules = await loadProductRules(cart.map((line) => line.productId), exec);
+  // Staff-configurable, per location, with the compiled-in constant only as a
+  // last resort — see lib/settings/capacity.ts for why this stopped being a
+  // hardcoded number.
+  const defaultSlotCapacity = await getSlotCapacityDefault(locationId);
 
   const [blackouts, capacities, slotCounts, productCounts, soldOutOverrides] = await Promise.all([
     exec
@@ -185,7 +189,7 @@ export async function loadAvailabilityInput(
         .sort((a, b) => Number(Boolean(a.squareLocationId)) - Number(Boolean(b.squareLocationId)))
         .map((c) => [slotKey(c.pickupDate, c.pickupTime), c.maxOrders]),
     ),
-    defaultSlotCapacity: DEFAULT_MAX_ORDERS_PER_SLOT,
+    defaultSlotCapacity,
     productDayUsage: new Map(
       productCounts.map((r) => [productDayKey(r.productId, r.date), r.units]),
     ),

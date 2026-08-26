@@ -281,6 +281,53 @@ describe("slot capacity (client question 9)", () => {
     expect(result.days[0]?.slots.find((s) => s.time === "16:00")?.remainingOrders).toBe(0);
   });
 
+  /* The number this reads is a setting the bakery owns (lib/settings/capacity.ts),
+     not a constant. Five orders an hour suits party trays; a shop selling bread
+     all day needs a far bigger number, and nothing else in the engine should
+     have to change for that to work. */
+  it("scales with the configured default rather than a compiled-in five", () => {
+    const busy = expectOk(
+      computeAvailability(
+        makeInput({
+          defaultSlotCapacity: 40,
+          slotUsage: new Map([[slotKey("2026-03-03", "16:00"), 30]]),
+        }),
+      ),
+    );
+    const slot = busy.days[0]?.slots.find((s) => s.time === "16:00");
+    expect(slot).toMatchObject({ available: true, remainingOrders: 10 });
+
+    // And the same usage against the old default would have closed it.
+    const narrow = expectOk(
+      computeAvailability(
+        makeInput({
+          defaultSlotCapacity: 5,
+          slotUsage: new Map([[slotKey("2026-03-03", "16:00"), 30]]),
+        }),
+      ),
+    );
+    expect(narrow.days[0]?.slots.find((s) => s.time === "16:00")).toMatchObject({
+      available: false,
+      reason: "slot_full",
+    });
+  });
+
+  it("lets a per-date override cut below a raised default", () => {
+    // The two controls stack: a big everyday number, trimmed for one date.
+    const result = expectOk(
+      computeAvailability(
+        makeInput({
+          defaultSlotCapacity: 40,
+          slotCapacityOverrides: new Map([[slotKey("2026-03-03", "16:00"), 2]]),
+          slotUsage: new Map([[slotKey("2026-03-03", "16:00"), 2]]),
+        }),
+      ),
+    );
+    const day = result.days[0];
+    expect(day?.slots.find((s) => s.time === "16:00")?.available).toBe(false);
+    expect(day?.slots.find((s) => s.time === "17:00")?.remainingOrders).toBe(40);
+  });
+
   it("honours a staff override for a single slot", () => {
     const result = expectOk(
       computeAvailability(

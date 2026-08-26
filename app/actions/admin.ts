@@ -35,6 +35,7 @@ import {
   NOTIFY_RECIPIENTS_KEY,
   notificationRecipientsSchema,
 } from "@/lib/settings/notifications";
+import { setSlotCapacityDefault } from "@/lib/settings/capacity";
 import { setOrderingPause } from "@/lib/settings/pause";
 import { setSetting, SETTINGS_TAG } from "@/lib/settings/store";
 
@@ -211,6 +212,49 @@ export async function saveProductRulesBulkAction(input: unknown): Promise<AdminR
   ];
 
   return { ok: true, warnings };
+}
+
+/**
+ * Set how many orders a pickup slot accepts by default.
+ *
+ * Counts orders rather than items: it bounds how many customers the counter can
+ * hand over to in one window. Per-product volume is a separate constraint and
+ * lives on the product's own rules.
+ */
+export async function setSlotCapacityDefaultAction(input: unknown): Promise<AdminResult> {
+  await requireStaffSession();
+
+  const parsed = z
+    .object({
+      locationId: z.union([z.string().min(1), z.null()]),
+      maxOrdersPerSlot: z.coerce
+        .number()
+        .int("Whole orders only")
+        .min(1, "A slot has to accept at least one order")
+        .max(500),
+    })
+    .safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "Enter a whole number of orders.", fieldErrors: flatten(parsed.error) };
+  }
+
+  if (parsed.data.locationId && !(await getStoreLocation(parsed.data.locationId))) {
+    return { ok: false, error: "That pickup location is no longer active." };
+  }
+
+  await setSlotCapacityDefault(parsed.data.locationId, parsed.data.maxOrdersPerSlot);
+  updateTag(SETTINGS_TAG);
+  // Capacity feeds the storefront calendar, which is cached under this tag.
+  updateTag(PRODUCT_CONFIG_TAG);
+  await recordAudit({
+    actorType: "staff",
+    action: "capacity.default_set",
+    entityType: "location",
+    entityId: parsed.data.locationId,
+    metadata: { maxOrdersPerSlot: parsed.data.maxOrdersPerSlot },
+  });
+
+  return { ok: true };
 }
 
 export async function addBlackoutAction(formData: FormData): Promise<AdminResult> {

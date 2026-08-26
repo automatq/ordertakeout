@@ -251,3 +251,73 @@ describeIfDb("slot reservation under concurrency", () => {
     expect(second.ok).toBe(true);
   }, 30_000);
 });
+
+/**
+ * The slot default is a setting now, not a constant, so there is a real query
+ * between /staff/settings and the calendar the storefront draws. The engine's
+ * own handling of `defaultSlotCapacity` is unit-tested; what needs a database is
+ * that `loadAvailabilityInput` reads the row staff just wrote, and resolves
+ * location over global.
+ */
+describeIfDb("configured slot capacity reaches the availability engine", () => {
+  let db: typeof import("@/lib/db").db;
+  let loadAvailabilityInput: typeof import("./queries").loadAvailabilityInput;
+  let setSlotCapacityDefault: typeof import("@/lib/settings/capacity").setSlotCapacityDefault;
+  let client: import("postgres").Sql;
+
+  beforeAll(async () => {
+    process.env.DATABASE_URL = TEST_DATABASE_URL;
+    process.env.STORE_TIMEZONE ??= "America/Los_Angeles";
+    process.env.SQUARE_ACCESS_TOKEN ??= "test";
+    process.env.SQUARE_WEBHOOK_SIGNATURE_KEY ??= "test";
+    process.env.SQUARE_WEBHOOK_NOTIFICATION_URL ??= "https://example.com/hook";
+    process.env.STAFF_DASHBOARD_PASSWORD ??= "test-password";
+
+    ({ db } = await import("@/lib/db"));
+    ({ loadAvailabilityInput } = await import("./queries"));
+    ({ setSlotCapacityDefault } = await import("@/lib/settings/capacity"));
+
+    const postgres = (await import("postgres")).default;
+    client = postgres(TEST_DATABASE_URL!, { prepare: false });
+    await clearDefaults();
+  });
+
+  afterAll(async () => {
+    if (!TEST_DATABASE_URL) return;
+    await clearDefaults();
+    await client.end();
+  });
+
+  /* Scoped to this suite's own keys: a shared database may be someone's real
+     store, and blanket-deleting the prefix would silently reset their capacity. */
+  async function clearDefaults() {
+    await client`DELETE FROM app_settings WHERE key IN (
+      'capacity.slot-default.global',
+      ${"capacity.slot-default." + LOCATION_A},
+      ${"capacity.slot-default." + LOCATION_B}
+    )`;
+  }
+
+  const load = (locationId: string | undefined) =>
+    loadAvailabilityInput([{ productId: PRODUCT_ID, quantity: 1 }], db(), locationId);
+
+  it("falls back to the compiled-in value with nothing configured", async () => {
+    const { DEFAULT_MAX_ORDERS_PER_SLOT } = await import("@/lib/store");
+    const input = await load(LOCATION_A);
+    expect(input.defaultSlotCapacity).toBe(DEFAULT_MAX_ORDERS_PER_SLOT);
+  }, 30_000);
+
+  it("picks up a new shop-wide default without a redeploy", async () => {
+    await setSlotCapacityDefault(null, 40);
+    expect((await load(LOCATION_A)).defaultSlotCapacity).toBe(40);
+    expect((await load(LOCATION_B)).defaultSlotCapacity).toBe(40);
+  }, 30_000);
+
+  it("lets one branch override the shop-wide default", async () => {
+    await setSlotCapacityDefault(null, 40);
+    await setSlotCapacityDefault(LOCATION_A, 12);
+    expect((await load(LOCATION_A)).defaultSlotCapacity).toBe(12);
+    // The busy branch's number must not follow the customer to the quiet one.
+    expect((await load(LOCATION_B)).defaultSlotCapacity).toBe(40);
+  }, 30_000);
+});

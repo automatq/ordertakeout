@@ -26,7 +26,14 @@ import { CatalogReadinessPanel } from "@/components/staff/catalog-readiness";
 import { getCatalogReadiness } from "@/lib/catalog/readiness";
 import { primaryImage } from "@/lib/catalog/images";
 import { getStoreLocationsSafe } from "@/lib/locations/server";
-import { DEFAULT_MAX_ORDERS_PER_SLOT } from "@/lib/store";
+import {
+  FALLBACK_SLOT_CAPACITY,
+  listSlotCapacityDefaults,
+} from "@/lib/settings/capacity";
+import {
+  SlotCapacityDefaults,
+  type CapacityDefaultRow,
+} from "@/components/staff/slot-capacity-defaults";
 
 export const metadata = { title: "Settings — Staff" };
 
@@ -75,7 +82,18 @@ async function CatalogHealth() {
 async function Settings() {
   await connection();
 
-  const [catalog, rules, blackouts, slots, locations, issues, soldOut, roster, recipients] = await Promise.all([
+  const [
+    catalog,
+    rules,
+    blackouts,
+    slots,
+    locations,
+    issues,
+    soldOut,
+    roster,
+    recipients,
+    capacityDefaults,
+  ] = await Promise.all([
     getStoreCatalog(),
     listProductRules(),
     listBlackoutDates(),
@@ -85,6 +103,7 @@ async function Settings() {
     listAvailabilityOverrides(),
     listStaffMembers(),
     getNotificationRecipients(),
+    listSlotCapacityDefaults(),
   ]);
 
   const env = serverEnv();
@@ -108,6 +127,28 @@ async function Settings() {
     reason: entry.reason,
     createdBy: entry.createdBy,
   }));
+
+  /* The global row first, then each location — a branch with nothing of its own
+     shows the global number as what it is currently using, so the effect of the
+     setting is visible without opening a second screen. */
+  const configuredCapacity = new Map(
+    capacityDefaults.map((row) => [row.locationId, row.maxOrdersPerSlot] as const),
+  );
+  const globalCapacity = configuredCapacity.get(null) ?? FALLBACK_SLOT_CAPACITY;
+  const capacityRows: CapacityDefaultRow[] = [
+    {
+      locationId: null,
+      locationName: "All locations",
+      configured: configuredCapacity.get(null) ?? null,
+      effective: globalCapacity,
+    },
+    ...locations.map((location) => ({
+      locationId: location.id,
+      locationName: location.name,
+      configured: configuredCapacity.get(location.id) ?? null,
+      effective: configuredCapacity.get(location.id) ?? globalCapacity,
+    })),
+  ];
 
   const rulesById = new Map(rules.map((rule) => [rule.productId, rule]));
 
@@ -201,8 +242,9 @@ async function Settings() {
         <BlackoutDates dates={blackouts} locations={locations} />
       </section>
 
-      <section id="capacity" className="scroll-mt-24">
-        <SlotCapacity slots={slots} defaultCap={DEFAULT_MAX_ORDERS_PER_SLOT} locations={locations} />
+      <section id="capacity" className="flex scroll-mt-24 flex-col gap-6">
+        <SlotCapacityDefaults rows={capacityRows} />
+        <SlotCapacity slots={slots} defaultCap={globalCapacity} locations={locations} />
       </section>
 
       <section id="notifications" className="flex scroll-mt-24 flex-col gap-4">
