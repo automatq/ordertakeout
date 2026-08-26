@@ -75,10 +75,10 @@ export function SiteFooter({ locations = [] }: { locations?: StoreLocation[] }) 
               Menu
             </Link>
             <Link
-              href="/#trays"
+              href="/#order"
               className="text-canvas/75 hover:text-accent flex min-h-11 items-center text-sm transition-colors"
             >
-              Party trays
+              Order ahead
             </Link>
             <Link
               href="/orders"

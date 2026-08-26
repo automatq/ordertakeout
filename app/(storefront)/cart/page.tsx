@@ -15,7 +15,7 @@ export default function CartPage() {
     <main className="shell-narrow flex flex-col gap-7 py-10 sm:gap-9 sm:py-16 lg:py-20">
       <nav aria-label="Breadcrumb">
         <Link
-          href="/#trays"
+          href="/#order"
           className="text-ink-muted hover:text-brand focus-visible:ring-brand inline-flex min-h-11 items-center gap-2 rounded-full px-3 text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
         >
           <ArrowLeftIcon className="h-4 w-4" />
@@ -29,7 +29,7 @@ export default function CartPage() {
           Your order
         </h1>
         <p className="text-ink-muted max-w-md text-pretty">
-          Check your trays, then choose a pickup time at your selected bakery.
+          Check your order, then choose a pickup time at your selected bakery.
         </p>
       </header>
 

@@ -49,7 +49,7 @@ const cartSchema = z
       if (quantity > 50) {
         context.addIssue({
           code: "custom",
-          message: "A cart line cannot exceed 50 trays",
+          message: "A cart line cannot exceed 50 of one item",
         });
         return;
       }

@@ -113,7 +113,7 @@ export function ProductCard({ product, soldOut = false }: { product: StoreProduc
           <span>
             {soldOut ? "View other locations" : product.variants.length > 1
               ? `${product.variants.length} sizes`
-              : "View tray"}
+              : "View item"}
           </span>
           <ArrowRightIcon className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
         </span>

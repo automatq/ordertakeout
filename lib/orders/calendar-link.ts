@@ -28,7 +28,7 @@ export function googleCalendarUrl(input: {
     text: `Pick up order ${orderNumber} — ${locationName}`,
     dates: `${start}/${end}`,
     location: `${address}, ${city}`,
-    details: `Collect your party tray order ${orderNumber}. Call ${phone} if you need to change anything.`,
+    details: `Collect your order ${orderNumber}. Call ${phone} if you need to change anything.`,
   });
 
   return `https://calendar.google.com/calendar/render?${params.toString()}`;

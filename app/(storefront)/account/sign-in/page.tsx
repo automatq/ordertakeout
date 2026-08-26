@@ -26,7 +26,7 @@ export default function SignInPage() {
         <p className="text-ink-subtle border-border border-t pt-4 text-center text-sm">
           Don&rsquo;t have an account yet? Place an order, then choose{" "}
           <strong className="text-ink font-medium">Save my account</strong> on your
-          confirmation page. <Link href="/#trays" className="text-brand underline">Browse trays</Link>
+          confirmation page. <Link href="/#order" className="text-brand underline">Browse the menu</Link>
         </p>
       </section>
     </main>

@@ -57,11 +57,11 @@ export default async function ProductPage({ params }: PageProps) {
     <main className="shell flex flex-col gap-12 py-8 sm:py-12 lg:gap-16 lg:py-16">
       <nav aria-label="Breadcrumb">
         <Link
-          href="/#trays"
+          href="/#order"
           className="border-brand/25 bg-surface text-brand hover:bg-brand hover:text-brand-ink inline-flex min-h-11 items-center gap-2 rounded-full border-2 px-4 text-sm font-medium transition-colors"
         >
           <ArrowLeftIcon className="h-4 w-4" />
-          All party trays
+          All products
         </Link>
       </nav>
 
@@ -86,7 +86,7 @@ export default async function ProductPage({ params }: PageProps) {
 
           {/* Above the size picker, not below it. The lead time is the single
               biggest constraint on this purchase, and customers were choosing a
-              size before finding out the tray needs a day's notice. */}
+              size before finding out the item needs a day's notice. */}
           <OrderingRules product={product} />
 
           <DietaryInfo allergens={product.allergens} dietaryTags={product.dietaryTags} />
@@ -101,7 +101,7 @@ export default async function ProductPage({ params }: PageProps) {
       </section>
 
       <Suspense fallback={null}>
-        <RelatedTrays currentId={product.id} />
+        <RelatedProducts currentId={product.id} />
       </Suspense>
     </main>
   );
@@ -255,13 +255,13 @@ function OrderingRules({ product }: { product: StoreProduct }) {
 }
 
 /**
- * The other trays.
+ * The rest of the menu.
  *
  * A dead end here means the customer's only route onward is the back button —
  * and with three products in the catalog, showing the rest costs one already
  * cached call.
  */
-async function RelatedTrays({ currentId }: { currentId: string }) {
+async function RelatedProducts({ currentId }: { currentId: string }) {
   await connection();
   const { products } = await getOrderableProducts();
   const others = products.filter((product) => product.id !== currentId);
@@ -279,7 +279,7 @@ async function RelatedTrays({ currentId }: { currentId: string }) {
           id="related-heading"
           className="font-display text-brand text-display-md font-normal uppercase"
         >
-          Other party trays
+          More from the bakery
         </h2>
       </header>
       <ProductGrid products={others} />

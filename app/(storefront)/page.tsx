@@ -90,7 +90,7 @@ export default function HomePage() {
       <Suspense fallback={null}><StructuredData /></Suspense>
       <Hero />
       <Marquee />
-      <PartyTraysSection />
+      <OrderAheadSection />
       <PickedForYou />
       <FreshlyBaked />
       <Reviews />
@@ -175,8 +175,8 @@ function Hero() {
           </p>
 
           <div className="flex w-full flex-col gap-3 pt-2 sm:w-auto sm:flex-row">
-            <Link href="#trays" className="btn hero-button-primary rounded-pill">
-              Order party trays
+            <Link href="#order" className="btn hero-button-primary rounded-pill">
+              Start your order
               <ArrowRightIcon className="h-4 w-4" />
             </Link>
             <a href={STORE_INFO.phoneHref} className="btn hero-button-secondary rounded-pill">
@@ -225,14 +225,34 @@ function Hero() {
 
 async function HeroOrderWindow() {
   await connection();
-  const { products, error } = await getOrderableProducts();
+  const [{ products, error }, locations] = await Promise.all([
+    getOrderableProducts(),
+    getStoreLocationsSafe(),
+  ]);
   if (error || products.length === 0) return null;
+  const locationCount = locations.length;
 
-  const leadTimeDays = Math.max(...products.map((product) => product.rule.leadTimeDays));
+  /* Describe the range, not the worst case. This took the maximum lead time
+     across the whole catalog, so a single three-day celebration cake would tell
+     every customer the shop needs three days' notice for a loaf of bread — and
+     a same-day item rendered as "at least 0 days ahead". The cutoff shown is
+     the earliest across products, so ordering by it is safe for everything. */
+  const leadTimes = products.map((product) => product.rule.leadTimeDays);
+  const minLead = Math.min(...leadTimes);
+  const maxLead = Math.max(...leadTimes);
   const cutoff = products
     .map((product) => product.rule.orderCutoffTime)
     .sort((a, b) => a.localeCompare(b))[0];
   if (!cutoff) return null;
+
+  const window =
+    minLead === maxLead
+      ? minLead === 0
+        ? `Order by ${formatPickupTime(cutoff)} for pickup the same day.`
+        : `Order by ${formatPickupTime(cutoff)}, at least ${minLead} day${minLead === 1 ? "" : "s"} ahead.`
+      : minLead === 0
+        ? `Same-day pickup on many items — some need up to ${maxLead} day${maxLead === 1 ? "" : "s"}.`
+        : `Order ${minLead}–${maxLead} days ahead, by ${formatPickupTime(cutoff)}.`;
 
   return (
     <div className="storefront-hero-pickup shadow-raised absolute right-4 bottom-0 left-4 flex items-center gap-3 sm:right-8 sm:left-8 lg:right-8 lg:left-8">
@@ -243,12 +263,13 @@ async function HeroOrderWindow() {
         <p className="text-secondary text-xs font-semibold tracking-[0.12em] uppercase">
           Pickup pre-orders
         </p>
-        <p className="text-ink mt-0.5 text-sm leading-snug sm:text-base">
-          Order by {formatPickupTime(cutoff)} at least {leadTimeDays} day
-          {leadTimeDays === 1 ? "" : "s"} ahead.
-        </p>
+        <p className="text-ink mt-0.5 text-sm leading-snug sm:text-base">{window}</p>
       </div>
-      <span className="tag tag-accent hidden sm:inline-flex">3 shops</span>
+      {locationCount > 0 ? (
+        <span className="tag tag-accent hidden sm:inline-flex">
+          {locationCount} shop{locationCount === 1 ? "" : "s"}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -280,13 +301,13 @@ function Marquee() {
  * The shell — heading, lede, anchor — is static and paints immediately; only
  * the grid waits on Square and the database.
  */
-function PartyTraysSection() {
+function OrderAheadSection() {
   return (
-    <section id="trays" data-menu-section className="bg-surface border-border scroll-mt-24 border-y">
+    <section id="order" data-menu-section className="bg-surface border-border scroll-mt-24 border-y">
       <div className="shell py-section">
         <SectionHeading
           eyebrow="Pre-order &amp; pickup"
-          title="Party trays, ready when you are"
+          title="Order ahead, pick up fresh"
           lede="Order ahead, choose a location and pickup time, then collect from the store you selected."
         />
         <div aria-hidden className="mt-6 flex items-center gap-4">
@@ -298,7 +319,7 @@ function PartyTraysSection() {
 
         <div className="mt-10">
           <Suspense fallback={<ProductGridSkeleton />}>
-            <PartyTrayGrid />
+            <OrderAheadGrid />
           </Suspense>
         </div>
       </div>
@@ -306,7 +327,7 @@ function PartyTraysSection() {
   );
 }
 
-async function PartyTrayGrid() {
+async function OrderAheadGrid() {
   await connection();
   const { products, error } = await getOrderableProducts();
 
@@ -316,7 +337,7 @@ async function PartyTrayGrid() {
     return (
       <EmptyState
         icon={<LoafIcon className="h-6 w-6" />}
-        title="No trays available right now"
+        title="Nothing available to order right now"
         description="Please check back soon — or call the store and we'll tell you what we can bake for you."
       >
         <a href={STORE_INFO.phoneHref} className="btn btn-outline btn-sm mt-2">
@@ -564,8 +585,8 @@ async function Visit() {
           </ul>
 
           <div className="flex flex-wrap gap-3 pt-1">
-            <Link href="#trays" className="btn btn-outline">
-              Order a tray
+            <Link href="#order" className="btn btn-outline">
+              Start an order
             </Link>
           </div>
         </div>

@@ -327,7 +327,7 @@
     color: var(--color-brand-deep);
   }
 
-  /* In-page anchors (the storefront's `#trays` jump) should glide, and every
+  /* In-page anchors (the storefront's `#order` jump) should glide, and every
      sticky header in the app is ~5rem tall, so nothing lands underneath one. */
   html {
     scroll-behavior: smooth;

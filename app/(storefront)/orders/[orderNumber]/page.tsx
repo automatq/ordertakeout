@@ -142,7 +142,7 @@ async function OrderDetail({ params, searchParams }: PageProps) {
               <PhoneIcon className="h-4 w-4" />
               {pickupPhone}
             </a>
-            <Link href="/#trays" className="btn btn-outline btn-sm rounded-full">
+            <Link href="/#order" className="btn btn-outline btn-sm rounded-full">
               Order again
             </Link>
           </div>
@@ -341,7 +341,7 @@ async function OrderDetail({ params, searchParams }: PageProps) {
       </section>
 
       <div className="flex flex-wrap gap-3">
-        <Link href="/#trays" className="btn btn-outline btn-sm rounded-full">
+        <Link href="/#order" className="btn btn-outline btn-sm rounded-full">
           Order something else
         </Link>
         <Link href="/orders" className="btn btn-ghost btn-sm rounded-full">

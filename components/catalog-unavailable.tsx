@@ -22,7 +22,7 @@ export function CatalogUnavailable() {
         Online ordering is temporarily down
       </h2>
       <p className="text-ink-muted max-w-md text-sm text-pretty">
-        We can&rsquo;t load the menu right now. Party tray orders can still be placed by
+        We can&rsquo;t load the menu right now. Orders can still be placed by
         phone or in store, {STORE_HOURS.opens}&ndash;{STORE_HOURS.closes} daily.
       </p>
 

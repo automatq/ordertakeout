@@ -14,16 +14,16 @@ export default function ProductLoading() {
     <main className="shell flex flex-col gap-12 py-8 sm:py-12 lg:gap-16 lg:py-16">
       <nav aria-label="Breadcrumb">
         <Link
-          href="/#trays"
+          href="/#order"
           className="border-brand/25 bg-surface text-brand hover:bg-brand hover:text-brand-ink inline-flex min-h-11 items-center gap-2 rounded-full border-2 px-4 text-sm font-medium transition-colors"
         >
           <ArrowLeftIcon className="h-4 w-4" />
-          All party trays
+          All products
         </Link>
       </nav>
 
       <LoadingRegion
-        label="Loading party tray"
+        label="Loading product"
         className="grid gap-8 lg:grid-cols-[1.08fr_0.92fr] lg:items-start lg:gap-12"
       >
         <div className="border-surface shadow-raised overflow-hidden rounded-[2.5rem] border-8">

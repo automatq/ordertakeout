@@ -84,8 +84,8 @@ export function CartView({ products }: { products: CatalogProduct[] }) {
       <EmptyState
         icon={<BagIcon className="h-6 w-6" />}
         title="Your order is empty"
-        description="Party trays are baked to order, so pick a tray and a pickup time and we'll have it ready for you."
-        action={{ label: "Browse party trays", href: "/#trays" }}
+        description="Everything is baked to order, so pick what you want and a pickup time and we'll have it ready for you."
+        action={{ label: "Browse the menu", href: "/#order" }}
       />
     );
   }

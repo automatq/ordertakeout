@@ -235,8 +235,8 @@ export function CheckoutFlow({
       <EmptyState
         icon={<BagIcon className="h-6 w-6" />}
         title="Your order is empty"
-        description="Add a party tray and we'll take it from there."
-        action={{ label: "Browse party trays", href: "/#trays" }}
+        description="Add something from the menu and we'll take it from there."
+        action={{ label: "Browse the menu", href: "/#order" }}
       />
     );
   }
@@ -599,7 +599,7 @@ export function CheckoutFlow({
                     onChange={(event) => setNote(event.target.value)}
                     rows={3}
                     maxLength={500}
-                    placeholder="Allergies, a name for the tray, anything we should know."
+                    placeholder="Allergies, a name for the order, anything we should know."
                     className="input"
                   />
                 </label>

@@ -43,7 +43,7 @@ export function ReorderButton({ orderId }: { orderId: string }) {
         if (availableCount === 0) {
           toast({
             tone: "info",
-            message: "None of these items are on the current menu — browse the trays for what's fresh.",
+            message: "None of these items are on the current menu — browse the menu for what's fresh.",
           });
           return;
         }

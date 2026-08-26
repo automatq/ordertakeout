@@ -50,7 +50,7 @@ export const metadata: Metadata = {
     siteName: STORE_INFO.name,
     title: "Filipino Bakery in Toronto & London | Harina Bakeshoppe",
     description:
-      "Pre-order party trays for pickup from Harina Bakeshoppe locations in Toronto and London, Ontario.",
+      "Pre-order Filipino breads, pastries and party trays for pickup from Harina Bakeshoppe in Toronto and London, Ontario.",
   },
 };
 

@@ -140,8 +140,8 @@ export default async function AccountPage({
               Your orders
             </h2>
           </div>
-          <Link href="/#trays" className="btn btn-outline btn-sm rounded-full">
-            Browse trays
+          <Link href="/#order" className="btn btn-outline btn-sm rounded-full">
+            Browse the menu
           </Link>
         </div>
 

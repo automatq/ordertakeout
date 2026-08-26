@@ -13,7 +13,7 @@ import { STORE_HOURS, STORE_INFO } from "@/lib/store";
 
 export const metadata: Metadata = {
   title: "Menu",
-  description: `Party trays to pre-order for pickup, and the Filipino breads and pastries baked daily at ${STORE_INFO.name}.`,
+  description: `Everything you can pre-order for pickup from ${STORE_INFO.name}, plus what we bake fresh at the counter.`,
 };
 
 /**
@@ -35,8 +35,8 @@ export default function MenuPage() {
             Order ahead, pick up fresh
           </h1>
           <p className="text-ink-muted max-w-[52ch] text-lg text-pretty">
-            Party trays are baked to order — choose a pickup location and time at checkout.
-            Each tray lists what it contains. {ALLERGEN_DISCLAIMER}
+            Everything here is baked to order — choose a pickup location and time at checkout.
+            Each item lists what it contains. {ALLERGEN_DISCLAIMER}
           </p>
         </header>
 
@@ -85,7 +85,7 @@ async function MenuGrid() {
     return (
       <EmptyState
         icon={<LoafIcon className="h-6 w-6" />}
-        title="No trays available right now"
+        title="Nothing available to order right now"
         description="Please check back soon — or call the store and we'll tell you what we can bake for you."
       >
         <a href={STORE_INFO.phoneHref} className="btn btn-outline btn-sm mt-2">

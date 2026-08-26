@@ -229,7 +229,7 @@ function RefundDialog({
                 value={reason}
                 onChange={(event) => setReason(event.target.value)}
                 maxLength={160}
-                placeholder="Wrong tray handed out"
+                placeholder="Wrong item handed out"
                 className="input"
               />
             </div>

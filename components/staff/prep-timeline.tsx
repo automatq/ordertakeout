@@ -37,7 +37,7 @@ export function PrepTimeline({ data, nowTime }: { data: DashboardData; nowTime: 
         <EmptyState
           icon={<LoafIcon className="h-6 w-6" />}
           title="Nothing scheduled"
-          description="No trays are booked for the week ahead. Enjoy the quiet — this screen updates itself when orders come in."
+          description="Nothing is booked for the week ahead. Enjoy the quiet — this screen updates itself when orders come in."
         />
       </div>
     );
