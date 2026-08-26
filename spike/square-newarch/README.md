@@ -91,11 +91,15 @@ worth an upstream issue, and worth re-checking on every plugin upgrade.
 2. **A release build.** Legacy interop most often diverges between debug and
    release; a debug pass proves less than it looks like it does. The app prints a
    caveat banner when it is running in debug.
-3. **A physical low-end Android device** for the Hermes date checks. The iOS
-   simulator runs the same Hermes that ships, so it answers the iOS half; Android
-   Hermes takes its timezone data from the platform's ICU, which varies by OEM and
-   API level. That is exactly the case worth testing on the cheapest handset you
-   can find.
+3. **A physical low-end Android device** for the Hermes date checks. Hermes does
+   not carry its own timezone database — on iOS it defers to Foundation, on
+   Android to the platform's ICU. So the answer is a property of the *host*, not
+   of Hermes, and it varies by OS version, OEM and API level.
+
+   The iOS simulator is a strong signal but not the final word: it runs the same
+   Hermes build, against macOS's Foundation rather than the device's. Android is
+   where the variance actually lives, and the cheapest handset you can find is
+   the right thing to test on.
 
 ## Running it
 
