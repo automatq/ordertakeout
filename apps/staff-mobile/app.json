@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "Harina Staff",
+    "slug": "harina-staff",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "newArchEnabled": true,
+    "ios": {
+      "bundleIdentifier": "com.harinabakeshoppe.staff",
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.harinabakeshoppe.staff"
+    },
+    "plugins": ["expo-secure-store"]
+  }
+}
