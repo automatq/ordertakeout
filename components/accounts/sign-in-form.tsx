@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 
+import { PasskeySignIn } from "@/components/accounts/passkey-sign-in";
 import {
   requestPhoneSignInCode,
   requestSignInLink,
@@ -26,6 +27,17 @@ export function SignInForm() {
 
   return (
     <div className="flex flex-col gap-5">
+      {/* Above the tabs, not inside them: where a passkey exists it beats both
+          alternatives outright, and burying it as a third tab would hide the
+          fastest route behind a click. */}
+      <PasskeySignIn />
+
+      <div className="flex items-center gap-3" aria-hidden>
+        <span className="border-border flex-1 border-t" />
+        <span className="text-ink-subtle text-xs uppercase tracking-[0.14em]">or</span>
+        <span className="border-border flex-1 border-t" />
+      </div>
+
       <div role="tablist" aria-label="Sign-in method" className="grid grid-cols-2 gap-2">
         <MethodTab id="phone" current={method} onSelect={setMethod} label="Text me a code" />
         <MethodTab id="email" current={method} onSelect={setMethod} label="Email me a link" />

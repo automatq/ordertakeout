@@ -3,6 +3,8 @@ import Link from "next/link";
 import { count, desc, eq, inArray } from "drizzle-orm";
 
 import { signOutCustomerAccount } from "@/app/actions/account";
+import { PasskeyManager } from "@/components/accounts/passkey-manager";
+import { listPasskeys } from "@/lib/accounts/passkeys";
 import { ReorderButton } from "@/components/accounts/reorder-button";
 import { getCurrentCustomerAccount, REWARD_POINTS } from "@/lib/accounts/loyalty";
 import { db } from "@/lib/db";
@@ -23,6 +25,8 @@ export default async function AccountPage({
 }) {
   const account = await getCurrentCustomerAccount();
   if (!account) return <SignedOut />;
+
+  const passkeys = await listPasskeys(account.id);
 
   const { page: rawPage } = await searchParams;
   const requestedPage = Math.max(1, Number.parseInt(rawPage ?? "1", 10) || 1);
@@ -88,6 +92,15 @@ export default async function AccountPage({
           Saved orders, easy reordering, and rewards — without a password.
         </p>
       </header>
+
+      <PasskeyManager
+        passkeys={passkeys.map((passkey) => ({
+          id: passkey.id,
+          deviceLabel: passkey.deviceLabel,
+          createdAt: passkey.createdAt.toISOString(),
+          lastUsedAt: passkey.lastUsedAt?.toISOString() ?? null,
+        }))}
+      />
 
       <section className="card rounded-[2rem] p-6" aria-labelledby="rewards-heading">
         <p className="text-brand text-xs font-semibold tracking-[0.14em] uppercase">Rewards</p>

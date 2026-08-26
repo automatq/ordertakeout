@@ -344,6 +344,47 @@ export const pickupVerifications = pgTable(
 
 /** One immutable entry per order action; points are never edited in place. */
 /**
+ * WebAuthn passkeys — Face ID, Touch ID, Windows Hello, hardware keys.
+ *
+ * A third sign-in method beside the magic link and the SMS code, and the only
+ * one that is phishing-resistant: the credential is bound to this origin by the
+ * browser, so a lookalike domain cannot use it however convincing it looks.
+ *
+ * Only the public key is stored, so this table is not a secret — a stolen copy
+ * lets nobody sign in as anybody. The private key never leaves the customer's
+ * device.
+ */
+export const customerPasskeys = pgTable(
+  "customer_passkeys",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    customerAccountId: uuid("customer_account_id")
+      .notNull()
+      .references(() => customerAccounts.id, { onDelete: "cascade" }),
+    /** Base64url credential id, as returned by the authenticator. */
+    credentialId: text("credential_id").notNull(),
+    /** Base64url COSE public key. */
+    publicKey: text("public_key").notNull(),
+    /**
+     * Signature counter for cloned-authenticator detection. Platform
+     * authenticators (the Face ID case) report 0 permanently, so this is only
+     * meaningful for hardware keys — hence integer rather than bigint.
+     */
+    counter: integer("counter").notNull().default(0),
+    /** Transport hints, so the browser prompts for the right thing next time. */
+    transports: jsonb("transports").$type<string[]>().notNull().default([]),
+    /** Best-effort label from the enrolling browser, so a revoke list is readable. */
+    deviceLabel: text("device_label"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("customer_passkeys_credential_key").on(t.credentialId),
+    index("customer_passkeys_account_idx").on(t.customerAccountId),
+  ],
+);
+
+/**
  * Single-use email sign-in tokens.
  *
  * Only a sha256 hash of the token is stored — a database read can never mint a
