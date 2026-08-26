@@ -16,6 +16,7 @@ import {
 import { verifyOrderAccessToken } from "@/lib/orders/access";
 import { computeAvailability, type AvailabilityResult } from "@/lib/scheduling/availability";
 import { loadAvailabilityInput } from "@/lib/scheduling/queries";
+import { AVAILABILITY_PREVIEW_DAYS } from "@/lib/store";
 import { getStoreLocation } from "@/lib/locations/server";
 import { normalizePhoneE164 } from "@/lib/phone";
 import { getPauseStateFresh } from "@/lib/settings/pause";
@@ -149,7 +150,12 @@ export async function getCartAvailability(
   ).length) {
     return { ok: false, problem: { kind: "catalog_unavailable" } };
   }
-  return computeAvailability(await loadAvailabilityInput(schedulingCart, undefined, locationId));
+  /* Preview window, not the full bookable horizon — see AVAILABILITY_PREVIEW_DAYS.
+     This is refetched on every cart change, so its size is felt on the critical
+     path to payment, on whatever connection the customer happens to have. */
+  return computeAvailability(
+    await loadAvailabilityInput(schedulingCart, undefined, locationId, AVAILABILITY_PREVIEW_DAYS),
+  );
 }
 
 type PublicCreateOrderFailure =

@@ -103,12 +103,19 @@ export async function loadAvailabilityInput(
   cart: readonly CartLine[],
   exec: Executor = db(),
   locationId?: string,
+  /**
+   * How far ahead to build. Defaults to the full bookable horizon, which is
+   * what the checkout guard needs; the storefront passes a shorter preview
+   * window so it does not query, serialise and ship five weeks of slots the
+   * picker will discard. Narrowing this narrows the supporting queries too.
+   */
+  horizonDays: number = MAX_ORDER_HORIZON_DAYS,
 ): Promise<AvailabilityInput> {
   const location = locationId ? await getStoreLocation(locationId) : null;
   const timeZone = location?.timezone ?? serverEnv().STORE_TIMEZONE;
   const now = new Date();
   const today = storeToday(now, timeZone);
-  const lastDate = addCalendarDays(today, MAX_ORDER_HORIZON_DAYS);
+  const lastDate = addCalendarDays(today, horizonDays);
 
   const rules = await loadProductRules(cart.map((line) => line.productId), exec);
 
@@ -167,7 +174,7 @@ export async function loadAvailabilityInput(
     timeZone,
     cart,
     rules,
-    horizonDays: MAX_ORDER_HORIZON_DAYS,
+    horizonDays,
     blackoutDates: new Set(blackouts.map((b) => b.date)),
     productDateBlocks: new Set(
       soldOutOverrides.map((row) => productDayKey(row.productId, row.date)),

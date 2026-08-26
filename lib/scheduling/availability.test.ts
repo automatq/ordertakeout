@@ -11,6 +11,7 @@ import {
   type ProductRule,
 } from "./availability";
 import { pickupInstant } from "./time";
+import { AVAILABILITY_PREVIEW_DAYS, MAX_ORDER_HORIZON_DAYS } from "@/lib/store";
 
 const LA = "America/Los_Angeles";
 
@@ -647,5 +648,38 @@ describe("same-day ordering (lead time 0)", () => {
     const result = expectOk(computeAvailability(sameDayInput({ now: at("2026-03-02", "15:00") })));
     const tomorrow = result.days.find((day) => day.date === "2026-03-03")!;
     expect(tomorrow.slots.every((slot) => slot.available)).toBe(true);
+  });
+});
+
+describe("the storefront preview window", () => {
+  it("is narrower than the bookable horizon, and never wider", () => {
+    /* These are deliberately different numbers: the picker only ever shows the
+       first 21 dates with availability, so shipping the full 60-day horizon
+       computed, queried and serialised five extra weeks of slots for nothing —
+       on a payload refetched every time a quantity changes. Collapsing them to
+       one value would either restore that waste or silently shrink what
+       customers can book. */
+    expect(AVAILABILITY_PREVIEW_DAYS).toBeLessThan(MAX_ORDER_HORIZON_DAYS);
+    // Wide enough that a run of closure dates still leaves a full set of options.
+    expect(AVAILABILITY_PREVIEW_DAYS).toBeGreaterThan(21);
+  });
+
+  it("bounds the days built, without changing what validates", () => {
+    const preview = expectOk(
+      computeAvailability(makeInput({ horizonDays: AVAILABILITY_PREVIEW_DAYS })),
+    );
+    const full = expectOk(computeAvailability(makeInput({ horizonDays: MAX_ORDER_HORIZON_DAYS })));
+
+    expect(preview.days.length).toBeLessThan(full.days.length);
+
+    // A date past the preview window is still bookable — claimSlot re-validates
+    // against the full horizon, so narrowing the preview must not reject it.
+    const beyondPreview = full.days[AVAILABILITY_PREVIEW_DAYS + 1]!;
+    expect(
+      validatePickupSelection(makeInput({ horizonDays: MAX_ORDER_HORIZON_DAYS }), {
+        date: beyondPreview.date,
+        time: beyondPreview.slots.find((slot) => slot.available)!.time,
+      }),
+    ).toEqual({ ok: true });
   });
 });
