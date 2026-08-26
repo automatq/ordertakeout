@@ -53,8 +53,14 @@ export function collectNonce(): Promise<NonceOutcome | "cancelled"> {
  * Present the sheet and refuse the nonce, the way a declined server-side charge
  * would. The sheet must stay up with the message visible — if it dismisses, the
  * customer loses their typed card and the app has to ask for it again.
+ *
+ * This one cannot self-verify, and says so rather than pretending. From JS both
+ * outcomes look identical: the callback returns, and later the cancel callback
+ * fires. Whether the message was actually on screen in between is something only
+ * the person holding the phone can see. All this reports is that the rejection
+ * was delivered and the flow ended without crashing.
  */
-export function rejectNonceInSheet(message: string): Promise<"stayed-open" | "cancelled"> {
+export function rejectNonceInSheet(message: string): Promise<"rejected" | "cancelled"> {
   return new Promise((resolve) => {
     let rejected = false;
     SQIPCardEntry.startCardEntryFlow(
@@ -63,7 +69,7 @@ export function rejectNonceInSheet(message: string): Promise<"stayed-open" | "ca
         rejected = true;
         return { success: false, errorMessage: message };
       },
-      () => resolve(rejected ? "stayed-open" : "cancelled"),
+      () => resolve(rejected ? "rejected" : "cancelled"),
     );
   });
 }

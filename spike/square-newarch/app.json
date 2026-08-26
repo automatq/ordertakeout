@@ -12,6 +12,9 @@
     "android": {
       "package": "com.harinabakeshoppe.spike"
     },
-    "plugins": ["react-native-square-in-app-payments"]
+    "plugins": [
+      "react-native-square-in-app-payments",
+      "./plugins/with-flattened-square-frameworks"
+    ]
   }
 }

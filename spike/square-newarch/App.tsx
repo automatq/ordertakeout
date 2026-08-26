@@ -54,8 +54,14 @@ export default function App() {
     try {
       const result = await rejectNonceInSheet("Declined — this is the spike talking");
       setInSheetError(
-        result === "stayed-open"
-          ? { status: "pass", detail: "Error was returned; sheet handled it and then closed." }
+        result === "rejected"
+          ? {
+              /* Not "pass": only the tester saw whether the message rendered.
+                 Claiming a pass here would be the spike lying to itself. */
+              status: "idle",
+              detail:
+                "Rejection delivered, no crash. Did the sheet stay open showing the message? That part is your call.",
+            }
           : { status: "idle", detail: "Cancelled without submitting — nothing proven." },
       );
     } catch (cause) {
@@ -139,7 +145,7 @@ export default function App() {
           disabled={!configured}
         />
         <Check
-          label="2. A rejected charge renders inside the sheet"
+          label="2. A rejected charge renders inside the sheet (you judge this one)"
           result={inSheetError}
           onPress={runInSheetError}
           disabled={!configured}

@@ -52,22 +52,103 @@ can fail after the card is entered, and the old imperative pair made "show the
 decline without losing the customer's typed card" a manual dance across two
 callbacks. Now it is the return value.
 
-## What has already been answered, without a device
+## What has already been answered
 
-Run from this directory. Each of these was executed and passed:
+All of the following was run here, on an iPhone 17 simulator, in a **Release**
+build reporting Fabric `yes`, bridgeless `yes`, TurboModules `yes`, Hermes
+250829098.0.16, React Native 0.86.2, iOS 26.3.1.
 
-| Check | Command | Result |
+| Check | How | Result |
 |---|---|---|
 | Dependencies resolve on Expo SDK 57 | `npm install` | 531 packages, no peer conflicts |
-| Config plugin survives prebuild | `npx expo prebuild --clean --no-install` | Clean, no warnings |
-| ...and is idempotent | run it twice | Clean both times |
+| Config plugin survives prebuild | `npx expo prebuild --clean` | Clean, and idempotent across two runs |
 | Kotlin pin applied automatically | `grep kotlin android/build.gradle` | `kotlin-gradle-plugin:2.2.21` |
 | New Architecture enabled | `grep newArchEnabled android/gradle.properties` | `newArchEnabled=true` |
 | Square maven repo injected | `grep square android/build.gradle` | `sdk.squareup.com/public/android` |
-| Metro bundles the module graph | `npm run bundle` | 909 modules → 1.8MB `.hbc` |
-| Date fixtures are correct | `npx tsx -e '…runIntlChecks()'` | 12/12 on Node/V8 |
+| Metro bundles the graph | `npm run bundle` | 909 modules → 1.8MB `.hbc` |
+| Codegen builds the TurboModule spec | iOS build log | `SquareInAppPaymentsSpec-generated.mm` compiled |
+| Square iOS SDK has a simulator slice | `ls …xcframework` | `ios-arm64_x86_64-simulator` |
+| Release build links and runs | `expo run:ios --configuration Release` | Launches (see the framework bug below) |
+| **Hermes gets dates right** | on-device checks | **12/12**, in a release build |
 
-### One thing that got worse, not better
+The date result is the one that mattered most. `lib/scheduling/time.ts` computes
+every cutoff, lead time and pickup date through `Intl.DateTimeFormat` with an
+explicit `timeZone`, and Hermes carries no timezone database of its own. On iOS
+it defers to Foundation, and Foundation gets all twelve right — both DST
+transitions, the ambiguous 1:30am that happens twice on fall-back day, and
+Chatham's 45-minute offset. **No `@formatjs/intl-datetimeformat` polyfill is
+needed on iOS.** Android still has to be checked; see below.
+
+## The bug worth knowing about: Square's own setup phase runs too early
+
+A release build links and installs cleanly, then dies at launch before any
+JavaScript runs:
+
+```
+dyld: Library not loaded: @rpath/CorePaymentCard.framework/CorePaymentCard
+  Referenced from: .../SquareBuyerVerificationSDK.framework/SquareBuyerVerificationSDK
+```
+
+`CorePaymentCard` and `ThreeDS_SDK` are not published pods — `pod trunk` has no
+record of either, and Square's `Package.swift` does not vend them. They are only
+ever delivered *inside* Square's own frameworks:
+
+```
+SquareInAppPaymentsSDK.framework/Frameworks/CorePaymentCard.framework
+SquareBuyerVerificationSDK.framework/Frameworks/ThreeDS_SDK.framework
+```
+
+Both Square binaries link `@rpath/CorePaymentCard…`, and dyld resolves `@rpath`
+from the binary doing the loading. The payments SDK finds it — that is its own
+nested directory. The buyer verification SDK does not: `CorePaymentCard` is
+nested under its *sibling*, so `@loader_path/Frameworks` misses it.
+
+### Square knows about this. Their fix does not run.
+
+Square ships a `setup` script inside the framework that does exactly the right
+thing — moves nested frameworks up into the app's `Frameworks` directory — and
+their Expo config plugin adds a `[CP] Square In-App Payments SDK Setup` phase to
+run it. It silently does nothing, and the build log says why:
+
+```
+› Executing HarinaSquareSpike » [CP] Copy Pods Resources
+› Executing HarinaSquareSpike » [CP] Square In-App Payments SDK Setup
+› Executing HarinaSquareSpike » [CP] Embed Pods Frameworks
+```
+
+The setup phase runs *immediately before* the phase that copies the frameworks
+in. It looks in an empty directory, finds nothing to flatten, exits 0, and the
+build reports success.
+
+This is structural, not a slip. An Expo config plugin writes the pbxproj during
+`prebuild`; CocoaPods appends `[CP] Embed Pods Frameworks` later. **Any phase
+added by a config plugin necessarily lands in front of it.** A plugin cannot fix
+this from `withXcodeProject` alone — which is why the first attempt at
+`plugins/with-flattened-square-frameworks.js` failed in exactly the way Square's
+does.
+
+`post_install` is too early as well, which is the less obvious part. CocoaPods
+runs the Podfile's post_install hooks and only *then* integrates the user
+project, so the embed phase does not exist yet when they fire. Re-appending the
+phase there does move it — and changes nothing, because the embed phase is added
+afterwards. Both of these were confirmed by reading the phase order out of a
+real build log rather than reasoned about.
+
+`post_integrate` runs after integration and is the first point where the embed
+phase is present to be ordered against. The plugin appends a hook there that
+moves the flatten phase to the end of the target's build phases. It also
+re-signs what it copies, since copying invalidates the signature and device and
+distribution builds will not launch otherwise.
+
+The flattening is written against "nested frameworks" in general rather than
+these two names, so a third Square dependency does not silently reintroduce the
+crash.
+
+This is worth reporting upstream. It is not New-Architecture-specific and not
+specific to our setup — it should affect any Expo app using
+`react-native-square-in-app-payments` that embeds the buyer verification SDK.
+
+### The other packaging wart
 
 `react-native-square-in-app-payments` depends on `@expo/config-plugins: ^8.0.0`,
 while Expo SDK 57 ships `57.0.9`. Both end up installed:
@@ -77,10 +158,10 @@ node_modules/@expo/config-plugins                                    57.0.9
 node_modules/react-native-square-in-app-payments/node_modules/…       8.0.11
 ```
 
-Prebuild survives it (verified above), but the old copy drags in
-`@xmldom/xmldom@0.7.13`, which npm flags as having critical issues. It is a
-build-time dependency only — it does not reach the shipped bundle — but it is
-worth an upstream issue, and worth re-checking on every plugin upgrade.
+Prebuild survives it, but the old copy drags in `@xmldom/xmldom@0.7.13`, which
+npm flags as having critical issues. Build-time only — it does not reach the
+shipped bundle — but it belongs in the same upstream issue, and wants a re-check
+on every plugin upgrade.
 
 ## What still needs hardware or a credential
 
