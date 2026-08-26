@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "Harina Square Spike",
+    "slug": "harina-square-newarch-spike",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "newArchEnabled": true,
+    "ios": {
+      "bundleIdentifier": "com.harinabakeshoppe.spike",
+      "supportsTablet": false
+    },
+    "android": {
+      "package": "com.harinabakeshoppe.spike"
+    },
+    "plugins": ["react-native-square-in-app-payments"]
+  }
+}

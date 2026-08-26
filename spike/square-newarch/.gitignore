@@ -1,0 +1,9 @@
+node_modules/
+.expo/
+dist/
+# Continuous Native Generation: ios/ and android/ are outputs of
+# `expo prebuild`, not sources. Committing them is how a project quietly stops
+# being able to upgrade Expo.
+ios/
+android/
+.env
