@@ -11,6 +11,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Actions occasionally drops a pull_request synchronize event and simply never
+  # runs for a pushed commit, which is indistinguishable at a glance from "not
+  # finished yet". This makes a re-run one click rather than a forced push.
+  workflow_dispatch:
 
 jobs:
   checks:
