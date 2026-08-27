@@ -33,12 +33,16 @@ export function Menu({
   onChangeShop,
   savedOrderNumber,
   onOpenOrder,
+  signedIn,
+  onAccount,
 }: {
   locationId: string | null;
   onOpen: (product: MenuProduct) => void;
   onChangeShop: () => void;
   savedOrderNumber: string | null;
   onOpenOrder: () => void;
+  signedIn: boolean;
+  onAccount: () => void;
 }) {
   const [data, setData] = useState<MenuData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -98,8 +102,15 @@ export function Menu({
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.brand} />
       }
     >
-      <Text style={styles.title}>Harina Bakeshoppe</Text>
-      <Text style={styles.subtitle}>Order ahead, collect in store.</Text>
+      <View style={styles.headerRow}>
+        <View style={styles.headerText}>
+          <Text style={styles.title}>Harina Bakeshoppe</Text>
+          <Text style={styles.subtitle}>Order ahead, collect in store.</Text>
+        </View>
+        <Pressable onPress={onAccount} hitSlop={12}>
+          <Text style={styles.accountLink}>{signedIn ? "Orders" : "Sign in"}</Text>
+        </Pressable>
+      </View>
 
       {/* Above the menu, because somebody with an order to collect opened the
           app to collect it, not to browse. */}
@@ -212,6 +223,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     fontSize: 14,
   },
+  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 12 },
+  headerText: { flex: 1 },
+  accountLink: { color: theme.brand, fontWeight: "600", fontSize: 16, paddingTop: 8 },
   orderCard: { backgroundColor: theme.brand, borderRadius: 20, padding: 16, gap: 2, alignSelf: "stretch" },
   orderCardTitle: { fontSize: 17, fontWeight: "700", color: "#fff" },
   orderCardBody: { fontSize: 14, color: "#ffffffcc" },

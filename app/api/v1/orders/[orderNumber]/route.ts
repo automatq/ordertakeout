@@ -3,7 +3,8 @@ import { ok } from "@/lib/api/envelope";
 import { verifyOrderAccessToken } from "@/lib/orders/access";
 import { getOrderByNumber } from "@/lib/orders/lookup";
 import { createPickupPass } from "@/lib/orders/pickup-pass";
-import { normalizeTime } from "@/lib/scheduling/time";
+import { serverEnv } from "@/lib/env";
+import { normalizeTime, storeToday } from "@/lib/scheduling/time";
 
 /**
  * One order, for the person who placed it.
@@ -71,5 +72,10 @@ export async function GET(
     pickupPass: collectable ? createPickupPass(order.id, order.orderNumber) : null,
   };
 
-  return ok({ found: true as const, order: data });
+  /* The shop's today, so "Today at 4pm" means today where the cake is. */
+  return ok({
+    found: true as const,
+    today: storeToday(new Date(), serverEnv().STORE_TIMEZONE),
+    order: data,
+  });
 }

@@ -127,7 +127,9 @@ export interface CustomerOrder {
   pickupPass: string | null;
 }
 
-export type OrderLookup = { found: true; order: CustomerOrder } | { found: false };
+export type OrderLookup =
+  | { found: true; today: string; order: CustomerOrder }
+  | { found: false };
 
 /**
  * Fetch one order using the key from its confirmation link.
@@ -138,3 +140,41 @@ export type OrderLookup = { found: true; order: CustomerOrder } | { found: false
  */
 export const fetchOrder = (orderNumber: string, key: string) =>
   request<OrderLookup>(`/orders/${encodeURIComponent(orderNumber)}?key=${encodeURIComponent(key)}`);
+
+
+export interface AccountOrder {
+  orderNumber: string;
+  status: string;
+  pickupDate: string;
+  pickupTime: string;
+  totalCents: number;
+  currency: string;
+  pickupLocationName: string | null;
+  items: { name: string; quantity: number }[];
+}
+
+const authed = (token: string) => ({ Authorization: `Bearer ${token}` });
+
+/**
+ * Ask for a code.
+ *
+ * `sent` is true whether or not the number has an account — the server will not
+ * say, and the app must not invent a way to find out. Both outcomes carry a
+ * message written to be shown as-is.
+ */
+export const requestSignInCode = (phone: string) =>
+  request<{ sent: boolean; message: string }>("/account/code", {
+    method: "POST",
+    body: JSON.stringify({ phone }),
+  });
+
+export const openSession = (phone: string, code: string) =>
+  request<{ signedIn: boolean; message?: string; token?: string }>("/account/session", {
+    method: "POST",
+    body: JSON.stringify({ phone, code }),
+  });
+
+export const fetchAccountOrders = (token: string) =>
+  request<{ today: string; orders: AccountOrder[] }>("/account/orders", {
+    headers: authed(token),
+  });

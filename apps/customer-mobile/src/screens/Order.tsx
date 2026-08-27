@@ -35,6 +35,7 @@ export function Order({
 }) {
   const [saved, setSaved] = useState<SavedOrder | null>(null);
   const [order, setOrder] = useState<CustomerOrder | null>(null);
+  const [today, setToday] = useState<string | null>(null);
   const [offline, setOffline] = useState(false);
   const [gone, setGone] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -52,6 +53,7 @@ export function Order({
       return;
     }
     setOrder(result.data.order);
+    setToday(result.data.today);
     await saveOrder(orderNumber, accessKey, result.data.order);
   }, [orderNumber, accessKey]);
 
@@ -129,7 +131,7 @@ export function Order({
       </View>
 
       <Text style={styles.when}>
-        {formatDate(order.pickupDate, order.pickupDate)} at {formatTime(order.pickupTime)}
+        {formatDate(order.pickupDate, today ?? "")} at {formatTime(order.pickupTime)}
       </Text>
 
       {/* Said plainly rather than hidden: a stale total is fine, a stale

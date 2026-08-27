@@ -33,7 +33,7 @@ import { theme } from "../theme";
 type Stage =
   | { kind: "scanning" }
   | { kind: "looking-up" }
-  | { kind: "found"; order: PickupPreview; method: "qr" | "manual"; value: string }
+  | { kind: "found"; order: PickupPreview; today: string; method: "qr" | "manual"; value: string }
   | { kind: "confirming"; order: PickupPreview }
   | { kind: "done"; orderNumber: string; customerName: string; warning?: string }
   | { kind: "refused"; reason: string };
@@ -65,7 +65,7 @@ export function Scan({ token, onClose }: { token: string; onClose: () => void })
       }
       setStage(
         result.data.found
-          ? { kind: "found", order: result.data.order, method, value }
+          ? { kind: "found", order: result.data.order, today: result.data.today, method, value }
           : { kind: "refused", reason: result.data.reason },
       );
     },
@@ -124,6 +124,7 @@ export function Scan({ token, onClose }: { token: string; onClose: () => void })
           ) : stage.kind === "found" ? (
             <FoundCard
               order={stage.order}
+              today={stage.today}
               initials={initials}
               onInitials={setInitials}
               onConfirm={() => void confirm()}
@@ -238,12 +239,16 @@ function Camera({
 
 function FoundCard({
   order,
+  today,
   initials,
   onInitials,
   onConfirm,
   onCancel,
 }: {
   order: PickupPreview;
+  /* The store's today, so a tablet with a wrong clock cannot label a pickup
+     "Today" that is not. */
+  today: string;
   initials: string;
   onInitials: (value: string) => void;
   onConfirm: () => void;
@@ -257,7 +262,7 @@ function FoundCard({
       <Text style={styles.cardBody}>
         {order.orderNumber} · {order.itemCount} item{order.itemCount === 1 ? "" : "s"}
         {"\n"}
-        {formatDate(order.pickupDate, order.pickupDate)} at {formatTime(order.pickupTime)}
+        {formatDate(order.pickupDate, today)} at {formatTime(order.pickupTime)}
         {order.pickupLocationName ? `\n${order.pickupLocationName}` : ""}
       </Text>
 

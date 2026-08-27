@@ -10,6 +10,8 @@ The customer app. Order ahead, collect in store.
 | Menu | Everything the shop sells, grouped, with honest stock |
 | Product | Sizes, prices, allergens, how far ahead to order |
 | Order | Your order and the code that collects it, with or without signal |
+| Sign in | A texted code — no password |
+| Your orders | Everything you've ordered, newest first |
 
 **Checkout is absent rather than half-built.** It needs a Square sandbox
 application id — `.env.local` currently holds the placeholder `demo-not-use` —
@@ -100,13 +102,26 @@ otherwise only ever exercised by hand, badly, and getting one wrong sends
 somebody who tapped a link in their confirmation email to the wrong screen —
 which nobody notices until a customer says so.
 
-## What's next, in order
+## Signing in
 
-1. **Sign in** — magic link, SMS code, passkey. This is where universal links
-   matter, and where expo-router would have earned its keep; see the staff app's
-   README for why it is not installed.
-2. **Checkout**, once there is a Square sandbox id and a device to prove the
-   card sheet on.
+A texted code rather than a magic link. A link has to leave the app, open a mail
+client and come back, and on a phone that round trip loses people. A code stays
+in one place, and both platforms offer it as a one-tap suggestion above the
+keyboard the moment the text arrives — `autoComplete="sms-otp"` and
+`textContentType="oneTimeCode"` are what make that work.
+
+The screen never says whether a number has an account. That is the server's
+position and the app must not invent a way around it, so it advances to the code
+step either way; stopping early for an unknown number would answer the question
+the server refuses to.
+
+Passkeys and the magic link both already exist on the website. Neither is here
+yet, and passkeys in particular want universal links to be worth having.
+
+## What's next
+
+**Checkout**, once there is a Square sandbox id and a device to prove the card
+sheet on. Everything else in the read path is done.
 
 ## Shared code
 

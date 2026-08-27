@@ -129,7 +129,7 @@ export interface PickupPreview {
 }
 
 export type PreviewResult =
-  | { found: true; order: PickupPreview }
+  | { found: true; today: string; order: PickupPreview }
   /** Found nothing, or found something that cannot be collected. */
   | { found: false; reason: string };
 

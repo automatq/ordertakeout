@@ -1,6 +1,8 @@
 import { z } from "zod";
 
 import { staffDeviceFromRequest } from "@/lib/api/context";
+import { serverEnv } from "@/lib/env";
+import { storeToday } from "@/lib/scheduling/time";
 import { toPickupPreview } from "@/lib/api/dto";
 import { fail, ok, unauthorized } from "@/lib/api/envelope";
 import {
@@ -59,7 +61,13 @@ export async function POST(request: Request): Promise<Response> {
        person at the counter — "this order was cancelled" — and it is not an
        error in the request, which is what a 400 would claim. */
     if ("ok" in preview) return ok({ found: false, reason: preview.reason });
-    return ok({ found: true, order: toPickupPreview(preview) });
+    /* The store's today, not the device's. A tablet with a wrong clock or in
+       another timezone would otherwise label a pickup "Today" that is not. */
+    return ok({
+      found: true,
+      today: storeToday(new Date(), serverEnv().STORE_TIMEZONE),
+      order: toPickupPreview(preview),
+    });
   }
 
   const result = await verifyPickup(parsed.data);

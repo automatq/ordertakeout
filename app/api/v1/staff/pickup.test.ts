@@ -9,7 +9,10 @@ const mocks = vi.hoisted(() => ({
   verifyPickup: vi.fn(),
   verifyDeviceToken: vi.fn(),
   touchDevice: vi.fn(async () => {}),
+  serverEnv: vi.fn(() => ({ STORE_TIMEZONE: "America/Toronto" })),
 }));
+
+vi.mock("@/lib/env", () => ({ serverEnv: mocks.serverEnv }));
 
 vi.mock("@/lib/orders/pickup-verification", () => ({
   previewPickupVerification: mocks.previewPickupVerification,
@@ -70,6 +73,9 @@ describe("POST /api/v1/staff/pickup", () => {
     expect(() => pickupPreviewSchema.parse(data.order)).not.toThrow();
     // Postgres hands back HH:mm:ss; the wire format is HH:mm.
     expect(data.order.pickupTime).toBe("16:00");
+    /* The store's today, so a tablet with a wrong clock cannot label a pickup
+       "Today" that is not. */
+    expect(data.today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
   it("passes the scanned string through untouched", async () => {

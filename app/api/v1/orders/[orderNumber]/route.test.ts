@@ -122,6 +122,15 @@ describe("GET /api/v1/orders/[orderNumber]", () => {
     expect(bodies[0]).toBe('200 {"ok":true,"data":{"found":false}}');
   });
 
+  it("says what today is at the shop, not on the phone", async () => {
+    /* Regression: every order rendered as "Today" because the screen compared
+       the pickup date against itself. The shop decides what today is — a
+       customer in another timezone, or a device with a wrong clock, must not
+       change which day their cake is due. */
+    const { data } = await (await call("PT-ABC123", keyFor("order-1", "PT-ABC123"))).json();
+    expect(data.today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
   it("normalises the pickup time Postgres returns", async () => {
     const { data } = await (await call("PT-ABC123", keyFor("order-1", "PT-ABC123"))).json();
     expect(data.order.pickupTime).toBe("16:00");

@@ -8,9 +8,16 @@ import { loadChosenShop, saveChosenShop } from "./src/chosen-shop";
 import { parseDeepLink } from "./src/deep-link";
 import { Menu } from "./src/screens/Menu";
 import { Order } from "./src/screens/Order";
+import { Orders } from "./src/screens/Orders";
+import { SignIn } from "./src/screens/SignIn";
 import { Product } from "./src/screens/Product";
 import { Shops } from "./src/screens/Shops";
 import { loadSavedOrder } from "./src/saved-order";
+import {
+  clearAccountToken,
+  loadAccountToken,
+  saveAccountToken,
+} from "./src/account-session";
 import { theme } from "./src/theme";
 
 /**
@@ -24,7 +31,7 @@ import { theme } from "./src/theme";
  * purchase say so instead of offering a button that does nothing.
  */
 
-type Screen = "shops" | "menu";
+type Screen = "shops" | "menu" | "sign-in" | "orders";
 interface OpenOrder {
   orderNumber: string;
   accessKey: string;
@@ -36,6 +43,7 @@ export default function App() {
   const [product, setProduct] = useState<MenuProduct | null>(null);
   const [order, setOrder] = useState<OpenOrder | null>(null);
   const [savedOrderNumber, setSavedOrderNumber] = useState<string | null>(null);
+  const [accountToken, setAccountToken] = useState<string | null>(null);
 
   const openFromUrl = useCallback((url: string) => {
     const destination = parseDeepLink(url);
@@ -48,9 +56,10 @@ export default function App() {
   useEffect(() => {
     let active = true;
     void (async () => {
-      const [stored, savedOrder, initialUrl] = await Promise.all([
+      const [stored, savedOrder, token, initialUrl] = await Promise.all([
         loadChosenShop(),
         loadSavedOrder(),
+        loadAccountToken(),
         /* The link that launched the app, if any — a cold start from an email
            arrives here rather than through the listener below. */
         Linking.getInitialURL(),
@@ -59,6 +68,7 @@ export default function App() {
 
       setShopId(stored);
       setSavedOrderNumber(savedOrder?.orderNumber ?? null);
+      setAccountToken(token);
       setScreen(stored ? "menu" : "shops");
       if (initialUrl) openFromUrl(initialUrl);
     })();
@@ -82,6 +92,18 @@ export default function App() {
     if (saved) setOrder({ orderNumber: saved.orderNumber, accessKey: saved.accessKey });
   }, []);
 
+  const signIn = useCallback(async (token: string) => {
+    await saveAccountToken(token);
+    setAccountToken(token);
+    setScreen("orders");
+  }, []);
+
+  const signOut = useCallback(async () => {
+    await clearAccountToken();
+    setAccountToken(null);
+    setScreen("menu");
+  }, []);
+
   if (screen === null) {
     return (
       <View style={styles.centre}>
@@ -100,6 +122,14 @@ export default function App() {
           accessKey={order.accessKey}
           onClose={() => setOrder(null)}
         />
+      ) : screen === "sign-in" ? (
+        <SignIn onSignedIn={signIn} onCancel={() => setScreen("menu")} />
+      ) : screen === "orders" && accountToken ? (
+        <Orders
+          token={accountToken}
+          onClose={() => setScreen("menu")}
+          onSignedOut={signOut}
+        />
       ) : screen === "shops" ? (
         <Shops chosenId={shopId} onChoose={choose} onSkip={() => setScreen("menu")} />
       ) : product ? (
@@ -111,6 +141,8 @@ export default function App() {
           onChangeShop={() => setScreen("shops")}
           savedOrderNumber={savedOrderNumber}
           onOpenOrder={openSavedOrder}
+          signedIn={accountToken !== null}
+          onAccount={() => setScreen(accountToken ? "orders" : "sign-in")}
         />
       )}
     </View>
