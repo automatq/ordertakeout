@@ -150,6 +150,6 @@ const styles = StyleSheet.create({
   item: { fontSize: 15, color: theme.inkMuted },
   total: { fontSize: 15, fontWeight: "700", color: theme.ink, marginTop: 4 },
   primary: { backgroundColor: theme.brand, borderRadius: 999, paddingHorizontal: 24, paddingVertical: 12 },
-  primaryText: { color: "#fff", fontWeight: "600" },
+  primaryText: { color: theme.brandInk, fontWeight: "600" },
   signOut: { color: theme.inkSubtle, fontWeight: "600", fontSize: 15, textAlign: "center", paddingVertical: 16 },
 });

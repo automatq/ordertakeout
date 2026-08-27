@@ -125,6 +125,6 @@ const styles = StyleSheet.create({
   shopHours: { fontSize: 14, color: theme.inkSubtle, marginTop: 2 },
   error: { fontSize: 16, color: theme.ink, textAlign: "center" },
   primary: { backgroundColor: theme.brand, borderRadius: 999, paddingHorizontal: 24, paddingVertical: 12 },
-  primaryText: { color: "#fff", fontWeight: "600" },
+  primaryText: { color: theme.brandInk, fontWeight: "600" },
   link: { color: theme.brand, fontWeight: "600", fontSize: 15, textAlign: "center", paddingVertical: 10 },
 });

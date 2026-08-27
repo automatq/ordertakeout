@@ -313,7 +313,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   primary: { backgroundColor: theme.brand, borderRadius: 999, paddingVertical: 16, alignItems: "center", marginTop: 4 },
-  primaryText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  primaryText: { color: theme.brandInk, fontWeight: "700", fontSize: 16 },
   small: { backgroundColor: theme.canvas, borderRadius: 999, paddingHorizontal: 16, paddingVertical: 10 },
   smallText: { color: theme.brand, fontWeight: "600", fontSize: 14 },
   disabled: { opacity: 0.45 },

@@ -76,7 +76,7 @@ export function Login({ onSignedIn }: { onSignedIn: (token: string) => void }) {
           ]}
         >
           {busy ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={theme.brandInk} />
           ) : (
             <Text style={styles.buttonText}>Sign in</Text>
           )}
@@ -111,5 +111,5 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.4 },
   buttonPressed: { opacity: 0.85 },
-  buttonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  buttonText: { color: theme.brandInk, fontWeight: "700", fontSize: 16 },
 });

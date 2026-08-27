@@ -205,10 +205,12 @@ const styles = StyleSheet.create({
   content: { padding: 16, paddingTop: 64, paddingBottom: 48, gap: 16 },
   centre: { flex: 1, backgroundColor: theme.canvas, alignItems: "center", justifyContent: "center", gap: 16, padding: 24 },
   title: { fontSize: 30, fontWeight: "700", color: theme.ink },
-  subtitle: { fontSize: 16, color: theme.inkMuted, marginTop: -10 },
+  /* No negative margin: this sits inside the header row, where there is no
+     container gap to pull back against. */
+  subtitle: { fontSize: 16, color: theme.inkMuted, marginTop: 2 },
   error: { fontSize: 16, color: theme.ink, textAlign: "center", paddingHorizontal: 24 },
   retry: { backgroundColor: theme.brand, borderRadius: 999, paddingHorizontal: 24, paddingVertical: 12 },
-  retryText: { color: "#fff", fontWeight: "600" },
+  retryText: { color: theme.brandInk, fontWeight: "600" },
   staleBanner: {
     backgroundColor: theme.warnSurface,
     color: theme.warn,
@@ -224,11 +226,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 12 },
-  headerText: { flex: 1 },
+  headerText: { flex: 1, gap: 2 },
   accountLink: { color: theme.brand, fontWeight: "600", fontSize: 16, paddingTop: 8 },
   orderCard: { backgroundColor: theme.brand, borderRadius: 20, padding: 16, gap: 2, alignSelf: "stretch" },
-  orderCardTitle: { fontSize: 17, fontWeight: "700", color: "#fff" },
-  orderCardBody: { fontSize: 14, color: "#ffffffcc" },
+  orderCardTitle: { fontSize: 17, fontWeight: "700", color: theme.brandInk },
+  /* Brand ink at 80%: still legible on the brand fill, visibly secondary
+     to the line above it. */
+  orderCardBody: { fontSize: 14, color: `${theme.brandInk}cc` },
   shopBanner: {
     color: theme.brand,
     fontWeight: "600",

@@ -20,7 +20,8 @@
     "seed:demo": "tsx scripts/seed-demo.ts",
     "demo": "node scripts/demo.mjs",
     "prebuild": "node scripts/copy-barcode-wasm.mjs",
-    "predev": "node scripts/copy-barcode-wasm.mjs"
+    "predev": "node scripts/copy-barcode-wasm.mjs",
+    "tokens": "node scripts/generate-app-theme.mjs"
   },
   "dependencies": {
     "@sec-ant/barcode-detector": "^1.3.3",

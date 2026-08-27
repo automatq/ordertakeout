@@ -342,6 +342,8 @@ function RefusedCard({ reason, onRetry }: { reason: string; onRetry: () => void 
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.canvas },
+  /* Black, and deliberately not a token: this is the void behind a camera
+     feed, not a surface, and it must stay black through any rebrand. */
   cameraWrap: { flex: 1, backgroundColor: "#000" },
   reticle: {
     position: "absolute",
@@ -357,6 +359,8 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: "18%",
     alignSelf: "center",
+    /* Over live video, chosen for contrast against whatever is in frame rather
+       than from the palette. */
     color: "#fff",
     fontSize: 16,
     fontWeight: "600",
@@ -370,6 +374,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 22,
     paddingVertical: 12,
   },
+  /* White over live video, chosen for contrast against whatever is in frame
+     rather than from the palette. */
   torchText: { color: "#fff", fontWeight: "600", fontSize: 15 },
   centre: { flex: 1, justifyContent: "center", padding: 24 },
   card: { backgroundColor: theme.surface, borderRadius: 24, padding: 24, gap: 12 },
@@ -409,7 +415,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     alignItems: "center",
   },
-  primaryText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  primaryText: { color: theme.brandInk, fontWeight: "700", fontSize: 16 },
   secondary: { color: theme.brand, fontWeight: "600", fontSize: 15, textAlign: "center", paddingVertical: 6 },
   disabled: { opacity: 0.4 },
   pressed: { opacity: 0.85 },
@@ -433,6 +439,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 22,
     justifyContent: "center",
   },
-  trayButtonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  trayButtonText: { color: theme.brandInk, fontWeight: "700", fontSize: 16 },
   close: { color: theme.brand, fontWeight: "600", fontSize: 15, textAlign: "center", paddingVertical: 8 },
 });

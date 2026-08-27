@@ -147,6 +147,8 @@ export function Order({
         <View style={styles.passCard}>
           <Text style={styles.passLabel}>Show this at the counter</Text>
           <View style={styles.qrFrame}>
+            {/* True white, not the surface token — a scanner needs maximum
+                contrast against the black modules. */}
             <QRCode value={order.pickupPass} size={200} backgroundColor="#ffffff" />
           </View>
           <Text style={styles.passHint}>
@@ -257,6 +259,9 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.6,
   },
+  /* True white, not the surface token: a scanner needs maximum contrast
+     against the black modules, and a tinted background costs read reliability
+     in bad light. */
   qrFrame: { backgroundColor: "#ffffff", padding: 14, borderRadius: 16 },
   passHint: { fontSize: 13, color: theme.inkMuted, textAlign: "center", lineHeight: 19 },
   card: { backgroundColor: theme.surface, borderRadius: 20, padding: 16, gap: 8 },

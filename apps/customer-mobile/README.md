@@ -123,6 +123,18 @@ yet, and passkeys in particular want universal links to be worth having.
 **Checkout**, once there is a Square sandbox id and a device to prove the card
 sheet on. Everything else in the read path is done.
 
+## Colours
+
+`src/tokens.generated.ts` is written by `scripts/generate-app-theme.mjs` from
+the web's `app/globals.css`, which stays the single source of truth. Run
+`npm run tokens` from the repo root after changing `@theme`; CI regenerates and
+fails on a diff, so a palette change that forgets the apps cannot merge.
+
+They were hand-copied at first and drifted within a day: the brand red was
+`#9E3136` in the apps and `#ce3f23` on the web, alongside a green and an amber
+that appear nowhere in the palette. Nothing looked broken, which is exactly how
+that fails.
+
 ## Shared code
 
 None yet. `src/theme.ts` and `src/format.ts` are copied from the staff app,

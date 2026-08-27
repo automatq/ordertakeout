@@ -45,7 +45,7 @@ export function Locked({
           disabled={busy}
           style={({ pressed }) => [styles.button, busy && styles.disabled, pressed && styles.pressed]}
         >
-          {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Unlock</Text>}
+          {busy ? <ActivityIndicator color={theme.brandInk} /> : <Text style={styles.buttonText}>Unlock</Text>}
         </Pressable>
 
         <Pressable onPress={onSignOut} hitSlop={8}>
@@ -71,6 +71,6 @@ const styles = StyleSheet.create({
   },
   disabled: { opacity: 0.5 },
   pressed: { opacity: 0.85 },
-  buttonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  buttonText: { color: theme.brandInk, fontWeight: "700", fontSize: 16 },
   secondary: { color: theme.brand, fontWeight: "600", fontSize: 15, paddingVertical: 8 },
 });

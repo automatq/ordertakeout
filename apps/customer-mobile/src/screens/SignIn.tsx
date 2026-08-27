@@ -130,7 +130,7 @@ export function SignIn({
           style={({ pressed }) => [styles.primary, busy && styles.disabled, pressed && styles.pressed]}
         >
           {busy ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={theme.brandInk} />
           ) : (
             <Text style={styles.primaryText}>
               {stage === "phone" ? "Text me a code" : "Sign in"}
@@ -179,7 +179,7 @@ const styles = StyleSheet.create({
   codeInput: { fontSize: 26, letterSpacing: 8, textAlign: "center" },
   message: { fontSize: 14, color: theme.inkMuted, lineHeight: 20 },
   primary: { backgroundColor: theme.brand, borderRadius: 999, paddingVertical: 16, alignItems: "center" },
-  primaryText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  primaryText: { color: theme.brandInk, fontWeight: "700", fontSize: 16 },
   disabled: { opacity: 0.5 },
   pressed: { opacity: 0.85 },
   link: { color: theme.brand, fontWeight: "600", fontSize: 15, textAlign: "center", paddingVertical: 6 },
