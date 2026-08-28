@@ -47,9 +47,10 @@ import { Shops } from "./src/screens/Shops";
 import { SignIn } from "./src/screens/SignIn";
 import { Track } from "./src/screens/Track";
 import { ThemeProvider, useTheme } from "./src/theme";
-import { StickyCta, TabBar, Toast } from "./src/ui/chrome";
+import { OfflineBar, StickyCta, TabBar, Toast, useCtaSpace, useTabBarSpace } from "./src/ui/chrome";
 import { BlurTargetProvider, BlurTargetSurface } from "./src/ui/glass";
 import { ErrorBoundary } from "./src/ui/error-boundary";
+import { useOffline } from "./src/online";
 import { ScreenTransition } from "./src/ui/transition";
 
 void SplashScreen.preventAutoHideAsync();
@@ -92,6 +93,9 @@ const TABBED: Screen[] = ["home", "menu", "track", "account"];
 function Shell() {
   const { c, scheme } = useTheme();
   const insets = useSafeAreaInsets();
+  const offline = useOffline();
+  const tabBarSpace = useTabBarSpace();
+  const ctaSpace = useCtaSpace();
 
   const [screen, setScreen] = useState<Screen | null>(null);
   /* The confirmation screen and the pickup pass are the same screen wearing two
@@ -500,6 +504,12 @@ function Shell() {
         )}
         </ScreenTransition>
       </BlurTargetSurface>
+
+      {offline ? (
+        <OfflineBar
+          bottom={cta ? ctaSpace : TABBED.includes(screen) ? tabBarSpace : 0}
+        />
+      ) : null}
 
       {toast ? <Toast message={toast} onView={() => setScreen("cart")} /> : null}
 

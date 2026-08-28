@@ -6,6 +6,8 @@
  * screen in a shop doorway.
  */
 
+import { isOffline } from "./online";
+
 const BASE = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
 
 export type Result<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -38,6 +40,11 @@ export interface Menu {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<Result<T>> {
+  /* With no network at all there is nothing to wait for, and waiting is the
+     expensive part: the timeout below is ten seconds, which is ten seconds of
+     spinner in a doorway before the app admits what the phone already knew. */
+  if (isOffline()) return { ok: false, error: "No connection." };
+
   let response: Response;
   try {
     response = await fetch(`${BASE}/api/v1${path}`, {

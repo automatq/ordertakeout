@@ -298,3 +298,51 @@ export function Sheet({ children }: { children: React.ReactNode }) {
     </View>
   );
 }
+
+/**
+ * A standing note that the phone has no network.
+ *
+ * Deliberately not a dialog and not a toast: this is a condition rather than an
+ * event, it can last the whole time somebody is queueing, and interrupting them
+ * about it once — then never again — is how an app leaves a person wondering
+ * why nothing is loading ten minutes later.
+ *
+ * It floats above whichever bottom furniture is showing, and is inert to touch:
+ * there is no action to offer. Announced politely so it reaches somebody who is
+ * not looking at the screen.
+ */
+export function OfflineBar({ bottom }: { bottom: number }) {
+  const { c, scheme } = useTheme();
+  const sh = shadows(scheme);
+
+  return (
+    <View
+      pointerEvents="none"
+      style={{ position: "absolute", left: 16, right: 16, bottom: bottom + 10 }}
+    >
+      <View
+        accessibilityLiveRegion="polite"
+        style={[
+          {
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 10,
+            paddingVertical: 10,
+            paddingHorizontal: 13,
+            borderRadius: 14,
+            backgroundColor: c.surface,
+            borderWidth: 1,
+            borderColor: c.border,
+          },
+          sh.card,
+        ]}
+      >
+        <Icon name="info" size={16} color={c.inkSubtle} />
+        <Body size={12.5} color={c.inkMuted} style={{ flex: 1 }} numberOfLines={2}>
+          No connection. Anything already saved still works — the rest will load when
+          you&apos;re back.
+        </Body>
+      </View>
+    </View>
+  );
+}
