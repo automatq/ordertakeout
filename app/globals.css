@@ -231,6 +231,67 @@
 }
 
 /* ============================================================================
+   DARK PALETTE
+   Introduced by the mobile app design (Harina App.dc.html). Defining the tokens
+   here rather than in the apps keeps one source of truth — scripts/
+   generate-app-theme.mjs reads both this block and @theme above, and the
+   mobile apps follow the device's appearance setting.
+
+   Nothing on the web reads these yet: they only take effect under
+   [data-theme="dark"], which the web never sets. When the storefront does adopt
+   a dark mode, the values are already here and already agree with the apps.
+
+   Not a mechanical inversion. The canvas is a warm near-black rather than grey,
+   so the cream identity survives; the brand red lifts to stay legible on it,
+   and brand-deep becomes *lighter* than brand because on a dark surface the
+   emphatic direction is up, not down.
+   ========================================================================= */
+[data-theme="dark"] {
+  --color-canvas: #15110d;
+  --color-surface: #221c16;
+  --color-surface-sunken: #2c241c;
+  --color-border: #382e24;
+  --color-border-strong: #4d4032;
+
+  --color-ink: #f8f2e7;
+  --color-ink-muted: #c6b9a6;
+  --color-ink-subtle: #a99c8a;
+
+  --color-brand: #e2482a;
+  --color-brand-hover: #f9553c;
+  --color-brand-deep: #ff8f78;
+  --color-brand-soft: #3a1a12;
+  --color-brand-tint: #241611;
+  --color-brand-ink: #ffffff;
+
+  --color-accent: #ffc446;
+  --color-accent-hover: #ffd36f;
+  --color-accent-soft: #3a2c10;
+  --color-accent-ink: #ffd36f;
+
+  --color-secondary: #ff8f78;
+  --color-secondary-hover: #f9553c;
+  --color-secondary-soft: #3a1a12;
+  --color-secondary-ink: #15110d;
+
+  --color-status-new: #e2482a;
+  --color-status-new-soft: #3a1a12;
+  --color-status-preparing: #ffc446;
+  --color-status-preparing-soft: #3a2c10;
+  --color-status-ready: #ff8f78;
+  --color-status-ready-soft: #3a1a12;
+  --color-status-completed: #a99c8a;
+  --color-status-completed-soft: #2c241c;
+  --color-status-canceled: #a99c8a;
+  --color-status-canceled-soft: #2c241c;
+
+  --color-success: #ff8f78;
+  --color-warning: #ffc446;
+  --color-danger: #ff7a5e;
+  --color-danger-soft: #3a1a12;
+}
+
+/* ============================================================================
    UTILITIES
    Layout shorthands that were being retyped on every page.
    ========================================================================= */
