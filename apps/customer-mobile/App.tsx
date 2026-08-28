@@ -49,6 +49,7 @@ import { Track } from "./src/screens/Track";
 import { ThemeProvider, useTheme } from "./src/theme";
 import { StickyCta, TabBar, Toast } from "./src/ui/chrome";
 import { BlurTargetProvider, BlurTargetSurface } from "./src/ui/glass";
+import { ErrorBoundary } from "./src/ui/error-boundary";
 import { ScreenTransition } from "./src/ui/transition";
 
 void SplashScreen.preventAutoHideAsync();
@@ -537,9 +538,11 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <ThemeProvider>
-        <BlurTargetProvider>
-          <Shell />
-        </BlurTargetProvider>
+        <ErrorBoundary>
+          <BlurTargetProvider>
+            <Shell />
+          </BlurTargetProvider>
+        </ErrorBoundary>
       </ThemeProvider>
     </SafeAreaProvider>
   );

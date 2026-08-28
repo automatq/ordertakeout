@@ -4,7 +4,7 @@ import { Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { availabilityOf, fromPrice, type Menu as MenuData, type MenuProduct } from "../api";
 import * as haptics from "../haptics";
 import { radius, shadows, useTheme } from "../theme";
-import { Badge, Card, Chip, RoundButton } from "../ui/controls";
+import { Badge, Card, Chip } from "../ui/controls";
 import { Photo } from "../ui/photo";
 import { Icon } from "../ui/icons";
 import { useTabBarSpace } from "../ui/chrome";
@@ -102,7 +102,6 @@ export function Menu({
           }}
         >
           <Display size={38}>The trays</Display>
-          <RoundButton icon="search" label="Search" />
         </View>
 
         <ScrollView

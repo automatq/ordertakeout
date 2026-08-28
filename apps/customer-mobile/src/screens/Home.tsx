@@ -8,7 +8,7 @@ import { formatDate, formatTime } from "../format";
 import * as haptics from "../haptics";
 import { statusFor } from "../status";
 import { radius, shadows, useTheme } from "../theme";
-import { Card, RoundButton } from "../ui/controls";
+import { Card } from "../ui/controls";
 import { Glass } from "../ui/glass";
 import { BrandWash } from "../ui/gradient";
 import { photoDefaults, Photo } from "../ui/photo";
@@ -538,7 +538,6 @@ export function Home({
           </View>
           <Icon name="chevronDown" size={15} color={c.inkSubtle} />
         </Pressable>
-        <RoundButton icon="bell" label="Notifications" />
       </Glass>
     </View>
   );
