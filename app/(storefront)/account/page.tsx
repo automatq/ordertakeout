@@ -6,9 +6,9 @@ import { signOutCustomerAccount } from "@/app/actions/account";
 import { PasskeyManager } from "@/components/accounts/passkey-manager";
 import { listPasskeys } from "@/lib/accounts/passkeys";
 import { ReorderButton } from "@/components/accounts/reorder-button";
-import { getCurrentCustomerAccount, REWARD_POINTS } from "@/lib/accounts/loyalty";
+import { getCurrentCustomerAccount, loyaltyLedger, REWARD_POINTS } from "@/lib/accounts/loyalty";
 import { db } from "@/lib/db";
-import { loyaltyEntries, orderItems, orders } from "@/lib/db/schema";
+import { orderItems, orders } from "@/lib/db/schema";
 import { createOrderAccessToken } from "@/lib/orders/access";
 import { BADGE_CLASS, STATUS_LABEL } from "@/lib/orders/status";
 import { formatPickupTime, formatStoreDate } from "@/lib/scheduling/time";
@@ -58,19 +58,7 @@ export default async function AccountPage({
           .from(orderItems)
           .where(inArray(orderItems.orderId, history.map((order) => order.id)))
       : Promise.resolve([]),
-    db()
-      .select({
-        id: loyaltyEntries.id,
-        kind: loyaltyEntries.kind,
-        points: loyaltyEntries.points,
-        createdAt: loyaltyEntries.createdAt,
-        orderNumber: orders.orderNumber,
-      })
-      .from(loyaltyEntries)
-      .innerJoin(orders, eq(loyaltyEntries.orderId, orders.id))
-      .where(eq(loyaltyEntries.customerAccountId, account.id))
-      .orderBy(desc(loyaltyEntries.createdAt))
-      .limit(10),
+    loyaltyLedger(account.id),
   ]);
   const itemsByOrder = new Map<string, Array<{ name: string; quantity: number }>>();
   for (const item of historyItems) {

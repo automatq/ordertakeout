@@ -380,6 +380,19 @@ export const customerOrderSchema = z
      * signal, which is exactly the moment somebody needs it.
      */
     pickupPass: z.string().nullable(),
+    /**
+     * Whether the customer can still cancel, decided on the server.
+     *
+     * The app cannot work this out for itself: the deadline is the earliest
+     * production cutoff across the items, which depends on per-product lead
+     * times it never sees. Sending the verdict means the button is only offered
+     * when pressing it will work, and `reason` is what to say when it is not —
+     * "call the store" and "your refund is still processing" need different
+     * answers from the customer.
+     */
+    cancellation: z
+      .object({ allowed: z.boolean(), reason: z.string().nullable() })
+      .strict(),
   })
   .strict();
 

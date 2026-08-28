@@ -4,6 +4,8 @@ const mocks = vi.hoisted(() => ({
   requestPhoneCode: vi.fn(),
   verifyPhoneCode: vi.fn(),
   listAccountOrders: vi.fn(),
+  loyaltyBalance: vi.fn(),
+  loyaltyLedger: vi.fn(),
   serverEnv: vi.fn(() => ({ CUSTOMER_ACCOUNT_SECRET: "account-secret" })),
 }));
 
@@ -12,11 +14,18 @@ vi.mock("@/lib/accounts/phone-auth", () => ({
   verifyPhoneCode: mocks.verifyPhoneCode,
 }));
 vi.mock("@/lib/accounts/orders", () => ({ listAccountOrders: mocks.listAccountOrders }));
+vi.mock("@/lib/accounts/loyalty", () => ({
+  loyaltyBalance: mocks.loyaltyBalance,
+  loyaltyLedger: mocks.loyaltyLedger,
+  REWARD_POINTS: 100,
+  REWARD_DISCOUNT_CENTS: 1_000,
+}));
 vi.mock("@/lib/env", () => ({ serverEnv: mocks.serverEnv }));
 
 const { POST: requestCode } = await import("./code/route");
 const { POST: openSession } = await import("./session/route");
 const { GET: history } = await import("./orders/route");
+const { GET: rewards } = await import("./rewards/route");
 const { createAccountSessionToken } = await import("@/lib/accounts/session");
 
 const ACCOUNT = "6c93cabb-de1e-41ff-bd63-708825ca6ab8";
@@ -42,6 +51,10 @@ beforeEach(() => {
   mocks.verifyPhoneCode.mockResolvedValue({ ok: true, accountId: ACCOUNT });
   mocks.listAccountOrders.mockReset();
   mocks.listAccountOrders.mockResolvedValue([]);
+  mocks.loyaltyBalance.mockReset();
+  mocks.loyaltyBalance.mockResolvedValue(0);
+  mocks.loyaltyLedger.mockReset();
+  mocks.loyaltyLedger.mockResolvedValue([]);
 });
 
 describe("POST /api/v1/account/code", () => {
@@ -155,5 +168,61 @@ describe("GET /api/v1/account/orders", () => {
     /* Regression: the history rendered every row as "Today" because each order's
        date was compared against itself. */
     expect(data.today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});
+
+describe("GET /api/v1/account/rewards", () => {
+  const get = (authorization?: string) =>
+    rewards(
+      new Request("http://localhost/api/v1/account/rewards", {
+        headers: authorization ? { authorization } : {},
+      }),
+    );
+
+  it("refuses every flavour of missing or bad token identically", async () => {
+    const expired = await createAccountSessionToken(ACCOUNT, Date.now() - 400 * 24 * 60 * 60_000);
+    const responses = await Promise.all([
+      get(),
+      get(""),
+      get("Basic abc"),
+      get("Bearer"),
+      get(`Bearer ${ACCOUNT}.9999999999999.forged`),
+      get(`Bearer ${expired}`),
+    ]);
+    const bodies = await Promise.all(responses.map((r) => r.text()));
+    expect(new Set(bodies).size).toBe(1);
+    expect(new Set(responses.map((r) => r.status))).toEqual(new Set([401]));
+    // A balance is a fact about a named person's spending. Never read it first.
+    expect(mocks.loyaltyBalance).not.toHaveBeenCalled();
+  });
+
+  it("sends the thresholds with the balance, so the app never hardcodes them", async () => {
+    mocks.loyaltyBalance.mockResolvedValue(40);
+
+    const { data } = await (await get(`Bearer ${await createAccountSessionToken(ACCOUNT)}`)).json();
+    expect(data).toMatchObject({ points: 40, rewardPoints: 100, rewardDiscountCents: 1_000 });
+  });
+
+  it("names the order each entry moved on, and dates it on the wire", async () => {
+    mocks.loyaltyLedger.mockResolvedValue([
+      {
+        id: "entry-1",
+        kind: "earned",
+        points: 45,
+        orderNumber: "PT-ABC123",
+        createdAt: new Date("2026-08-26T14:00:00.000Z"),
+      },
+    ]);
+
+    const { data } = await (await get(`Bearer ${await createAccountSessionToken(ACCOUNT)}`)).json();
+    expect(data.entries).toEqual([
+      {
+        id: "entry-1",
+        kind: "earned",
+        points: 45,
+        orderNumber: "PT-ABC123",
+        createdAt: "2026-08-26T14:00:00.000Z",
+      },
+    ]);
   });
 });

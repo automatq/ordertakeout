@@ -1,6 +1,7 @@
 import type { CustomerOrder } from "@/lib/api/dto";
 import { ok } from "@/lib/api/envelope";
 import { verifyOrderAccessToken } from "@/lib/orders/access";
+import { customerCancellationEligibility } from "@/lib/orders/cancellation";
 import { getOrderByNumber } from "@/lib/orders/lookup";
 import { createPickupPass } from "@/lib/orders/pickup-pass";
 import { serverEnv } from "@/lib/env";
@@ -45,6 +46,10 @@ export async function GET(
      something to collect. */
   const collectable = paid && order.status !== "completed";
 
+  /* Costs a couple of reads on a screen the app polls, and is worth it: the
+     alternative is offering Cancel and finding out it was refused. */
+  const eligibility = await customerCancellationEligibility(order);
+
   const data: CustomerOrder = {
     orderNumber: order.orderNumber,
     status: order.status,
@@ -70,6 +75,10 @@ export async function GET(
     currency: order.currency,
     customerNote: order.customerNote,
     pickupPass: collectable ? createPickupPass(order.id, order.orderNumber) : null,
+    cancellation: {
+      allowed: eligibility.allowed,
+      reason: eligibility.allowed ? null : eligibility.reason,
+    },
   };
 
   /* The shop's today, so "Today at 4pm" means today where the cake is. */

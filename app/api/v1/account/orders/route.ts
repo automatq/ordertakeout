@@ -1,5 +1,5 @@
-import { accountIdFromSession } from "@/lib/accounts/session";
 import { listAccountOrders } from "@/lib/accounts/orders";
+import { customerAccountFromRequest } from "@/lib/api/context";
 import { ok, unauthorized } from "@/lib/api/envelope";
 import { serverEnv } from "@/lib/env";
 import { normalizeTime, storeToday } from "@/lib/scheduling/time";
@@ -13,9 +13,7 @@ import { normalizeTime, storeToday } from "@/lib/scheduling/time";
  * have it.
  */
 export async function GET(request: Request): Promise<Response> {
-  const header = request.headers.get("authorization");
-  const match = header ? /^Bearer (.+)$/i.exec(header.trim()) : null;
-  const accountId = match ? await accountIdFromSession(match[1]) : null;
+  const accountId = await customerAccountFromRequest(request);
   if (!accountId) return unauthorized();
 
   const history = await listAccountOrders(accountId);

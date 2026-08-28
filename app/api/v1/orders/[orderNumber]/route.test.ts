@@ -4,10 +4,14 @@ import { customerOrderSchema } from "@/lib/api/dto";
 
 const mocks = vi.hoisted(() => ({
   getOrderByNumber: vi.fn(),
+  cancellationEligibility: vi.fn(),
   serverEnv: vi.fn(() => ({ ORDER_ACCESS_SECRET: "order-secret", STAFF_DASHBOARD_PASSWORD: "pw" })),
 }));
 
 vi.mock("@/lib/orders/lookup", () => ({ getOrderByNumber: mocks.getOrderByNumber }));
+vi.mock("@/lib/orders/cancellation", () => ({
+  customerCancellationEligibility: mocks.cancellationEligibility,
+}));
 vi.mock("@/lib/env", () => ({ serverEnv: mocks.serverEnv }));
 
 const { GET } = await import("./route");
@@ -71,6 +75,11 @@ beforeEach(() => {
   mocks.getOrderByNumber.mockImplementation(async (reference: string) =>
     reference === "PT-ABC123" ? orderRow() : null,
   );
+  mocks.cancellationEligibility.mockReset();
+  mocks.cancellationEligibility.mockResolvedValue({
+    allowed: true,
+    deadline: new Date("2026-08-25T20:00:00Z"),
+  });
 });
 
 describe("GET /api/v1/orders/[orderNumber]", () => {
@@ -82,6 +91,24 @@ describe("GET /api/v1/orders/[orderNumber]", () => {
     expect(data.found).toBe(true);
     expect(() => customerOrderSchema.parse(data.order)).not.toThrow();
     expect(data.order).toMatchObject({ orderNumber: "PT-ABC123", tipCents: 300 });
+  });
+
+  it("passes the cancellation verdict through, reason and all", async () => {
+    mocks.cancellationEligibility.mockResolvedValue({
+      allowed: false,
+      reason: "Please call the store to cancel this legacy order.",
+    });
+
+    const { data } = await (await call("PT-ABC123", keyFor("order-1", "PT-ABC123"))).json();
+    expect(data.order.cancellation).toEqual({
+      allowed: false,
+      reason: "Please call the store to cancel this legacy order.",
+    });
+  });
+
+  it("sends no reason when cancelling is still open", async () => {
+    const { data } = await (await call("PT-ABC123", keyFor("order-1", "PT-ABC123"))).json();
+    expect(data.order.cancellation).toEqual({ allowed: true, reason: null });
   });
 
   it("never echoes the raw row", async () => {
