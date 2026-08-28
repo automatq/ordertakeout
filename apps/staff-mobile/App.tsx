@@ -17,6 +17,7 @@ import {
   saveToken,
   type Protection,
 } from "./src/session";
+import * as haptics from "./src/haptics";
 import { theme } from "./src/theme";
 import { useIdleLock } from "./src/useIdleLock";
 
@@ -72,8 +73,10 @@ export default function App() {
   const unlock = useCallback(async () => {
     const result = await loadToken();
     if (result.kind === "token") {
+      haptics.success();
       setPhase({ kind: "signedIn", token: result.token, protection: result.protection });
     } else if (result.kind === "locked") {
+      haptics.error();
       setPhase({ kind: "locked", failed: true });
     } else {
       setPhase({ kind: "signedOut" });

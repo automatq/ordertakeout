@@ -11,6 +11,7 @@ import {
 } from "react-native";
 
 import { signIn } from "../api";
+import * as haptics from "../haptics";
 import { theme } from "../theme";
 
 export function Login({ onSignedIn }: { onSignedIn: (token: string) => void }) {
@@ -27,8 +28,10 @@ export function Login({ onSignedIn }: { onSignedIn: (token: string) => void }) {
     setBusy(false);
 
     if (result.ok) {
+      haptics.success();
       onSignedIn(result.data.token);
     } else {
+      haptics.error();
       setError(result.error);
       /* Clear on failure so a wrong password is not silently retried, and so a
          tablet left on the login screen is not holding one in a text field. */
@@ -68,6 +71,7 @@ export function Login({ onSignedIn }: { onSignedIn: (token: string) => void }) {
 
         <Pressable
           onPress={submit}
+onPressIn={haptics.commit}
           disabled={busy || password.length === 0}
           style={({ pressed }) => [
             styles.button,

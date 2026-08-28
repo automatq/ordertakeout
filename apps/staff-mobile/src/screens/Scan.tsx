@@ -13,6 +13,7 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 
 import { confirmPickup, previewPickup, type PickupPreview } from "../api";
 import { formatDate, formatTime } from "../format";
+import * as haptics from "../haptics";
 import { theme } from "../theme";
 
 /**
@@ -54,20 +55,27 @@ export function Scan({ token, onClose }: { token: string; onClose: () => void })
     async (method: "qr" | "manual", value: string) => {
       if (busy.current) return;
       busy.current = true;
+      /* After the guard, never in `onBarcodeScanned` — that fires many times a
+         second while the code is in frame, and the point of this buzz is "you
+         can lower the phone now", said exactly once. */
+      haptics.select();
       setStage({ kind: "looking-up" });
 
       const result = await previewPickup(token, method, value);
       busy.current = false;
 
       if (!result.ok) {
+        haptics.error();
         setStage({ kind: "refused", reason: result.error });
         return;
       }
-      setStage(
-        result.data.found
-          ? { kind: "found", order: result.data.order, today: result.data.today, method, value }
-          : { kind: "refused", reason: result.data.reason },
-      );
+      if (result.data.found) {
+        haptics.tap();
+        setStage({ kind: "found", order: result.data.order, today: result.data.today, method, value });
+      } else {
+        haptics.error();
+        setStage({ kind: "refused", reason: result.data.reason });
+      }
     },
     [token],
   );
@@ -82,19 +90,26 @@ export function Scan({ token, onClose }: { token: string; onClose: () => void })
 
     const result = await confirmPickup(token, method, value, trimmed);
     if (!result.ok) {
+      haptics.error();
       setStage({ kind: "refused", reason: result.error });
       return;
     }
-    setStage(
-      result.data.verified
-        ? {
-            kind: "done",
-            orderNumber: result.data.orderNumber,
-            customerName: order.customerName,
-            warning: result.data.squareWarning,
-          }
-        : { kind: "refused", reason: result.data.reason },
-    );
+    if (result.data.verified) {
+      /* Warning, not success, when Square did not take it: the customer still
+         gets their trays, so this is not a refusal, but it is not a clean
+         handover either and the buzz is the only part anyone will notice. */
+      if (result.data.squareWarning) haptics.warning();
+      else haptics.success();
+      setStage({
+        kind: "done",
+        orderNumber: result.data.orderNumber,
+        customerName: order.customerName,
+        warning: result.data.squareWarning,
+      });
+    } else {
+      haptics.error();
+      setStage({ kind: "refused", reason: result.data.reason });
+    }
   }, [stage, initials, token]);
 
   const reset = useCallback(() => {
@@ -161,6 +176,7 @@ export function Scan({ token, onClose }: { token: string; onClose: () => void })
             />
             <Pressable
               onPress={() => manual.trim() && void lookUp("manual", manual.trim())}
+onPressIn={haptics.commit}
               disabled={!manual.trim()}
               style={({ pressed }) => [
                 styles.trayButton,
@@ -171,7 +187,7 @@ export function Scan({ token, onClose }: { token: string; onClose: () => void })
               <Text style={styles.trayButtonText}>Find</Text>
             </Pressable>
           </View>
-          <Pressable onPress={onClose} hitSlop={12}>
+          <Pressable onPress={onClose} hitSlop={12} onPressIn={haptics.tap}>
             <Text style={styles.close}>Back to pickups</Text>
           </Pressable>
         </View>
@@ -206,7 +222,7 @@ function Camera({
               : "Camera access is turned off for this app in Settings. Order numbers can still be typed in below."}
           </Text>
           {canAsk ? (
-            <Pressable onPress={onRequest} style={styles.primary}>
+            <Pressable onPress={onRequest} style={styles.primary} onPressIn={haptics.commit}>
               <Text style={styles.primaryText}>Allow camera</Text>
             </Pressable>
           ) : null}
@@ -229,6 +245,7 @@ function Camera({
       <Text style={styles.cameraHint}>Point at the customer's pickup pass</Text>
       <Pressable
         onPress={onToggleTorch}
+onPressIn={haptics.select}
         style={({ pressed }) => [styles.torch, pressed && styles.pressed]}
       >
         <Text style={styles.torchText}>{torch ? "Light off" : "Light on"}</Text>
@@ -280,6 +297,7 @@ function FoundCard({
 
       <Pressable
         onPress={onConfirm}
+onPressIn={haptics.commit}
         disabled={!initials.trim()}
         style={({ pressed }) => [
           styles.primary,
@@ -289,7 +307,7 @@ function FoundCard({
       >
         <Text style={styles.primaryText}>Handed over</Text>
       </Pressable>
-      <Pressable onPress={onCancel} hitSlop={8}>
+      <Pressable onPress={onCancel} hitSlop={8} onPressIn={haptics.tap}>
         <Text style={styles.secondary}>Not this one</Text>
       </Pressable>
     </View>
@@ -318,10 +336,10 @@ function DoneCard({
       {/* The order is handed over either way, so staff have to know the books
           will disagree until Square catches up. */}
       {warning ? <Text style={styles.warning}>{warning}</Text> : null}
-      <Pressable onPress={onNext} style={styles.primary}>
+      <Pressable onPress={onNext} style={styles.primary} onPressIn={haptics.commit}>
         <Text style={styles.primaryText}>Scan the next one</Text>
       </Pressable>
-      <Pressable onPress={onFinish} hitSlop={8}>
+      <Pressable onPress={onFinish} hitSlop={8} onPressIn={haptics.tap}>
         <Text style={styles.secondary}>Back to pickups</Text>
       </Pressable>
     </View>
@@ -333,7 +351,7 @@ function RefusedCard({ reason, onRetry }: { reason: string; onRetry: () => void 
     <View style={styles.card}>
       <Text style={styles.refused}>Can't hand this over</Text>
       <Text style={styles.cardBody}>{reason}</Text>
-      <Pressable onPress={onRetry} style={styles.primary}>
+      <Pressable onPress={onRetry} style={styles.primary} onPressIn={haptics.commit}>
         <Text style={styles.primaryText}>Try again</Text>
       </Pressable>
     </View>

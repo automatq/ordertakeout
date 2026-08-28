@@ -16,6 +16,7 @@ import {
   setPaused,
   type ServiceState,
 } from "../api";
+import * as haptics from "../haptics";
 import { theme } from "../theme";
 
 /**
@@ -65,9 +66,14 @@ export function Service({
       setBusy(true);
       const result = await run();
       if (!result.ok) {
+        haptics.error();
         setError(result.error ?? "That didn't go through.");
       } else {
         const applied = result.data as { applied: boolean; reason?: string };
+        /* A 200 that did not apply is still a refusal — the server declining
+           with a reason must not feel like the change went through. */
+        if (applied.applied) haptics.success();
+        else haptics.error();
         setError(applied.applied ? null : (applied.reason ?? "That didn't go through."));
       }
       await load();
@@ -81,7 +87,7 @@ export function Service({
     return (
       <View style={styles.centre}>
         {error ? <Text style={styles.error}>{error}</Text> : <ActivityIndicator color={theme.brand} />}
-        <Pressable onPress={onClose} hitSlop={12}>
+        <Pressable onPress={onClose} onPressIn={haptics.tap} hitSlop={12}>
           <Text style={styles.link}>Back to pickups</Text>
         </Pressable>
       </View>
@@ -113,7 +119,7 @@ export function Service({
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <Text style={styles.title}>Service</Text>
-        <Pressable onPress={onClose} hitSlop={12}>
+        <Pressable onPress={onClose} onPressIn={haptics.tap} hitSlop={12}>
           <Text style={styles.link}>Done</Text>
         </Pressable>
       </View>
@@ -170,6 +176,7 @@ export function Service({
               </View>
               <Pressable
                 onPress={() => void apply(() => putBackOn(token, entry.id))}
+onPressIn={haptics.commit}
                 disabled={busy}
                 style={({ pressed }) => [styles.small, busy && styles.disabled, pressed && styles.pressed]}
               >
@@ -181,6 +188,7 @@ export function Service({
 
         <Pressable
           onPress={() => setPicking(true)}
+onPressIn={haptics.tap}
           disabled={busy || state.products.length === 0}
           style={({ pressed }) => [
             styles.primary,
@@ -250,7 +258,7 @@ function ProductPicker({
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <Text style={styles.title}>Sold out</Text>
-        <Pressable onPress={onCancel} hitSlop={12}>
+        <Pressable onPress={onCancel} hitSlop={12} onPressIn={haptics.tap}>
           <Text style={styles.link}>Cancel</Text>
         </Pressable>
       </View>
@@ -262,6 +270,7 @@ function ProductPicker({
           <Pressable
             key={product.id}
             onPress={() => !already && onPick(product.id)}
+onPressIn={haptics.select}
             disabled={busy || already}
             style={({ pressed }) => [styles.card, already && styles.disabled, pressed && styles.pressed]}
           >

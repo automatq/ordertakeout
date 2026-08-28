@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
+import * as haptics from "../haptics";
 import { theme } from "../theme";
 
 /**
@@ -42,13 +43,14 @@ export function Locked({
 
         <Pressable
           onPress={unlock}
+onPressIn={haptics.commit}
           disabled={busy}
           style={({ pressed }) => [styles.button, busy && styles.disabled, pressed && styles.pressed]}
         >
           {busy ? <ActivityIndicator color={theme.brandInk} /> : <Text style={styles.buttonText}>Unlock</Text>}
         </Pressable>
 
-        <Pressable onPress={onSignOut} hitSlop={8}>
+        <Pressable onPress={onSignOut} hitSlop={8} onPressIn={haptics.tap}>
           <Text style={styles.secondary}>Use the password instead</Text>
         </Pressable>
       </View>

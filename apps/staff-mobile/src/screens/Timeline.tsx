@@ -11,6 +11,7 @@ import {
 
 import { fetchQueue, type Queue as QueueData } from "../api";
 import { formatDate, formatTime } from "../format";
+import * as haptics from "../haptics";
 import { theme } from "../theme";
 
 /**
@@ -74,7 +75,7 @@ export function Timeline({ token, onClose }: { token: string; onClose: () => voi
     return (
       <View style={styles.centre}>
         {error ? <Text style={styles.error}>{error}</Text> : <ActivityIndicator color={theme.brand} />}
-        <Pressable onPress={onClose} hitSlop={12}>
+        <Pressable onPress={onClose} onPressIn={haptics.tap} hitSlop={12}>
           <Text style={styles.link}>Back to pickups</Text>
         </Pressable>
       </View>
@@ -93,7 +94,7 @@ export function Timeline({ token, onClose }: { token: string; onClose: () => voi
     >
       <View style={styles.header}>
         <Text style={styles.title}>Prep</Text>
-        <Pressable onPress={onClose} hitSlop={12}>
+        <Pressable onPress={onClose} onPressIn={haptics.tap} hitSlop={12}>
           <Text style={styles.link}>Done</Text>
         </Pressable>
       </View>

@@ -12,6 +12,7 @@ import {
 import { fetchQueue, type Queue as QueueData, type QueueOrder } from "../api";
 import type { Protection } from "../session";
 import { formatDate, formatMoney, formatTime } from "../format";
+import * as haptics from "../haptics";
 import { statusStyle, theme } from "../theme";
 
 /** How often the queue refreshes itself while the screen is open. */
@@ -78,7 +79,7 @@ export function Queue({
         {error ? (
           <>
             <Text style={styles.errorTitle}>{error}</Text>
-            <Pressable onPress={onRefresh} style={styles.retry}>
+            <Pressable onPress={onRefresh} style={styles.retry} onPressIn={haptics.tap}>
               <Text style={styles.retryText}>Try again</Text>
             </Pressable>
           </>
@@ -109,13 +110,13 @@ export function Queue({
           </Text>
         </View>
         <View style={styles.headerActions}>
-          <Pressable onPress={onPrep} hitSlop={12}>
+          <Pressable onPress={onPrep} hitSlop={12} onPressIn={haptics.tap}>
             <Text style={styles.signOut}>Prep</Text>
           </Pressable>
-          <Pressable onPress={onService} hitSlop={12}>
+          <Pressable onPress={onService} hitSlop={12} onPressIn={haptics.tap}>
             <Text style={styles.signOut}>Service</Text>
           </Pressable>
-          <Pressable onPress={onSignedOut} hitSlop={12}>
+          <Pressable onPress={onSignedOut} hitSlop={12} onPressIn={haptics.tap}>
             <Text style={styles.signOutMuted}>Sign out</Text>
           </Pressable>
         </View>
@@ -125,6 +126,7 @@ export function Queue({
           a menu. Someone is standing there waiting. */}
       <Pressable
         onPress={onScan}
+onPressIn={haptics.commit}
         style={({ pressed }) => [styles.scanButton, pressed && styles.scanPressed]}
       >
         <Text style={styles.scanText}>Scan a pickup pass</Text>
