@@ -32,7 +32,14 @@ export async function loadSavedOrder(): Promise<SavedOrder | null> {
     const parsed = JSON.parse(raw) as SavedOrder;
     /* A stored shape from an older build is worse than nothing: it would render
        as a broken screen rather than an absent one. */
-    return parsed?.orderNumber && parsed?.accessKey && parsed?.order ? parsed : null;
+    if (!parsed?.orderNumber || !parsed?.accessKey || !parsed?.order) return null;
+    /* A copy written before `cancellation` existed would otherwise crash the
+       screen that reads it. Defaulting to "cannot cancel" is also the right
+       answer on its own terms: cancelling needs the network, so a decision made
+       from a stored copy is one nobody should be acting on. */
+    return parsed.order.cancellation
+      ? parsed
+      : { ...parsed, order: { ...parsed.order, cancellation: { allowed: false, reason: null } } };
   } catch {
     return null;
   }

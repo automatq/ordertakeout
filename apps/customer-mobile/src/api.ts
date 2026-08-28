@@ -62,6 +62,19 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<Result<
   return { ok: true, data: envelope.data as T };
 }
 
+/**
+ * Cancel an order, on the authority of the key that reads it.
+ *
+ * Never retried automatically and never queued when offline: a cancellation
+ * that fires twice is at best confusing and at worst a double refund. If it did
+ * not go through, the customer is told, and pressing again is their call.
+ */
+export const cancelOrder = (orderNumber: string, key: string) =>
+  request<{ canceled: true }>(`/orders/${encodeURIComponent(orderNumber)}/cancel`, {
+    method: "POST",
+    body: JSON.stringify({ key }),
+  });
+
 export const fetchMenu = (locationId?: string | null) =>
   request<Menu>(`/menu${locationId ? `?locationId=${encodeURIComponent(locationId)}` : ""}`);
 
@@ -125,6 +138,14 @@ export interface CustomerOrder {
   customerNote: string | null;
   /** Null once there is nothing left to collect. */
   pickupPass: string | null;
+  /**
+   * The server's verdict on cancelling, with the reason when it says no.
+   *
+   * Not something the app can decide: the deadline is the earliest production
+   * cutoff across the items, and the per-product lead times behind it never
+   * leave the server.
+   */
+  cancellation: { allowed: boolean; reason: string | null };
 }
 
 export type OrderLookup =
@@ -177,4 +198,63 @@ export const openSession = (phone: string, code: string) =>
 export const fetchAccountOrders = (token: string) =>
   request<{ today: string; orders: AccountOrder[] }>("/account/orders", {
     headers: authed(token),
+  });
+
+/** How a points row came to exist. The wording lives on this side — see Account. */
+export type RewardEntryKind = "earned" | "redeemed" | "reversed" | "revoked";
+
+export interface RewardEntry {
+  id: string;
+  kind: RewardEntryKind;
+  /** Positive for points gained, negative for a redemption. */
+  points: number;
+  orderNumber: string;
+  createdAt: string;
+}
+
+export interface Rewards {
+  points: number;
+  /** What a reward costs, and what it is worth. Both come from the shop, never
+      from a constant baked into whichever build happens to be installed. */
+  rewardPoints: number;
+  rewardDiscountCents: number;
+  entries: RewardEntry[];
+}
+
+export const fetchAccountRewards = (token: string) =>
+  request<Rewards>("/account/rewards", { headers: authed(token) });
+
+
+export interface AvailabilitySlot {
+  time: string;
+  available: boolean;
+  /** Why not, in words the counter would use. Null when it is available. */
+  reason: string | null;
+  remaining: number | null;
+}
+
+export interface AvailabilityDay {
+  date: string;
+  hasAvailability: boolean;
+  slots: AvailabilitySlot[];
+}
+
+export type Availability =
+  | { available: true; today: string; days: AvailabilityDay[] }
+  | { available: false; reason: string };
+
+/**
+ * Pickup days and times for a cart at one shop.
+ *
+ * Advisory, exactly as on the web: the same rules run again inside the
+ * reservation lock before anything is charged, because a slot can fill between
+ * choosing it and paying for it.
+ */
+export const fetchAvailability = (
+  locationId: string,
+  cart: { variantId: string; quantity: number }[],
+) =>
+  request<Availability>("/availability", {
+    method: "POST",
+    body: JSON.stringify({ locationId, cart }),
   });

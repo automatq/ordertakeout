@@ -1,268 +1,238 @@
-import { useCallback, useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  Image,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { useMemo, useState } from "react";
+import { Pressable, RefreshControl, ScrollView, View } from "react-native";
 
-import {
-  availabilityOf,
-  fetchMenu,
-  fromPrice,
-  type Menu as MenuData,
-  type MenuProduct,
-} from "../api";
-import { theme } from "../theme";
+import { availabilityOf, fromPrice, type Menu as MenuData, type MenuProduct } from "../api";
+import * as haptics from "../haptics";
+import { radius, shadows, useTheme } from "../theme";
+import { Badge, Card, Chip, RoundButton } from "../ui/controls";
+import { Photo } from "../ui/photo";
+import { Icon } from "../ui/icons";
+import { useTabBarSpace } from "../ui/chrome";
+import { CardSkeleton, Skeleton } from "../ui/skeleton";
+import { Body, Display, Label, Overline } from "../ui/text";
+
+const ALL = "All";
 
 /**
- * The menu.
+ * The trays.
  *
- * Not a port of the web homepage. That page is 634 lines of marketing written
- * to convince a stranger the bakery is worth trying; somebody who has installed
- * the app is past that argument and wants to know what there is and whether it
- * can be had. So the app opens on the food.
+ * Category chips over a search field, because the whole menu is a dozen items
+ * and scrolling past two of them is faster than typing. Search is still there
+ * for anyone who reaches for it.
  */
 export function Menu({
-  locationId,
+  data,
+  initialCategory,
+  error,
+  refreshing,
+  onRefresh,
   onOpen,
   onChangeShop,
-  savedOrderNumber,
-  onOpenOrder,
-  signedIn,
-  onAccount,
 }: {
-  locationId: string | null;
+  data: MenuData | null;
+  /** The shelf to open on, when arriving from a home shortcut. */
+  initialCategory?: string | null;
+  error: string | null;
+  refreshing: boolean;
+  onRefresh: () => void;
   onOpen: (product: MenuProduct) => void;
   onChangeShop: () => void;
-  savedOrderNumber: string | null;
-  onOpenOrder: () => void;
-  signedIn: boolean;
-  onAccount: () => void;
 }) {
-  const [data, setData] = useState<MenuData | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
+  const { c, scheme } = useTheme();
+  const chrome = useTabBarSpace();
+  const sh = shadows(scheme);
+  /* Initial state, not a synced prop: this screen unmounts when you leave it,
+     so it is re-read on every arrival, and a filter the customer changes while
+     here must not be yanked back by a stale prop. */
+  const [category, setCategory] = useState(initialCategory ?? ALL);
 
-  const load = useCallback(async () => {
-    const result = await fetchMenu(locationId);
-    if (result.ok) {
-      setData(result.data);
-      setError(null);
-    } else {
-      // Keep whatever is on screen — a stale menu still tells you what they bake.
-      setError(result.error);
-    }
-  }, [locationId]);
+  const categories = useMemo(
+    () => [ALL, ...(data?.groups.map((group) => group.category) ?? [])],
+    [data],
+  );
+  const products = useMemo(() => {
+    if (!data) return [];
+    return data.groups
+      .filter((group) => category === ALL || group.category === category)
+      .flatMap((group) => group.products);
+  }, [data, category]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  /* Error first: with no data and a reason for it, the reason is the screen.
+     Without one we are simply still loading. */
+  if (!data && error) {
+    return (
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 14, padding: 24 }}>
+        <Body color={c.ink} style={{ textAlign: "center" }}>
+          {error}
+        </Body>
+        <Pressable onPress={onRefresh} onPressIn={haptics.tap} hitSlop={10}>
+          <Label color={c.brand}>Try again</Label>
+        </Pressable>
+      </View>
+    );
+  }
 
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await load();
-    setRefreshing(false);
-  }, [load]);
-
+  /* The menu is a column of product cards; two of their outlines say "trays are
+     coming" in a way a spinner in the middle of nothing cannot. */
   if (!data) {
     return (
-      <View style={styles.centre}>
-        {error ? (
-          <>
-            {/* Before the apology, because somebody with an order to collect and
-                no signal opened the app for exactly one reason, and a menu they
-                cannot load is not it. This is the case the offline pass exists
-                for; hiding it behind a network call would defeat the whole
-                point. */}
-            {savedOrderNumber ? (
-              <SavedOrderCard orderNumber={savedOrderNumber} onPress={onOpenOrder} />
-            ) : null}
-            <Text style={styles.error}>{error}</Text>
-            <Pressable onPress={onRefresh} style={styles.retry}>
-              <Text style={styles.retryText}>Try again</Text>
-            </Pressable>
-          </>
-        ) : (
-          <ActivityIndicator color={theme.brand} />
-        )}
+      <View style={{ gap: 18, padding: 20, paddingBottom: 20 + chrome }}>
+        <Skeleton style={{ width: "55%", height: 38, marginBottom: 4 }} />
+        <CardSkeleton />
+        <CardSkeleton />
       </View>
     );
   }
 
   return (
     <ScrollView
-      style={styles.screen}
-      contentContainerStyle={styles.content}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.brand} />
-      }
+      style={{ flex: 1 }}
+      contentContainerStyle={{ paddingBottom: 30 + chrome }}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.brand} />}
+      stickyHeaderIndices={[0]}
     >
-      <View style={styles.headerRow}>
-        <View style={styles.headerText}>
-          <Text style={styles.title}>Harina Bakeshoppe</Text>
-          <Text style={styles.subtitle}>Order ahead, collect in store.</Text>
+      <View style={{ backgroundColor: c.canvas, paddingTop: 6, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: c.border }}>
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            paddingHorizontal: 20,
+          }}
+        >
+          <Display size={38}>The trays</Display>
+          <RoundButton icon="search" label="Search" />
         </View>
-        <Pressable onPress={onAccount} hitSlop={12}>
-          <Text style={styles.accountLink}>{signedIn ? "Orders" : "Sign in"}</Text>
-        </Pressable>
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: 8, paddingHorizontal: 20, paddingTop: 14, paddingBottom: 4 }}
+        >
+          {categories.map((name) => (
+            <Chip
+              key={name}
+              label={name}
+              selected={category === name}
+              onPress={() => setCategory(name)}
+            />
+          ))}
+        </ScrollView>
       </View>
 
-      {/* Above the menu, because somebody with an order to collect opened the
-          app to collect it, not to browse. */}
-      {savedOrderNumber ? (
-        <SavedOrderCard orderNumber={savedOrderNumber} onPress={onOpenOrder} />
-      ) : null}
-
-      {error ? <Text style={styles.staleBanner}>{error} Showing the last menu.</Text> : null}
-
-      {/* Said once, at the top, rather than repeated on every card — and it is a
-          button, because the sentence is useless without a way to act on it. */}
-      <Pressable onPress={onChangeShop} style={({ pressed }) => [pressed && styles.pressed]}>
-        <Text style={data.locationId === null ? styles.unknownBanner : styles.shopBanner}>
+      {/* Said once, above the list, and it is a button — the sentence is no use
+          without a way to act on it. */}
+      <Pressable
+        onPress={onChangeShop}
+        onPressIn={haptics.tap}
+        style={{ paddingHorizontal: 20, paddingTop: 14 }}
+        hitSlop={6}
+      >
+        <Label size={13.5} color={c.brand}>
           {data.locationId === null
-            ? "Choose a pickup shop to see what's in stock today."
+            ? "Choose a pickup shop to see what's in stock today"
             : "Change pickup shop"}
-        </Text>
+        </Label>
       </Pressable>
 
-      {data.groups.map((group) => (
-        <View key={group.category} style={styles.group}>
-          <Text style={styles.groupTitle}>{group.category}</Text>
-          {group.products.map((product) => (
-            <ProductCard key={product.id} product={product} onPress={() => onOpen(product)} />
-          ))}
-        </View>
-      ))}
+      <View style={{ gap: 18, padding: 20 }}>
+        {products.map((product) => {
+          const state = availabilityOf(product);
+          return (
+            <Pressable
+              key={product.id}
+              onPress={() => onOpen(product)}
+              onPressIn={haptics.tap}
+              accessibilityRole="button"
+              accessibilityLabel={product.name}
+              style={({ pressed }) => [pressed && { opacity: 0.92 }]}
+            >
+              <Card padded={false} style={{ borderRadius: radius.cardLarge, overflow: "hidden" }}>
+                <View>
+                  {product.imageUrl ? (
+                    <Photo uri={product.imageUrl} style={{ width: "100%", height: 196 }} />
+                  ) : (
+                    <View style={{ width: "100%", height: 196, backgroundColor: c.surfaceSunken }} />
+                  )}
+                  <View style={{ position: "absolute", top: 13, left: 13 }}>
+                    <Badge
+                      label={
+                        product.leadTimeDays > 0
+                          ? `Order ${product.leadTimeDays} day${product.leadTimeDays === 1 ? "" : "s"} ahead`
+                          : "Order today"
+                      }
+                      tint={c.accentInk}
+                      background={c.accentSoft}
+                      border={c.accentInk + "38"}
+                    />
+                  </View>
+                  {/* Only ever shown when the shop actually said so — unknown
+                      stock stays silent rather than implying either answer. */}
+                  {state === "sold-out" ? (
+                    <View style={{ position: "absolute", top: 13, right: 13 }}>
+                      <Badge label="Sold out today" tint={c.danger} background={c.dangerSoft} />
+                    </View>
+                  ) : null}
+                </View>
+
+                <View style={{ padding: 18, paddingTop: 16 }}>
+                  <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+                    <Display size={30} style={{ flex: 1 }}>
+                      {product.name}
+                    </Display>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "baseline",
+                        gap: 5,
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                        borderRadius: radius.chip,
+                        backgroundColor: c.surfaceSunken,
+                      }}
+                    >
+                      <Overline size={10}>From</Overline>
+                      <Display size={21} color={c.brand}>
+                        {fromPrice(product) ?? ""}
+                      </Display>
+                    </View>
+                  </View>
+
+                  {product.description ? (
+                    <Body size={13.5} style={{ marginTop: 9 }} numberOfLines={3}>
+                      {product.description}
+                    </Body>
+                  ) : null}
+
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      marginTop: 14,
+                      minHeight: 46,
+                      borderWidth: 2,
+                      borderColor: c.brand + "5C",
+                      borderRadius: radius.chip,
+                      paddingHorizontal: 16,
+                    }}
+                  >
+                    <Label size={13.5} color={c.brand}>
+                      {product.variants.length} size{product.variants.length === 1 ? "" : "s"}
+                    </Label>
+                    <Icon name="arrowRight" size={16} color={c.brand} />
+                  </View>
+                </View>
+              </Card>
+            </Pressable>
+          );
+        })}
+
+        <Body size={12} color={c.inkSubtle} style={{ textAlign: "center", marginTop: 2 }}>
+          Counter items — pandesal, monay, shakoy — are sold in store, no pre-order needed.
+        </Body>
+      </View>
     </ScrollView>
   );
 }
-
-function SavedOrderCard({
-  orderNumber,
-  onPress,
-}: {
-  orderNumber: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [styles.orderCard, pressed && styles.pressed]}
-    >
-      <Text style={styles.orderCardTitle}>Your order {orderNumber}</Text>
-      <Text style={styles.orderCardBody}>Tap to show your collection code</Text>
-    </Pressable>
-  );
-}
-
-function ProductCard({ product, onPress }: { product: MenuProduct; onPress: () => void }) {
-  const state = availabilityOf(product);
-  const price = fromPrice(product);
-
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [styles.card, pressed && styles.pressed]}
-      accessibilityRole="button"
-      accessibilityLabel={product.name}
-    >
-      {product.imageUrl ? (
-        <Image source={{ uri: product.imageUrl }} style={styles.thumb} resizeMode="cover" />
-      ) : (
-        <View style={[styles.thumb, styles.thumbEmpty]} />
-      )}
-
-      <View style={styles.cardBody}>
-        <Text style={styles.cardTitle}>{product.name}</Text>
-        {product.description ? (
-          <Text style={styles.cardDescription} numberOfLines={2}>
-            {product.description}
-          </Text>
-        ) : null}
-
-        <View style={styles.cardFooter}>
-          {price ? <Text style={styles.price}>from {price}</Text> : null}
-          {/* Only ever says "sold out" when the shop actually said so. */}
-          {state === "sold-out" ? <Text style={styles.soldOut}>Sold out today</Text> : null}
-          {product.leadTimeDays > 0 ? (
-            <Text style={styles.lead}>
-              {product.leadTimeDays} day{product.leadTimeDays === 1 ? "" : "s"} ahead
-            </Text>
-          ) : null}
-        </View>
-      </View>
-    </Pressable>
-  );
-}
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: theme.canvas },
-  content: { padding: 16, paddingTop: 64, paddingBottom: 48, gap: 16 },
-  centre: { flex: 1, backgroundColor: theme.canvas, alignItems: "center", justifyContent: "center", gap: 16, padding: 24 },
-  title: { fontSize: 30, fontWeight: "700", color: theme.ink },
-  /* No negative margin: this sits inside the header row, where there is no
-     container gap to pull back against. */
-  subtitle: { fontSize: 16, color: theme.inkMuted, marginTop: 2 },
-  error: { fontSize: 16, color: theme.ink, textAlign: "center", paddingHorizontal: 24 },
-  retry: { backgroundColor: theme.brand, borderRadius: 999, paddingHorizontal: 24, paddingVertical: 12 },
-  retryText: { color: theme.brandInk, fontWeight: "600" },
-  staleBanner: {
-    backgroundColor: theme.warnSurface,
-    color: theme.warn,
-    padding: 12,
-    borderRadius: 12,
-    fontSize: 13,
-  },
-  unknownBanner: {
-    backgroundColor: theme.surface,
-    color: theme.inkMuted,
-    padding: 12,
-    borderRadius: 12,
-    fontSize: 14,
-  },
-  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 12 },
-  headerText: { flex: 1, gap: 2 },
-  accountLink: { color: theme.brand, fontWeight: "600", fontSize: 16, paddingTop: 8 },
-  orderCard: { backgroundColor: theme.brand, borderRadius: 20, padding: 16, gap: 2, alignSelf: "stretch" },
-  orderCardTitle: { fontSize: 17, fontWeight: "700", color: theme.brandInk },
-  /* Brand ink at 80%: still legible on the brand fill, visibly secondary
-     to the line above it. */
-  orderCardBody: { fontSize: 14, color: `${theme.brandInk}cc` },
-  shopBanner: {
-    color: theme.brand,
-    fontWeight: "600",
-    fontSize: 14,
-    paddingVertical: 4,
-  },
-  group: { gap: 10 },
-  groupTitle: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: theme.inkSubtle,
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-  },
-  card: {
-    backgroundColor: theme.surface,
-    borderRadius: 20,
-    padding: 12,
-    flexDirection: "row",
-    gap: 12,
-    alignItems: "center",
-  },
-  pressed: { opacity: 0.85 },
-  thumb: { width: 84, height: 84, borderRadius: 14, backgroundColor: theme.canvas },
-  thumbEmpty: { borderWidth: 1, borderColor: theme.border },
-  cardBody: { flex: 1, gap: 3 },
-  cardTitle: { fontSize: 17, fontWeight: "600", color: theme.ink },
-  cardDescription: { fontSize: 14, color: theme.inkMuted, lineHeight: 19 },
-  cardFooter: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 10, marginTop: 3 },
-  price: { fontSize: 15, fontWeight: "700", color: theme.ink },
-  soldOut: { fontSize: 13, fontWeight: "600", color: theme.danger },
-  lead: { fontSize: 13, color: theme.inkSubtle },
-});

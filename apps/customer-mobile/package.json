@@ -2,7 +2,7 @@
   "name": "harina-customer-mobile",
   "version": "0.1.0",
   "private": true,
-  "description": "Harina Bakeshoppe \u2014 order ahead and collect.",
+  "description": "Harina Bakeshoppe — order ahead and collect.",
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
@@ -13,13 +13,22 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@expo-google-fonts/bebas-neue": "^0.4.1",
+    "@expo-google-fonts/poppins": "^0.4.1",
     "expo": "57.0.16",
+    "expo-blur": "~57.0.2",
+    "expo-font": "~57.0.1",
+    "expo-glass-effect": "~57.0.1",
+    "expo-haptics": "~57.0.2",
+    "expo-image": "~57.0.3",
     "expo-linking": "~57.0.8",
     "expo-secure-store": "57.0.1",
+    "expo-splash-screen": "~57.0.8",
     "expo-status-bar": "57.0.1",
     "react": "19.2.3",
     "react-native": "0.86.2",
     "react-native-qrcode-svg": "^6.3.21",
+    "react-native-safe-area-context": "~5.7.0",
     "react-native-svg": "15.15.4"
   },
   "devDependencies": {
