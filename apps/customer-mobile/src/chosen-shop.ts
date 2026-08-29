@@ -1,5 +1,7 @@
 import * as SecureStore from "expo-secure-store";
 
+import { attempt } from "./nonfatal";
+
 /**
  * Which shop this person collects from.
  *
@@ -23,10 +25,12 @@ export async function loadChosenShop(): Promise<string | null> {
   }
 }
 
-export async function saveChosenShop(id: string): Promise<void> {
-  await SecureStore.setItemAsync(KEY, id);
+export async function saveChosenShop(id: string): Promise<boolean> {
+  const result = await attempt("saving pickup shop", () => SecureStore.setItemAsync(KEY, id));
+  return result.ok;
 }
 
-export async function forgetChosenShop(): Promise<void> {
-  await SecureStore.deleteItemAsync(KEY);
+export async function forgetChosenShop(): Promise<boolean> {
+  const result = await attempt("forgetting pickup shop", () => SecureStore.deleteItemAsync(KEY));
+  return result.ok;
 }

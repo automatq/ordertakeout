@@ -4,7 +4,14 @@ import { and, eq, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { clearAccountSession, setAccountSession } from "@/lib/accounts/session";
+import {
+  createPhoneProfile,
+  profileFieldsSchema,
+  updateProfile as updateProfileRecord,
+  type CustomerProfile,
+} from "@/lib/accounts/profile";
+import { clearAccountSession, currentAccountId, setAccountSession } from "@/lib/accounts/session";
+import { clearSignupSession, currentSignupPhone } from "@/lib/accounts/signup-token";
 import { db } from "@/lib/db";
 import { customerAccounts, orders } from "@/lib/db/schema";
 import { verifyOrderAccessToken } from "@/lib/orders/access";
@@ -15,7 +22,7 @@ const claimSchema = z.object({
   accessToken: z.string().min(20).max(128),
 });
 
-export type ClaimAccountResult = { ok: true } | { ok: false; message: string };
+export type ClaimAccountResult = { ok: true } | { ok: false; message: string; needsSignIn?: boolean };
 
 /** A signed confirmation is the proof needed to opt a guest into an account. */
 export async function claimCustomerAccount(input: unknown): Promise<ClaimAccountResult> {
@@ -27,25 +34,35 @@ export async function claimCustomerAccount(input: unknown): Promise<ClaimAccount
   }
 
   const email = order.customerEmail.trim().toLowerCase();
-  const account = await db().transaction(async (tx) => {
+  const claim = await db().transaction(async (tx) => {
     const [existing] = await tx.select().from(customerAccounts).where(eq(customerAccounts.email, email)).limit(1);
-    const [created] = existing ? [] : await tx.insert(customerAccounts).values({
+    // A tracking link proves access to this *order*, not ownership of every
+    // account that happens to use the same address. In particular, receipts
+    // are routinely forwarded. Never turn that bearer link into a session for
+    // an already-established account; its owner must complete normal sign-in.
+    if (existing) return { kind: "existing" as const };
+    const [created] = await tx.insert(customerAccounts).values({
       email,
       name: order.customerName,
       phone: order.customerPhone,
     }).onConflictDoNothing().returning();
-    // Another signed confirmation may have claimed the same email in the
-    // moment between our read and insert; resolve it rather than treating that
-    // normal race as a failed account creation.
-    const result = existing ?? created ?? (await tx.select().from(customerAccounts)
-      .where(eq(customerAccounts.email, email)).limit(1))[0];
-    if (!result) throw new Error("Could not create customer account");
-    await tx.update(orders).set({ customerAccountId: result.id, updatedAt: new Date() })
+    // Losing the unique-index race also means another account already exists.
+    // Do not resolve and sign into it with this order's tracking credential.
+    if (!created) return { kind: "existing" as const };
+    await tx.update(orders).set({ customerAccountId: created.id, updatedAt: new Date() })
       .where(and(eq(orders.id, order.id), isNull(orders.customerAccountId)));
-    return result;
+    return { kind: "created" as const, account: created };
   });
 
-  await setAccountSession(account.id);
+  if (claim.kind === "existing") {
+    return {
+      ok: false,
+      needsSignIn: true,
+      message: "An account already uses this email. Sign in to protect its orders and rewards.",
+    };
+  }
+
+  await setAccountSession(claim.account.id);
   revalidatePath("/account");
   return { ok: true };
 }
@@ -53,4 +70,56 @@ export async function claimCustomerAccount(input: unknown): Promise<ClaimAccount
 export async function signOutCustomerAccount() {
   await clearAccountSession();
   revalidatePath("/");
+}
+
+export type ProfileActionResult =
+  | { ok: true; profile: CustomerProfile }
+  | { ok: false; message: string };
+
+/**
+ * Finish sign-up for a number that has just answered a texted code.
+ *
+ * The number comes from the signed cookie set at verification, never from the
+ * form — the form's phone field is only there so the customer can see what they
+ * are registering.
+ */
+export async function createProfileFromPhone(input: unknown): Promise<ProfileActionResult> {
+  const phone = await currentSignupPhone();
+  if (!phone) {
+    return { ok: false, message: "That took too long. Request a new code and try again." };
+  }
+
+  const fields = profileFieldsSchema.safeParse(input);
+  if (!fields.success) {
+    return { ok: false, message: fields.error.issues[0]?.message ?? "Please check the details." };
+  }
+
+  const created = await createPhoneProfile({ phone, fields: fields.data });
+  if (!created.ok) return created;
+
+  await setAccountSession(created.accountId);
+  await clearSignupSession();
+  revalidatePath("/account");
+  return { ok: true, profile: created.profile };
+}
+
+const editProfileSchema = profileFieldsSchema.partial().extend({
+  smsOptIn: z.boolean().optional(),
+});
+
+export async function updateProfile(input: unknown): Promise<ProfileActionResult> {
+  const accountId = await currentAccountId();
+  if (!accountId) return { ok: false, message: "Please sign in again." };
+
+  const parsed = editProfileSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Please check the details." };
+  }
+
+  const result = await updateProfileRecord(accountId, parsed.data);
+  if (!result.ok) return result;
+
+  revalidatePath("/account");
+  revalidatePath("/checkout");
+  return { ok: true, profile: result.profile };
 }

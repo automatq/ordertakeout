@@ -364,7 +364,6 @@ export function ProductRulesForm({
     </form>
   );
 }
-
 function Field({
   label,
   name,
@@ -414,5 +413,3 @@ function Field({
     </div>
   );
 }
-
-

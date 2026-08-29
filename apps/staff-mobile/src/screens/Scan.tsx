@@ -297,7 +297,9 @@ function FoundCard({
 
       <Pressable
         onPress={onConfirm}
-onPressIn={haptics.commit}
+        onPressIn={haptics.commit}
+        accessibilityRole="button"
+        accessibilityLabel="Confirm this order has been handed over"
         disabled={!initials.trim()}
         style={({ pressed }) => [
           styles.primary,
@@ -307,7 +309,7 @@ onPressIn={haptics.commit}
       >
         <Text style={styles.primaryText}>Handed over</Text>
       </Pressable>
-      <Pressable onPress={onCancel} hitSlop={8} onPressIn={haptics.tap}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Cancel pickup verification" onPress={onCancel} hitSlop={8} onPressIn={haptics.tap} style={styles.secondaryButton}>
         <Text style={styles.secondary}>Not this one</Text>
       </Pressable>
     </View>
@@ -434,7 +436,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   primaryText: { color: theme.brandInk, fontWeight: "700", fontSize: 16 },
-  secondary: { color: theme.brand, fontWeight: "600", fontSize: 15, textAlign: "center", paddingVertical: 6 },
+  secondaryButton: { minHeight: 44, justifyContent: "center" },
+  secondary: { color: theme.brand, fontWeight: "600", fontSize: 15, textAlign: "center" },
   disabled: { opacity: 0.4 },
   pressed: { opacity: 0.85 },
   tray: { backgroundColor: theme.canvas, padding: 20, gap: 10 },

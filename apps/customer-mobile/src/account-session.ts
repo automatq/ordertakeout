@@ -1,5 +1,7 @@
 import * as SecureStore from "expo-secure-store";
 
+import { attempt } from "./nonfatal";
+
 /**
  * The customer's session token.
  *
@@ -23,10 +25,12 @@ export async function loadAccountToken(): Promise<string | null> {
   }
 }
 
-export async function saveAccountToken(token: string): Promise<void> {
-  await SecureStore.setItemAsync(KEY, token);
+export async function saveAccountToken(token: string): Promise<boolean> {
+  const result = await attempt("saving account session", () => SecureStore.setItemAsync(KEY, token));
+  return result.ok;
 }
 
-export async function clearAccountToken(): Promise<void> {
-  await SecureStore.deleteItemAsync(KEY);
+export async function clearAccountToken(): Promise<boolean> {
+  const result = await attempt("clearing account session", () => SecureStore.deleteItemAsync(KEY));
+  return result.ok;
 }

@@ -24,8 +24,9 @@ export default function SignInPage() {
         <SignInForm />
 
         <p className="text-ink-subtle border-border border-t pt-4 text-center text-sm">
-          Don&rsquo;t have an account yet? Place an order, then choose{" "}
-          <strong className="text-ink font-medium">Save my account</strong> on your
+          New here? Enter your mobile number above &mdash; we&rsquo;ll text a code and set
+          your account up in one step. Or place an order and choose{" "}
+          <strong className="text-ink font-medium">Save my account</strong> on the
           confirmation page. <Link href="/#order" className="text-brand underline">Browse the menu</Link>
         </p>
       </section>

@@ -4,6 +4,7 @@ import { count, desc, eq, inArray } from "drizzle-orm";
 
 import { signOutCustomerAccount } from "@/app/actions/account";
 import { PasskeyManager } from "@/components/accounts/passkey-manager";
+import { ProfileForm } from "@/components/accounts/profile-form";
 import { listPasskeys } from "@/lib/accounts/passkeys";
 import { ReorderButton } from "@/components/accounts/reorder-button";
 import { getCurrentCustomerAccount, loyaltyLedger, REWARD_POINTS } from "@/lib/accounts/loyalty";
@@ -80,6 +81,15 @@ export default async function AccountPage({
           Saved orders, easy reordering, and rewards — without a password.
         </p>
       </header>
+
+      <ProfileForm
+        profile={{
+          name: account.name,
+          email: account.email,
+          phone: account.phone,
+          smsOptIn: account.smsOptIn,
+        }}
+      />
 
       <PasskeyManager
         passkeys={passkeys.map((passkey) => ({

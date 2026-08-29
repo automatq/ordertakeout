@@ -39,7 +39,7 @@ export const TABS: Tab[] = [
  */
 const TAB_ICON = 23;
 const TAB_LABEL_SIZE = 10.5;
-const CTA_BUTTON = 56;
+export const CTA_BUTTON = 56;
 
 const chromeScale = () => Math.min(PixelRatio.getFontScale(), CHROME_MAX_SCALE);
 
@@ -192,31 +192,42 @@ export function StickyCta({
         style={({ pressed }) => [
           {
             minHeight: CTA_BUTTON,
-            paddingHorizontal: 22,
             borderRadius: 18,
             borderWidth: 2,
             borderColor: c.brand,
             backgroundColor: c.brand,
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 12,
+            justifyContent: "center",
           },
           !inactive && sh.brand,
           inactive && { opacity: 0.45 },
           pressed && { opacity: 0.85 },
         ]}
       >
-        <Label size={15.5} color={c.brandInk}>
-          {label}
-        </Label>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}>
-          {value ? (
-            <Label size={15.5} color={c.brandInk} style={{ fontVariant: ["tabular-nums"] }}>
-              {value}
-            </Label>
-          ) : null}
-          <Icon name="arrowRight" size={18} color={c.brandInk} strokeWidth={1.9} />
+        {/* Every mark on the bar is decorative, and says so, so the target is the
+            bar itself from edge to edge. A text run and a stroked SVG inside a
+            Pressable are both views a touch can land on instead, and that is how
+            one end of a wide button goes quiet while the other still works. */}
+        <View
+          pointerEvents="none"
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            paddingHorizontal: 22,
+          }}
+        >
+          <Label size={15.5} color={c.brandInk}>
+            {label}
+          </Label>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}>
+            {value ? (
+              <Label size={15.5} color={c.brandInk} style={{ fontVariant: ["tabular-nums"] }}>
+                {value}
+              </Label>
+            ) : null}
+            <Icon name="arrowRight" size={18} color={c.brandInk} strokeWidth={1.9} />
+          </View>
         </View>
       </Pressable>
     </Glass>

@@ -1,6 +1,7 @@
 import { PixelRatio, Text, type StyleProp, type TextStyle } from "react-native";
 
 import { font, TRACKING, useColors } from "../theme";
+import { displayLineHeight } from "./typography";
 
 /**
  * The design's type scale.
@@ -61,7 +62,7 @@ export function Display({ size = 38, children, style, color, numberOfLines }: Pr
         {
           fontFamily: font.display,
           fontSize: size,
-          lineHeight: size * 0.98,
+          lineHeight: displayLineHeight(size),
           textTransform: "uppercase",
           letterSpacing: 0.3,
           color: color ?? c.ink,

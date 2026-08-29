@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { fetchOrder, type CustomerOrder } from "./api";
+import { reportNonFatal } from "./nonfatal";
 import { loadSavedOrder, saveOrder, type SavedOrder } from "./saved-order";
 
 export interface TrackedOrder {
@@ -40,20 +41,25 @@ export function useTrackedOrder(
 
   const refresh = useCallback(async () => {
     if (!orderNumber || !accessKey) return;
-    const result = await fetchOrder(orderNumber, accessKey);
-    if (!result.ok) {
-      // Keep showing the stored copy and say it might be out of date.
+    try {
+      const result = await fetchOrder(orderNumber, accessKey);
+      if (!result.ok) {
+        // Keep showing the stored copy and say it might be out of date.
+        setOffline(true);
+        return;
+      }
+      setOffline(false);
+      if (!result.data.found) {
+        setGone(true);
+        return;
+      }
+      setOrder(result.data.order);
+      setToday(result.data.today);
+      await saveOrder(orderNumber, accessKey, result.data.order);
+    } catch (cause) {
+      reportNonFatal("refreshing tracked order", cause);
       setOffline(true);
-      return;
     }
-    setOffline(false);
-    if (!result.data.found) {
-      setGone(true);
-      return;
-    }
-    setOrder(result.data.order);
-    setToday(result.data.today);
-    await saveOrder(orderNumber, accessKey, result.data.order);
   }, [orderNumber, accessKey]);
 
   useEffect(() => {
@@ -66,7 +72,10 @@ export function useTrackedOrder(
         setOrder(stored.order);
       }
       await refresh();
-    })();
+    })().catch((cause) => {
+      reportNonFatal("opening tracked order", cause);
+      if (active) setOffline(true);
+    });
     return () => {
       active = false;
     };
@@ -74,8 +83,11 @@ export function useTrackedOrder(
 
   const onPullToRefresh = useCallback(async () => {
     setRefreshing(true);
-    await refresh();
-    setRefreshing(false);
+    try {
+      await refresh();
+    } finally {
+      setRefreshing(false);
+    }
   }, [refresh]);
 
   return { order, today, saved, offline, gone, refreshing, refresh, onPullToRefresh };

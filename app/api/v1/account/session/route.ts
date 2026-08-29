@@ -23,6 +23,13 @@ export async function POST(request: Request): Promise<Response> {
      tells somebody guessing whether they are close. */
   if (!result.ok) return ok({ signedIn: false, message: result.message });
 
+  /* Verified, but nobody has this number yet. The app collects a name and an
+     email and posts them to /account/profile with this token, which is the only
+     thing that proves the number was answered. */
+  if (result.accountId === null) {
+    return ok({ signedIn: false, needsProfile: true, phone: result.phone, signupToken: result.signupToken });
+  }
+
   return ok({
     signedIn: true,
     token: await createAccountSessionToken(result.accountId),

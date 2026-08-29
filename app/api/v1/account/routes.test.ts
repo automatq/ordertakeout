@@ -6,6 +6,9 @@ const mocks = vi.hoisted(() => ({
   listAccountOrders: vi.fn(),
   loyaltyBalance: vi.fn(),
   loyaltyLedger: vi.fn(),
+  getProfile: vi.fn(),
+  createPhoneProfile: vi.fn(),
+  updateProfile: vi.fn(),
   serverEnv: vi.fn(() => ({ CUSTOMER_ACCOUNT_SECRET: "account-secret" })),
 }));
 
@@ -14,6 +17,12 @@ vi.mock("@/lib/accounts/phone-auth", () => ({
   verifyPhoneCode: mocks.verifyPhoneCode,
 }));
 vi.mock("@/lib/accounts/orders", () => ({ listAccountOrders: mocks.listAccountOrders }));
+vi.mock("@/lib/accounts/profile", async () => ({
+  ...(await vi.importActual<typeof import("@/lib/accounts/profile")>("@/lib/accounts/profile")),
+  getProfile: mocks.getProfile,
+  createPhoneProfile: mocks.createPhoneProfile,
+  updateProfile: mocks.updateProfile,
+}));
 vi.mock("@/lib/accounts/loyalty", () => ({
   loyaltyBalance: mocks.loyaltyBalance,
   loyaltyLedger: mocks.loyaltyLedger,
@@ -26,10 +35,23 @@ const { POST: requestCode } = await import("./code/route");
 const { POST: openSession } = await import("./session/route");
 const { GET: history } = await import("./orders/route");
 const { GET: rewards } = await import("./rewards/route");
-const { createAccountSessionToken } = await import("@/lib/accounts/session");
+const {
+  GET: profile,
+  POST: createProfile,
+  PATCH: patchProfile,
+} = await import("./profile/route");
+const { createSignupToken } = await import("@/lib/accounts/signup-token");
+const { accountIdFromSession, createAccountSessionToken } = await import("@/lib/accounts/session");
 
 const ACCOUNT = "6c93cabb-de1e-41ff-bd63-708825ca6ab8";
-const SENT = "If that number has an account with us, a 6-digit code is on its way. It expires in 10 minutes.";
+const SENT = "A 6-digit code is on its way. It expires in 10 minutes.";
+const PHONE = "+14165550142";
+const PROFILE = {
+  name: "Maria Santos",
+  email: "maria@example.com",
+  phone: PHONE,
+  smsOptIn: false,
+};
 
 const post = (
   handler: (request: Request) => Promise<Response>,
@@ -55,6 +77,12 @@ beforeEach(() => {
   mocks.loyaltyBalance.mockResolvedValue(0);
   mocks.loyaltyLedger.mockReset();
   mocks.loyaltyLedger.mockResolvedValue([]);
+  mocks.getProfile.mockReset();
+  mocks.getProfile.mockResolvedValue(PROFILE);
+  mocks.createPhoneProfile.mockReset();
+  mocks.createPhoneProfile.mockResolvedValue({ ok: true, accountId: ACCOUNT, profile: PROFILE });
+  mocks.updateProfile.mockReset();
+  mocks.updateProfile.mockResolvedValue({ ok: true, accountId: ACCOUNT, profile: PROFILE });
 });
 
 describe("POST /api/v1/account/code", () => {
@@ -224,5 +252,117 @@ describe("GET /api/v1/account/rewards", () => {
         createdAt: "2026-08-26T14:00:00.000Z",
       },
     ]);
+  });
+});
+
+describe("GET /api/v1/account/profile", () => {
+  const get = (authorization?: string) =>
+    profile(
+      new Request("http://localhost/api/v1/account/profile", {
+        headers: authorization ? { authorization } : {},
+      }),
+    );
+
+  it("refuses every flavour of missing or bad token identically", async () => {
+    const expired = await createAccountSessionToken(ACCOUNT, Date.now() - 400 * 24 * 60 * 60_000);
+    const responses = await Promise.all([
+      get(), get(""), get("Basic abc"), get("Bearer"),
+      get(`Bearer ${ACCOUNT}.9999999999999.forged`), get(`Bearer ${expired}`),
+    ]);
+    const bodies = await Promise.all(responses.map((r) => r.text()));
+    expect(new Set(bodies).size).toBe(1);
+    expect(new Set(responses.map((r) => r.status))).toEqual(new Set([401]));
+    expect(mocks.getProfile).not.toHaveBeenCalled();
+  });
+
+  it("returns the details checkout fills itself in with, and nothing else", async () => {
+    const { data } = await (await get(`Bearer ${await createAccountSessionToken(ACCOUNT)}`)).json();
+    // .strict() on the DTO is what keeps a new column off every phone.
+    expect(data).toEqual(PROFILE);
+  });
+});
+
+describe("POST /api/v1/account/profile", () => {
+  const post = (body: unknown) =>
+    createProfile(
+      new Request("http://localhost/api/v1/account/profile", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+    );
+
+  const FIELDS = { name: "Maria Santos", email: "maria@example.com", phone: PHONE };
+
+  it("refuses a forged, absent or expired signup token before touching the fields", async () => {
+    for (const signupToken of [undefined, "", "nonsense", `${PHONE}.9999999999999.forged`]) {
+      const response = await post({ ...FIELDS, signupToken });
+      expect(response.status).toBe(400);
+    }
+    expect(mocks.createPhoneProfile).not.toHaveBeenCalled();
+  });
+
+  it("registers the number the token attests to, not the one in the body", async () => {
+    await post({
+      ...FIELDS,
+      phone: "+14165559999",
+      signupToken: await createSignupToken(PHONE),
+    });
+    expect(mocks.createPhoneProfile).toHaveBeenCalledWith(
+      expect.objectContaining({ phone: PHONE }),
+    );
+  });
+
+  it("returns a session so the app is signed in the moment the profile exists", async () => {
+    const response = await post({ ...FIELDS, signupToken: await createSignupToken(PHONE) });
+    const { data } = await response.json();
+    expect(data).toMatchObject(PROFILE);
+    expect(await accountIdFromSession(data.token)).toBe(ACCOUNT);
+  });
+
+  it("passes a refusal through as a 400 rather than a session", async () => {
+    mocks.createPhoneProfile.mockResolvedValue({ ok: false, message: "That email already has an account." });
+    const response = await post({ ...FIELDS, signupToken: await createSignupToken(PHONE) });
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { message: "That email already has an account." },
+    });
+  });
+});
+
+describe("PATCH /api/v1/account/profile", () => {
+  const patch = (body: unknown, authorization?: string) =>
+    patchProfile(
+      new Request("http://localhost/api/v1/account/profile", {
+        method: "PATCH",
+        headers: { "content-type": "application/json", ...(authorization ? { authorization } : {}) },
+        body: JSON.stringify(body),
+      }),
+    );
+
+  it("needs a session", async () => {
+    expect((await patch({ name: "Maria S." })).status).toBe(401);
+    expect(mocks.updateProfile).not.toHaveBeenCalled();
+  });
+
+  it("edits only the fields it was given", async () => {
+    await patch({ smsOptIn: true }, `Bearer ${await createAccountSessionToken(ACCOUNT)}`);
+    expect(mocks.updateProfile).toHaveBeenCalledWith(ACCOUNT, { smsOptIn: true });
+  });
+
+  it("normalizes a typed number before it reaches the database", async () => {
+    await patch({ phone: "416-555-0142" }, `Bearer ${await createAccountSessionToken(ACCOUNT)}`);
+    expect(mocks.updateProfile).toHaveBeenCalledWith(ACCOUNT, { phone: PHONE });
+  });
+
+  it("rejects an invalid email with the message meant for the customer", async () => {
+    const response = await patch(
+      { email: "not-an-email" },
+      `Bearer ${await createAccountSessionToken(ACCOUNT)}`,
+    );
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { message: "Please enter a valid email address" },
+    });
   });
 });

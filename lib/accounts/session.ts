@@ -40,8 +40,21 @@ export async function accountIdFromSession(token: string | undefined, now = Date
   return Number.isFinite(expiresAt) && expiresAt > now ? parts[0]! : null;
 }
 
+/**
+ * The signed-in account, or null.
+ *
+ * `cookies()` throws when there is no request to read one from. That is not an
+ * error worth propagating: no request scope means no browser, which means
+ * nobody is signed in — the same answer as an absent cookie. Checkout leans on
+ * this, since it now asks who is signed in on every order rather than only when
+ * a reward is being spent, and guest checkout must stay entirely cookie-free.
+ */
 export async function currentAccountId() {
-  return accountIdFromSession((await cookies()).get(ACCOUNT_COOKIE)?.value);
+  try {
+    return accountIdFromSession((await cookies()).get(ACCOUNT_COOKIE)?.value);
+  } catch {
+    return null;
+  }
 }
 
 export async function setAccountSession(accountId: string) {

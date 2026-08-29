@@ -397,3 +397,35 @@ export const customerOrderSchema = z
   .strict();
 
 export type CustomerOrder = z.infer<typeof customerOrderSchema>;
+
+/**
+ * The signed-in customer's own details.
+ *
+ * `.strict()` for the same reason as everything else here: `customer_accounts`
+ * is a small table today, and the mapping stays explicit so a column added
+ * later — an internal note, a flag — does not reach every phone by accident.
+ */
+export const profileResponseSchema = z
+  .object({
+    name: z.string(),
+    email: z.string(),
+    phone: z.string(),
+    smsOptIn: z.boolean(),
+  })
+  .strict();
+
+export type ProfileResponse = z.infer<typeof profileResponseSchema>;
+
+export function toProfileResponse(profile: {
+  name: string;
+  email: string;
+  phone: string;
+  smsOptIn: boolean;
+}): ProfileResponse {
+  return {
+    name: profile.name,
+    email: profile.email,
+    phone: profile.phone,
+    smsOptIn: profile.smsOptIn,
+  };
+}

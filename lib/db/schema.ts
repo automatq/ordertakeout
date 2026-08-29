@@ -284,6 +284,16 @@ export const orders = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     paidAt: timestamp("paid_at", { withTimezone: true }),
+    /**
+     * When the kitchen started this order.
+     *
+     * Without it the gap between paid and ready is one opaque number, so nothing
+     * can report how long the kitchen actually takes — the metric every
+     * comparable ordering platform leads with. Nullable and not backfilled: it
+     * reads null for every order placed before this column existed, which is
+     * honest, and correct from the first transition after it ships.
+     */
+    preparingAt: timestamp("preparing_at", { withTimezone: true }),
     readyAt: timestamp("ready_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     canceledAt: timestamp("canceled_at", { withTimezone: true }),
@@ -361,6 +371,15 @@ export const staffDevices = pgTable(
      * database write on the hottest path in the app.
      */
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * The login this handset was registered under.
+     *
+     * Nullable through the dual-auth window only — a device signed in with the
+     * old shared password has no user to point at. Every remaining null row is
+     * revoked at cutover and the column becomes NOT NULL, or un-migrated
+     * handsets would be a way around named accounts entirely.
+     */
+    staffUserId: uuid("staff_user_id").references(() => staffUsers.id, { onDelete: "cascade" }),
     /** Set rather than deleted, so the audit log still resolves the device. */
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
   },
@@ -463,9 +482,18 @@ export const phoneSignInCodes = pgTable(
   "phone_sign_in_codes",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    /**
+     * Null for a code texted to a number with no account yet.
+     *
+     * Sign-up runs through this same table so that requesting a code looks
+     * identical from the outside whether or not the number is known — the
+     * enumeration-safety contract in lib/accounts/phone-auth.ts. A row with no
+     * account is redeemable only into profile creation, never into a session.
+     */
     customerAccountId: uuid("customer_account_id")
-      .notNull()
       .references(() => customerAccounts.id, { onDelete: "cascade" }),
+    /** E.164, always recorded — it is the only subject a sign-up code has. */
+    phone: text("phone").notNull(),
     codeHash: text("code_hash").notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     consumedAt: timestamp("consumed_at", { withTimezone: true }),
@@ -474,6 +502,7 @@ export const phoneSignInCodes = pgTable(
   },
   (t) => [
     index("phone_sign_in_codes_account_idx").on(t.customerAccountId),
+    index("phone_sign_in_codes_phone_idx").on(t.phone),
     index("phone_sign_in_codes_expires_idx").on(t.expiresAt),
   ],
 );
@@ -729,6 +758,91 @@ export const staffMembers = pgTable(
   (t) => [uniqueIndex("staff_members_initials_key").on(t.initials)],
 );
 
+export const staffRole = pgEnum("staff_role", ["director", "manager", "staff"]);
+export type StaffRole = (typeof staffRole.enumValues)[number];
+
+/**
+ * Named staff logins — authentication, as distinct from the roster above.
+ *
+ * Two tables rather than columns on `staff_members` because they answer different
+ * questions. The roster is a permanent attribution anchor: rows are deactivated,
+ * never deleted, so a pickup verified in March still resolves to a person in
+ * December. A login is revocable and may not exist at all for someone who has
+ * left. Folding them together would make `active` mean both "appears in the
+ * initials picker" and "can sign in", which are genuinely different — parental
+ * leave keeps the first and loses the second.
+ *
+ * It also keeps a password hash out of `validateInitials`, which selects every
+ * active member on the counter's hot path at each pickup.
+ *
+ * The FK is NOT NULL and unique, so every login resolves to exactly one roster
+ * person and `initials` keeps a single source of truth.
+ */
+export const staffUsers = pgTable(
+  "staff_users",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    staffMemberId: uuid("staff_member_id")
+      .notNull()
+      .references(() => staffMembers.id, { onDelete: "restrict" }),
+    /** Stored lowercased; the unique index depends on it. */
+    email: text("email").notNull(),
+    /** scrypt, self-describing parameters — see lib/auth/password.ts. */
+    passwordHash: text("password_hash").notNull(),
+    role: staffRole("role").notNull(),
+    /**
+     * Explicit, rather than inferring "all" from an empty grant list. An empty
+     * collection silently meaning "unrestricted" is exactly the bug in the
+     * roster's own bootstrap rule; one of those in a codebase is enough.
+     */
+    allLocations: boolean("all_locations").notNull().default(false),
+    active: boolean("active").notNull().default(true),
+    mustChangePassword: boolean("must_change_password").notNull().default(false),
+    /**
+     * The revocation lever. Sessions are stateless and carry their issue time;
+     * any token issued before this instant is refused. Bumping it signs one
+     * person out of every device, cookie and handset alike, without a session
+     * table and without touching anybody else.
+     */
+    sessionsValidFrom: timestamp("sessions_valid_from", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastSignInAt: timestamp("last_sign_in_at", { withTimezone: true }),
+    failedAttempts: integer("failed_attempts").notNull().default(0),
+    lockedUntil: timestamp("locked_until", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("staff_users_email_key").on(t.email),
+    uniqueIndex("staff_users_member_key").on(t.staffMemberId),
+    /* A director is defined by seeing everything; letting the two disagree would
+       make "director" mean something different per row. */
+    check("staff_users_director_all_locations", sql`role <> 'director' OR all_locations`),
+  ],
+);
+
+/**
+ * Which branches a manager may see.
+ *
+ * No foreign key on the location: there is no local locations table — they come
+ * from the Square API via lib/locations/server.ts — which is why
+ * `orders.square_location_id` and `slot_capacity.square_location_id` are bare
+ * text too. Rows exist only for managers; a director implies every location and
+ * a staff member has no group view at all.
+ */
+export const staffUserLocations = pgTable(
+  "staff_user_locations",
+  {
+    staffUserId: uuid("staff_user_id")
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: "cascade" }),
+    squareLocationId: text("square_location_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.staffUserId, t.squareLocationId] })],
+);
+
 /**
  * Append-only record of operator-relevant actions: status changes, refunds,
  * cancellations, 86ing, pause toggles, settings writes. No update or delete
@@ -742,6 +856,20 @@ export const auditLog = pgTable(
     /** "staff" | "system:webhook" | "system:cron" | "customer" */
     actorType: text("actor_type").notNull(),
     actorInitials: text("actor_initials"),
+    /**
+     * The acting login, once staff have named accounts.
+     *
+     * Kept alongside `actor_initials` rather than replacing it: initials are what
+     * /staff/audit filters on today, and they remain the right answer for a
+     * shared counter device where the session identifies the tablet's morning
+     * rather than the person. The user id is the answer that cannot be typed in
+     * by somebody else.
+     */
+    actorUserId: uuid("actor_user_id").references(() => staffUsers.id, { onDelete: "set null" }),
+    /** Request context. Derived server-side; never accepted from the client. */
+    ip: text("ip"),
+    userAgent: text("user_agent"),
+    requestId: text("request_id"),
     /** Dotted verb slug, e.g. "order.status_changed", "order.refunded", "product.86ed". */
     action: text("action").notNull(),
     entityType: text("entity_type").notNull(),
@@ -755,6 +883,9 @@ export const auditLog = pgTable(
     index("audit_log_created_idx").on(t.createdAt),
     index("audit_log_order_idx").on(t.orderId),
     index("audit_log_action_idx").on(t.action),
+    /* "what did this person do" is the question an audit trail exists to answer,
+       and it is the one the table could not answer before. */
+    index("audit_log_actor_idx").on(t.actorUserId, t.createdAt),
   ],
 );
 

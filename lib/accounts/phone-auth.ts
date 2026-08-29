@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { consumePhoneSignInCode, issuePhoneSignInCode } from "@/lib/accounts/phone-sign-in";
 import { sendPhoneSignInCode } from "@/lib/accounts/phone-sign-in-sms";
+import { createSignupToken } from "@/lib/accounts/signup-token";
 import { normalizePhoneE164 } from "@/lib/phone";
 import { consumeRateLimit, requestFingerprint } from "@/lib/security/rate-limit";
 
@@ -33,9 +34,14 @@ export const phoneVerifySchema = z.object({
  * Somebody probing numbers learns nothing from the response, and the send
  * happens in `after()` so they learn nothing from how long it took either — a
  * Twilio round-trip is a very loud signal to leave in the response time.
+ *
+ * It no longer hedges with "if that number has an account". A code now goes to
+ * any valid number — an unknown one opens sign-up instead of a session — so the
+ * plain sentence is both true and, being unconditional, still says nothing
+ * about who is registered.
  */
 export const CODE_SENT_MESSAGE =
-  "If that number has an account with us, a 6-digit code is on its way. It expires in 10 minutes.";
+  "A 6-digit code is on its way. It expires in 10 minutes.";
 
 export type PhoneCodeResult = { ok: true; message: string } | { ok: false; message: string };
 
@@ -63,14 +69,23 @@ export async function requestPhoneCode(input: unknown): Promise<PhoneCodeResult>
 
   const issued = await issuePhoneSignInCode(normalized.e164);
   if (issued) {
-    after(() => sendPhoneSignInCode({ to: issued.account.phone, code: issued.code }));
+    after(() => sendPhoneSignInCode({ to: issued.phone, code: issued.code }));
   }
 
   return { ok: true, message: CODE_SENT_MESSAGE };
 }
 
 export type PhoneVerifyResult =
+  /** Known number: the caller opens a session however its surface does that. */
   | { ok: true; accountId: string }
+  /**
+   * Verified, but nobody has this number yet.
+   *
+   * `signupToken` is the proof that carries forward — it is short-lived, signed
+   * and bound to the number, so profile creation can be a separate request
+   * without ever trusting a phone number sent by a client.
+   */
+  | { ok: true; accountId: null; phone: string; signupToken: string }
   | { ok: false; message: string };
 
 /**
@@ -98,6 +113,15 @@ export async function verifyPhoneCode(input: unknown): Promise<PhoneVerifyResult
     return {
       ok: false,
       message: "That code is wrong or has expired. Request a new one and try again.",
+    };
+  }
+
+  if (consumed.kind === "new") {
+    return {
+      ok: true,
+      accountId: null,
+      phone: consumed.phone,
+      signupToken: await createSignupToken(consumed.phone),
     };
   }
 

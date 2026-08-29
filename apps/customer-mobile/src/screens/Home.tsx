@@ -17,6 +17,7 @@ import { CardSkeleton } from "../ui/skeleton";
 import { MotionSlider, type Slide } from "../ui/slider";
 import { useTabBarSpace } from "../ui/chrome";
 import { Body, Display, displayScale, Label, Overline } from "../ui/text";
+import { compactDisplayLinePull } from "../ui/typography";
 import { useTrackedOrder } from "../useTrackedOrder";
 
 const HERO = require("../../assets/hero.webp");
@@ -27,13 +28,13 @@ const HERO_HEIGHT = 186;
 const HERO_SIZE = 56;
 /* The design sets the headline's line-height to .88. Applying that as an RN
    `lineHeight` clips the caps off Bebas top and bottom — RN crops glyphs to the
-   line box where CSS lets them overflow it. So the two lines keep their natural
-   leading and the second is pulled up by the difference, which lands the
+   line box where CSS lets them overflow it. So the two lines use the shared,
+   safe leading and the second is pulled up by the difference, which lands the
    baselines where the design puts them without cropping anything.
    Computed at render, not once at module load: under Dynamic Type the glyphs
    grow and a pull derived from the literal 56 would leave the two lines
    overlapping. */
-const heroLinePull = () => HERO_SIZE * displayScale() * (0.88 - 0.98);
+const heroLinePull = () => compactDisplayLinePull(HERO_SIZE, displayScale(), 0.88);
 
 /**
  * The returning customer's home.

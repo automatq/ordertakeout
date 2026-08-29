@@ -1,6 +1,7 @@
 import * as SecureStore from "expo-secure-store";
 
 import type { CustomerOrder } from "./api";
+import { attempt } from "./nonfatal";
 
 /**
  * The last order this phone was shown, kept so it survives having no signal.
@@ -49,11 +50,13 @@ export async function saveOrder(
   orderNumber: string,
   accessKey: string,
   order: CustomerOrder,
-): Promise<void> {
+): Promise<boolean> {
   const saved: SavedOrder = { orderNumber, accessKey, order, savedAt: new Date().toISOString() };
-  await SecureStore.setItemAsync(KEY, JSON.stringify(saved));
+  const result = await attempt("saving pickup pass", () => SecureStore.setItemAsync(KEY, JSON.stringify(saved)));
+  return result.ok;
 }
 
-export async function forgetOrder(): Promise<void> {
-  await SecureStore.deleteItemAsync(KEY);
+export async function forgetOrder(): Promise<boolean> {
+  const result = await attempt("forgetting pickup pass", () => SecureStore.deleteItemAsync(KEY));
+  return result.ok;
 }

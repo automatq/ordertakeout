@@ -7,6 +7,7 @@ import {
   formatMoney,
   type AccountOrder,
   type PickupShop,
+  type Profile,
   type RewardEntryKind,
   type Rewards,
 } from "../api";
@@ -28,6 +29,7 @@ import { Body, Display, Label, Overline, Tabular } from "../ui/text";
  */
 export function Account({
   token,
+  profile,
   shop,
   onSignIn,
   onSignOut,
@@ -35,6 +37,8 @@ export function Account({
   onBrowse,
 }: {
   token: string | null;
+  /** The signed-in customer, once their details have loaded. */
+  profile: Profile | null;
   shop: PickupShop | null;
   onSignIn: () => void;
   onSignOut: () => void;
@@ -84,7 +88,12 @@ export function Account({
       contentContainerStyle={{ padding: 20, paddingTop: 6, paddingBottom: 30 + chrome, gap: 16 }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.brand} />}
     >
-      <Display size={38}>Account</Display>
+      {/* Greeted by name once there is a name to greet by. The screen was headed
+          with a bare "Account" for as long as the app had no way to ask who the
+          customer was. */}
+      <Display size={38}>
+        {profile ? `Hi, ${profile.name.split(" ")[0]}` : "Account"}
+      </Display>
 
       <Pressable
         onPress={onChangeShop}

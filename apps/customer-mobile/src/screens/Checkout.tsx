@@ -37,9 +37,14 @@ export function Checkout({
   tip,
   name,
   phone,
+  email,
   onTip,
   onName,
   onPhone,
+  onEmail,
+  onPay,
+  paying,
+  payError,
   onBack,
   onPlaced,
   paymentBlocked,
@@ -51,9 +56,14 @@ export function Checkout({
   tip: number;
   name: string;
   phone: string;
+  email: string;
   onTip: (percent: number) => void;
   onName: (value: string) => void;
   onPhone: (value: string) => void;
+  onEmail: (value: string) => void;
+  onPay: () => void;
+  paying: boolean;
+  payError: string | null;
   onBack: () => void;
   /**
    * Called with the placed order once payment succeeds.
@@ -68,6 +78,9 @@ export function Checkout({
 }) {
   const { c } = useTheme();
   const chrome = useCtaSpace();
+  /* The server validates all three properly; this only decides whether the
+     button is worth offering yet. */
+  const ready = name.trim().length > 0 && phone.trim().length > 0 && email.trim().includes("@");
   const tax = taxOn(totals.subtotalCents);
   const tipCents = tipOn(totals.subtotalCents, tip);
 
@@ -134,6 +147,20 @@ export function Checkout({
               style={field}
               accessibilityLabel="Mobile number"
             />
+            {/* Required by the order itself, not just for the receipt: an order
+                is looked up by number *and* email, so a checkout without one
+                would create a record its owner could never reopen. */}
+            <TextInput
+              value={email}
+              onChangeText={onEmail}
+              placeholder="Email for the receipt"
+              placeholderTextColor={c.inkSubtle}
+              keyboardType="email-address"
+              autoComplete="email"
+              autoCapitalize="none"
+              style={field}
+              accessibilityLabel="Email for the receipt"
+            />
           </View>
           <Body size={12.5} color={c.inkSubtle} style={{ marginTop: 8 }}>
             We text a pickup reminder the morning of your collection.
@@ -157,13 +184,32 @@ export function Checkout({
         <View>
           <Overline>Payment</Overline>
           <View style={{ gap: 9, marginTop: 11 }}>
-            {/* Deliberately inert, and it says so. A button that opens nothing
-                is worse than one that explains itself. */}
-            <Button label="Apple Pay" variant="secondary" disabled={!!paymentBlocked} icon="card" />
+            {/* Apple Pay stays inert: it needs a merchant identifier and a
+                real payment sheet, neither of which a simulated charge has. */}
+            <Button label="Apple Pay" variant="secondary" disabled icon="card" />
             <Body size={12.5} color={c.inkSubtle} style={{ textAlign: "center" }}>
               or pay by card
             </Body>
-            <Button label="Pay by card" variant="secondary" disabled={!!paymentBlocked} icon="card" />
+            <Button
+              label={paying ? "Taking payment…" : "Pay by card"}
+              variant="primary"
+              icon="card"
+              busy={paying}
+              disabled={!!paymentBlocked || !ready}
+              onPress={onPay}
+            />
+            {!paymentBlocked && !ready ? (
+              <Body size={12.5} color={c.inkSubtle} style={{ textAlign: "center" }}>
+                Add your name, mobile number and email to pay.
+              </Body>
+            ) : null}
+            {payError ? (
+              <Card style={{ backgroundColor: c.dangerSoft, borderColor: `${c.danger}59` }}>
+                <Body size={12.5} color={c.danger}>
+                  {payError}
+                </Body>
+              </Card>
+            ) : null}
           </View>
 
           {/* Worth the line: "where does my card number go" is the question that

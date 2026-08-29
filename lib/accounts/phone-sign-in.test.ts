@@ -46,7 +46,7 @@ describe("issuePhoneSignInCode", () => {
     const issued = await issuePhoneSignInCode("416-555-0142", NOW);
     expect(issued).not.toBeNull();
     expect(issued!.code).toMatch(new RegExp(`^\\d{${PHONE_CODE_LENGTH}}$`));
-    expect(issued!.account.id).toBe(ACCOUNT.id);
+    expect(issued!.account?.id).toBe(ACCOUNT.id);
     expect(insert).toHaveBeenCalledOnce();
   });
 
@@ -60,18 +60,34 @@ describe("issuePhoneSignInCode", () => {
     const issued = await issuePhoneSignInCode("+14165550142", NOW);
     expect(stored!.codeHash).not.toContain(issued!.code);
     expect(codeMatchesHash(ACCOUNT.id, issued!.code, stored!.codeHash)).toBe(true);
-    // Salted per account: the same digits for someone else hash differently.
+    // Salted per subject: the same digits for someone else hash differently.
     expect(codeMatchesHash(SECOND_ACCOUNT.id, issued!.code, stored!.codeHash)).toBe(false);
   });
 
-  it("returns null for an unknown number — callers must answer identically", async () => {
-    mocks.db.mockReturnValue({ select: vi.fn(() => chain([])) });
-    expect(await issuePhoneSignInCode("+14165550199", NOW)).toBeNull();
+  it("mints a sign-up code for an unknown number, with no account attached", async () => {
+    /* This used to return null, and the promise of a text was a lie for anybody
+       who had never ordered. The code is real now; it redeems into profile
+       creation rather than a session. The *caller* still answers identically —
+       that property is asserted in phone-auth, which is where it lives. */
+    let stored: { customerAccountId: string | null; phone: string; codeHash: string } | undefined;
+    mocks.db.mockReturnValue({
+      select: vi.fn().mockReturnValueOnce(chain([])).mockReturnValueOnce(chain([{ value: 0 }])),
+      insert: vi.fn(() => ({ values: (v: typeof stored) => { stored = v; return chain([]); } })),
+    });
+
+    const issued = await issuePhoneSignInCode("+14165550199", NOW);
+    expect(issued).not.toBeNull();
+    expect(issued!.account).toBeNull();
+    expect(issued!.phone).toBe("+14165550199");
+    expect(stored!.customerAccountId).toBeNull();
+    // Salted against the number, since there is no account to salt against.
+    expect(codeMatchesHash("phone:+14165550199", issued!.code, stored!.codeHash)).toBe(true);
   });
 
   it("refuses a number shared by two accounts rather than guessing one", async () => {
     // customer_accounts.phone is deliberately not unique. Picking a winner
     // would hand one household member another's order history.
+    // Nor may it become a third: sign-up is refused on an ambiguous number too.
     mocks.db.mockReturnValue({ select: vi.fn(() => chain([ACCOUNT, SECOND_ACCOUNT])) });
     expect(await issuePhoneSignInCode("+14165550142", NOW)).toBeNull();
   });
@@ -99,6 +115,32 @@ describe("consumePhoneSignInCode", () => {
       update: vi.fn(() => chain([{ accountId: ACCOUNT.id }])),
     });
     expect(await consumePhoneSignInCode("+14165550142", "123456", NOW)).toEqual({
+      kind: "account",
+      accountId: ACCOUNT.id,
+    });
+  });
+
+  it("reports a verified but unregistered number as sign-up, not as a session", async () => {
+    mocks.db.mockReturnValue({
+      select: vi.fn(() => chain([])),
+      update: vi.fn(() => chain([{ accountId: null }])),
+    });
+    expect(await consumePhoneSignInCode("+14165550199", "123456", NOW)).toEqual({
+      kind: "new",
+      phone: "+14165550199",
+    });
+  });
+
+  it("opens the account when one was claimed while the sign-up code was in flight", async () => {
+    /* The code was salted against the number, so it still matches; the row it
+       claims carries no account. Resolving the number now finds one, and the
+       person holding the handset is the one who answered the text. */
+    mocks.db.mockReturnValue({
+      select: vi.fn(() => chain([ACCOUNT])),
+      update: vi.fn(() => chain([{ accountId: null }])),
+    });
+    expect(await consumePhoneSignInCode("+14165550142", "123456", NOW)).toEqual({
+      kind: "account",
       accountId: ACCOUNT.id,
     });
   });

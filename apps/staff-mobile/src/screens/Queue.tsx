@@ -110,13 +110,13 @@ export function Queue({
           </Text>
         </View>
         <View style={styles.headerActions}>
-          <Pressable onPress={onPrep} hitSlop={12} onPressIn={haptics.tap}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Open prep timeline" onPress={onPrep} hitSlop={12} onPressIn={haptics.tap} style={styles.headerAction}>
             <Text style={styles.signOut}>Prep</Text>
           </Pressable>
-          <Pressable onPress={onService} hitSlop={12} onPressIn={haptics.tap}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Open service controls" onPress={onService} hitSlop={12} onPressIn={haptics.tap} style={styles.headerAction}>
             <Text style={styles.signOut}>Service</Text>
           </Pressable>
-          <Pressable onPress={onSignedOut} hitSlop={12} onPressIn={haptics.tap}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Sign out" onPress={onSignedOut} hitSlop={12} onPressIn={haptics.tap} style={styles.headerAction}>
             <Text style={styles.signOutMuted}>Sign out</Text>
           </Pressable>
         </View>
@@ -126,7 +126,9 @@ export function Queue({
           a menu. Someone is standing there waiting. */}
       <Pressable
         onPress={onScan}
-onPressIn={haptics.commit}
+        onPressIn={haptics.commit}
+        accessibilityRole="button"
+        accessibilityLabel="Scan a pickup pass"
         style={({ pressed }) => [styles.scanButton, pressed && styles.scanPressed]}
       >
         <Text style={styles.scanText}>Scan a pickup pass</Text>
@@ -227,7 +229,8 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
   title: { fontSize: 30, fontWeight: "700", color: theme.ink },
   subtitle: { fontSize: 15, color: theme.inkMuted, marginTop: 2 },
-  headerActions: { flexDirection: "row", gap: 14, paddingTop: 8 },
+  headerActions: { flexDirection: "row", gap: 6, paddingTop: 8 },
+  headerAction: { minHeight: 44, justifyContent: "center", paddingHorizontal: 4 },
   signOut: { fontSize: 15, color: theme.brand, fontWeight: "600" },
   signOutMuted: { fontSize: 15, color: theme.inkSubtle, fontWeight: "600" },
   staleBanner: {

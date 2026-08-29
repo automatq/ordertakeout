@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { prepareReorder, type ReorderPreview } from "@/app/actions/reorder";
@@ -23,6 +23,39 @@ export function ReorderButton({ orderId }: { orderId: string }) {
   const toast = useToast();
   const [isPending, startTransition] = useTransition();
   const [preview, setPreview] = useState<ReorderPreview | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!preview) return;
+    const trigger = triggerRef.current;
+    dialogRef.current?.focus();
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") setPreview(null);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      trigger?.focus();
+    };
+  }, [preview]);
+
+  function trapDialogFocus(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Tab") return;
+    const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    );
+    if (!focusable?.length) return;
+    const first = focusable[0]!;
+    const last = focusable[focusable.length - 1]!;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
 
   function addToCart(items: ReorderPreview["items"]) {
     const available = items.filter((item) => item.available);
@@ -63,6 +96,7 @@ export function ReorderButton({ orderId }: { orderId: string }) {
   return (
     <>
       <button
+        ref={triggerRef}
         type="button"
         className="btn btn-primary btn-sm rounded-full"
         disabled={!cart.ready || isPending}
@@ -80,9 +114,12 @@ export function ReorderButton({ orderId }: { orderId: string }) {
           }}
         >
           <div
+            ref={dialogRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby={`reorder-heading-${orderId}`}
+            tabIndex={-1}
+            onKeyDown={trapDialogFocus}
             className="bg-canvas shadow-raised flex max-h-[92dvh] w-full flex-col gap-4 overflow-y-auto rounded-t-[2rem] p-5 sm:max-w-md sm:rounded-[2rem] sm:p-7"
           >
             <div>

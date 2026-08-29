@@ -69,6 +69,47 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<Result<
   return { ok: true, data: envelope.data as T };
 }
 
+export interface StartedCheckout {
+  orderId: string;
+  orderNumber: string;
+  subtotalCents: number;
+  taxCents: number;
+  totalCents: number;
+  currency: string;
+  holdExpiresAt: string;
+  reservationToken: string;
+}
+
+/**
+ * Reserve the slot and record the order, unpaid.
+ *
+ * Two calls rather than one, mirroring the web: the reservation has to exist
+ * before anything is charged, so a payment that fails leaves a held order the
+ * customer can retry rather than a charge with nothing behind it.
+ */
+export const startCheckout = (input: {
+  locationId: string;
+  cart: { variantId: string; quantity: number }[];
+  pickup: { date: string; time: string };
+  customer: { name: string; email: string; phone: string };
+  expectedTotalCents: number;
+  note?: string;
+  smsOptIn?: boolean;
+}) => request<StartedCheckout>("/checkout", { method: "POST", body: JSON.stringify(input) });
+
+/**
+ * Charge the reserved order.
+ *
+ * `sourceId` is the card token. With DEMO_MODE on the server the payment is
+ * simulated and any value is accepted — a value ending in "decline" is refused,
+ * which is how the failure path gets exercised without a real card.
+ */
+export const payCheckout = (input: { orderId: string; sourceId: string; tipCents?: number }) =>
+  request<{ orderNumber: string; accessToken: string }>("/checkout/pay", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
 /**
  * Cancel an order, on the authority of the key that reads it.
  *
@@ -196,10 +237,58 @@ export const requestSignInCode = (phone: string) =>
     body: JSON.stringify({ phone }),
   });
 
+/**
+ * Verify a texted code.
+ *
+ * Three outcomes, not two. A number nobody has yet comes back `needsProfile`
+ * with a short-lived `signupToken` — the code was real and the number is now
+ * proven, so what is missing is a name and an email, not another attempt.
+ */
 export const openSession = (phone: string, code: string) =>
-  request<{ signedIn: boolean; message?: string; token?: string }>("/account/session", {
+  request<{
+    signedIn: boolean;
+    message?: string;
+    token?: string;
+    needsProfile?: boolean;
+    phone?: string;
+    signupToken?: string;
+  }>("/account/session", {
     method: "POST",
     body: JSON.stringify({ phone, code }),
+  });
+
+/** The signed-in customer's own details — what checkout fills itself in with. */
+export interface Profile {
+  name: string;
+  email: string;
+  phone: string;
+  smsOptIn: boolean;
+}
+
+export const fetchProfile = (token: string) =>
+  request<Profile>("/account/profile", { headers: authed(token) });
+
+export const saveProfile = (token: string, changes: Partial<Omit<Profile, "phone">> & { phone?: string }) =>
+  request<Profile>("/account/profile", {
+    method: "PATCH",
+    headers: authed(token),
+    body: JSON.stringify(changes),
+  });
+
+/**
+ * Finish sign-up. Returns a session token, so the app is signed in the moment
+ * the profile exists rather than asking for the same code twice.
+ *
+ * The phone is not sent: the server takes it from `signupToken`, which is the
+ * only proof that the number was answered.
+ */
+export const createProfile = (
+  signupToken: string,
+  fields: { name: string; email: string; phone: string },
+) =>
+  request<Profile & { token: string }>("/account/profile", {
+    method: "POST",
+    body: JSON.stringify({ ...fields, signupToken }),
   });
 
 export const fetchAccountOrders = (token: string) =>

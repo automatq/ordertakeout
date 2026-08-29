@@ -63,10 +63,29 @@ const serverSchema = z.object({
   /** Used only by the one-time migration of pre-multi-location rows. */
   LEGACY_SQUARE_LOCATION_ID: optional(z.string().min(1)),
 
+  /**
+   * The shared staff-dashboard password.
+   *
+   * It is also, when the two secrets below are unset, the last-resort HMAC key for
+   * five unrelated things: customer tracking links and `/o/[code]` short links
+   * (lib/orders/access.ts), pickup-pass QR codes (lib/orders/pickup-pass.ts),
+   * customer account cookies (lib/accounts/session.ts), signup tokens
+   * (lib/accounts/signup-token.ts) and staff PIN hashes (lib/staff/roster.ts).
+   *
+   * So rotating it for hygiene invalidates every tracking link and pickup pass in
+   * circulation, signs out every customer, and breaks every staff PIN. Set the two
+   * secrets below explicitly and that coupling disappears.
+   *
+   * Note the asymmetry that makes this awkward to undo: this floor is 8 characters
+   * and theirs is 32, so on a deployment whose password is shorter than 32 you
+   * cannot adopt the explicit secrets *without* changing the effective key — which
+   * is the invalidation you were trying to avoid. Schedule it for a moment when no
+   * orders are awaiting collection.
+   */
   STAFF_DASHBOARD_PASSWORD: z.string().min(8),
-  /** Stable HMAC key for customer tracking links. Falls back to staff password. */
+  /** Stable HMAC key for customer tracking links and pickup passes. */
   ORDER_ACCESS_SECRET: optional(z.string().min(32)),
-  /** Separate HMAC key for optional customer-account sessions. */
+  /** Separate HMAC key for customer-account sessions and signup tokens. */
   CUSTOMER_ACCOUNT_SECRET: optional(z.string().min(32)),
 
   // --- Notification channels. All optional: an unset channel is simply skipped

@@ -15,7 +15,7 @@
       "userInterfaceStyle": "automatic",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ce3f23"
+        "backgroundColor": "#f5f1e9"
       }
     },
     "plugins": [
@@ -31,7 +31,8 @@
           "imageWidth": 120
         }
       ],
-      "expo-image"
+      "expo-image",
+      "./plugins/with-dev-cleartext"
     ],
     "scheme": "harina",
     "userInterfaceStyle": "automatic",

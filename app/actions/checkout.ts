@@ -230,10 +230,23 @@ export async function startCheckout(input: unknown): Promise<StartCheckoutResult
     : result;
 }
 
+/**
+ * Attach the signed-in account to this order, and say whether it is spending a
+ * reward on it.
+ *
+ * The attachment used to happen only when a reward was being redeemed, so a
+ * signed-in customer who simply bought something placed an order with no
+ * `customer_account_id`: it never appeared in their history and earned no
+ * points, until they pressed "Save my account" on the confirmation page and
+ * backfilled it by hand. Ticking a discount box is not what makes an order
+ * yours.
+ *
+ * The email match is the guard, and it still gates redemption exactly as
+ * before. An account id is never accepted from the browser.
+ */
 async function accountForCheckout(email: string, redeemReward?: boolean) {
   // Preserve the entirely cookie-free guest checkout path. Besides reducing
   // work on the hot path, this keeps the action usable in isolated tests.
-  if (!redeemReward) return {};
   const account = await getCurrentCustomerAccount();
   if (!account || account.email !== email.trim().toLowerCase()) return {};
   return { accountId: account.id, redeemReward: Boolean(redeemReward) };

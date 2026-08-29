@@ -106,7 +106,6 @@ export default async function ProductPage({ params }: PageProps) {
     </main>
   );
 }
-
 /** Staff copy overrides Square copy; paragraphs stay plain text and XSS-safe. */
 function ProductDescription({
   product,
@@ -286,4 +285,3 @@ async function RelatedProducts({ currentId }: { currentId: string }) {
     </section>
   );
 }
-

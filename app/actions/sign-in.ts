@@ -9,6 +9,7 @@ import { consumeMagicLink, issueMagicLink } from "@/lib/accounts/magic-link";
 import { sendMagicLinkEmail } from "@/lib/accounts/magic-link-email";
 import { requestPhoneCode, verifyPhoneCode } from "@/lib/accounts/phone-auth";
 import { setAccountSession } from "@/lib/accounts/session";
+import { setSignupSession } from "@/lib/accounts/signup-token";
 import { serverEnv } from "@/lib/env";
 import { consumeRateLimit, requestFingerprint } from "@/lib/security/rate-limit";
 
@@ -130,6 +131,13 @@ export async function verifyPhoneSignInCode(formData: FormData): Promise<{ ok: f
     code: formData.get("code"),
   });
   if (!result.ok) return result;
+
+  /* A number nobody has yet is not a failed sign-in — it is somebody about to
+     become a customer. Park the proof in a cookie and send them to the form. */
+  if (result.accountId === null) {
+    await setSignupSession(result.phone);
+    redirect("/account/sign-up");
+  }
 
   await setAccountSession(result.accountId);
   redirect("/account");

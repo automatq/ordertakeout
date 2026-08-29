@@ -141,6 +141,7 @@ export function Chip({
         {
           borderRadius: radius.chip,
           borderWidth: 2,
+          minHeight: 44,
           paddingHorizontal: 16,
           paddingVertical: 9,
           alignItems: "center",
