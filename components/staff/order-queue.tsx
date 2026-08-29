@@ -12,7 +12,10 @@ import {
 } from "react";
 
 import { changeOrderStatus, refreshDashboard } from "@/app/actions/staff";
+import { EightySixButton, type EightySixProduct } from "@/components/staff/eighty-six-dialog";
 import { NotificationBell } from "@/components/staff/notification-bell";
+import { PauseToggle } from "@/components/staff/pause-toggle";
+import { PickupVerificationDialog } from "@/components/staff/pickup-verification-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
   AlertIcon,
@@ -60,6 +63,7 @@ import { isChimeReady, playChime, primeChime } from "./chime";
 const POLL_INTERVAL_MS = 15_000;
 const UNREAD_KEY = "staff-order-unread-v1";
 const LAST_CHECKED_KEY = "staff-order-last-checked-v1";
+const LOCATION_FILTER_KEY = "staff-location-filter-v1";
 
 /** Pickup this close counts as imminent, and the card says so. */
 const SOON_MINUTES = 60;
@@ -74,10 +78,13 @@ function displayRefundFailure(error: string): string {
 export function OrderQueue({
   initialData,
   timeZone,
+  products,
 }: {
   initialData: DashboardData;
   /** The store's IANA zone, so "in 20 min" means the shop's clock. */
   timeZone: string;
+  /** Orderable products, for the "86 an item" quick action. */
+  products: EightySixProduct[];
 }) {
   const [data, setData] = useState(initialData);
   const [soundOn, setSoundOn] = useState(false);
@@ -86,6 +93,8 @@ export function OrderQueue({
   const [transitionError, setTransitionError] = useState<string | null>(null);
   const [transitionNotice, setTransitionNotice] = useState<string | null>(null);
   const [squareWarning, setSquareWarning] = useState<string | null>(null);
+  /** null = closed; prefill carries the card's order number so staff don't rescan. */
+  const [pickupDialog, setPickupDialog] = useState<{ prefill: string | null } | null>(null);
   const [updatedAge, setUpdatedAge] = useState("Loaded from the server");
   const lastUpdatedAt = useRef<number | null>(null);
   /** Which order is mid-transition, so only its buttons go busy. */
@@ -132,16 +141,25 @@ export function OrderQueue({
     } catch {}
   }, [freshIds]);
 
+  const locationFilterRef = useRef(locationFilter);
+  /** A filter change makes other-branch orders "new" to this tab; they must not chime. */
+  const suppressChimeOnce = useRef(false);
+
   const poll = useCallback(async () => {
     try {
-      const next = await refreshDashboard();
+      const filter = locationFilterRef.current;
+      const next = await refreshDashboard(filter === "all" ? undefined : filter);
       const incoming = next.days.flatMap((d) => d.slots.flatMap((s) => s.orders));
       const fresh = incoming.filter((o) => !seenOrderIds.current.has(o.id));
 
       if (fresh.length > 0) {
         for (const order of fresh) seenOrderIds.current.add(order.id);
-        setFreshIds((current) => new Set([...current, ...fresh.map((o) => o.id)]));
-        playChime();
+        if (suppressChimeOnce.current) {
+          suppressChimeOnce.current = false;
+        } else {
+          setFreshIds((current) => new Set([...current, ...fresh.map((o) => o.id)]));
+          playChime();
+        }
       }
       setData(next);
       lastUpdatedAt.current = Date.now();
@@ -158,6 +176,32 @@ export function OrderQueue({
     const timer = setInterval(() => void poll(), POLL_INTERVAL_MS);
     return () => clearInterval(timer);
   }, [poll]);
+
+  // Restore the tablet's saved branch filter once, after hydration. Deferred a
+  // tick so the restore never renders mid-hydration.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      try {
+        const saved = localStorage.getItem(LOCATION_FILTER_KEY);
+        if (saved) setLocationFilter(saved);
+      } catch {}
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const firstFilterRun = useRef(true);
+  useEffect(() => {
+    locationFilterRef.current = locationFilter;
+    try {
+      localStorage.setItem(LOCATION_FILTER_KEY, locationFilter);
+    } catch {}
+    if (firstFilterRun.current) {
+      firstFilterRun.current = false;
+      return;
+    }
+    suppressChimeOnce.current = true;
+    void poll();
+  }, [locationFilter, poll]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -237,6 +281,7 @@ export function OrderQueue({
         timeZone={timeZone}
         pending={pendingOrderId === order.id}
         onTransition={handleTransition}
+        onVerifyPickup={() => setPickupDialog({ prefill: order.orderNumber })}
         cardRef={(node) => {
           if (node) cardRefs.current.set(order.id, node);
           else cardRefs.current.delete(order.id);
@@ -247,6 +292,23 @@ export function OrderQueue({
 
   return (
     <div className="flex flex-col gap-6">
+      {pickupDialog ? (
+        <PickupVerificationDialog
+          prefillOrderNumber={pickupDialog.prefill ?? undefined}
+          onClose={() => setPickupDialog(null)}
+          onVerified={async (verified) => {
+            setTransitionError(null);
+            setTransitionNotice(`${verified.orderNumber} was verified as picked up.`);
+            setFreshIds((current) => {
+              if (!current.has(verified.orderId)) return current;
+              const next = new Set(current);
+              next.delete(verified.orderId);
+              return next;
+            });
+            await poll();
+          }}
+        />
+      ) : null}
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div className="flex items-baseline gap-3">
           <h1 className="font-display text-ink text-display-md font-normal uppercase">
@@ -264,6 +326,11 @@ export function OrderQueue({
           <option value="all">All locations</option>
           {locationOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
         </select>
+        <button type="button" onClick={() => setPickupDialog({ prefill: null })} className="btn btn-secondary btn-sm">
+          Scan pickup
+        </button>
+        <EightySixButton products={products} locations={data.locations} today={data.today} onChanged={poll} />
+        <PauseToggle overview={data.orderingPause} locations={data.locations} onChanged={poll} />
         <button
           type="button"
           onClick={() => setSoundOn(primeChime() && isChimeReady())}
@@ -282,6 +349,42 @@ export function OrderQueue({
           onJumpTo={(orderId) => { jumpToOrder(orderId); setFreshIds((current) => { const next = new Set(current); next.delete(orderId); return next; }); }}
         />
       </div>
+
+      {data.inCheckout.length > 0 ? (
+        <details className="panel print:hidden">
+          <summary className="text-ink-muted cursor-pointer p-3 text-sm font-medium list-none">
+            {data.inCheckout.length} in checkout
+            {data.inCheckout.some((entry) => entry.stale) ? " — some look abandoned" : ""}
+          </summary>
+          <ul className="border-border flex flex-col gap-2 border-t p-3">
+            {data.inCheckout.map((entry) => (
+              <li key={entry.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                <span className="text-ink">
+                  {entry.orderNumber} &middot; {formatStoreDate(entry.pickupDate, "medium")}{" "}
+                  {formatPickupTime(entry.pickupTime)} &middot; {formatMoney(entry.totalCents, entry.currency)}
+                </span>
+                {entry.holdExpiresAt ? (
+                  <span className="text-ink-subtle text-xs">
+                    Customer at the card form — reservation expires{" "}
+                    {new Date(entry.holdExpiresAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                  </span>
+                ) : entry.stale ? (
+                  <button
+                    type="button"
+                    disabled={pendingOrderId === entry.id}
+                    onClick={() => handleTransition(entry.id, "canceled")}
+                    className="btn btn-secondary btn-sm"
+                  >
+                    Release
+                  </button>
+                ) : (
+                  <span className="text-ink-subtle text-xs">Payment attempt in progress</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
 
       {/* Polling, local transitions and Square sync are separate failures with
           different consequences, so one successful poll never erases a failed
@@ -345,6 +448,11 @@ export function OrderQueue({
                   <h3 className="bg-canvas/95 text-ink-subtle sticky top-28 z-5 py-2 text-sm font-semibold tracking-wide uppercase backdrop-blur-sm">
                     {formatPickupTime(slot.time)} &middot; {slot.orders.length} order
                     {slot.orders.length === 1 ? "" : "s"}
+                    {slot.capacity > 0 ? (
+                      <span className={slot.orders.length >= slot.capacity ? "text-warning" : ""}>
+                        {" "}&middot; {slot.orders.length}/{slot.capacity} booked
+                      </span>
+                    ) : null}
                   </h3>
                   {workOrders.length ? <ul className="flex flex-col gap-2">{workOrders.map(renderOrderCard)}</ul> : null}
                   {readyOrders.length ? (
@@ -373,6 +481,7 @@ function OrderCard({
   pending,
   timeZone,
   onTransition,
+  onVerifyPickup,
   cardRef,
 }: {
   order: DashboardOrder;
@@ -381,6 +490,7 @@ function OrderCard({
   pending: boolean;
   timeZone: string;
   onTransition: (orderId: string, status: OrderStatus) => void;
+  onVerifyPickup: () => void;
   cardRef: (node: HTMLLIElement | null) => void;
 }) {
   /** Two-step cancel: the button asks before it does anything terminal. */
@@ -423,7 +533,10 @@ function OrderCard({
           <span className={BADGE_CLASS[order.status]}>{STATUS_LABEL[order.status]}</span>
           {/* `.tag`, not `badge-ready`: the money chip used to be the same green
               pill as the "Ready for pickup" status sitting right next to it. */}
-          <span className="tag">Paid {formatMoney(order.totalCents, order.currency)}</span>
+          <span className="tag">
+          Paid {formatMoney(order.totalCents + order.tipCents, order.currency)}
+          {order.tipCents > 0 ? ` (incl. ${formatMoney(order.tipCents, order.currency)} tip)` : ""}
+        </span>
           {order.refundStatus === "pending" ? <span className="tag tag-accent">Refund pending</span> : null}
           {order.refundStatus === "failed" ? <span className="badge badge-new">Refund failed</span> : null}
         </div>
@@ -456,6 +569,11 @@ function OrderCard({
       ) : null}
 
       <div className="flex flex-wrap gap-2 print:hidden">
+        {order.status === "ready" ? (
+          <button type="button" disabled={pending} onClick={onVerifyPickup} className="btn btn-primary btn-sm">
+            Verify pickup
+          </button>
+        ) : null}
         {STAFF_TRANSITIONS[order.status].map((next, index) => {
           const destructive = next === "canceled";
           /* Only the next step forward is the primary. `paid` offers both

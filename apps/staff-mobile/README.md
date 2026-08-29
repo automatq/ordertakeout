@@ -1,0 +1,204 @@
+# Harina Staff
+
+The counter app. Its job is the twenty minutes around a pickup — see who is
+coming, what they ordered, and whether it has been handed over.
+
+Deliberately not everything the web dashboard does. Sales analytics, the 1,540
+lines of settings forms, the print sheet and the audit log stay on a keyboard;
+putting them on a 6" screen is worse than the web view and would cost weeks for
+roughly zero operator value.
+
+## Running it
+
+The app talks to the Next.js app's `/api/v1` routes.
+
+```bash
+npm install
+npx expo prebuild --clean
+npx expo run:ios          # or run:android
+```
+
+By default it points at `http://localhost:3000`, which the iOS Simulator
+resolves to your machine. A real handset cannot — it needs an address on the
+same network, or the deployed site:
+
+```bash
+# .env
+EXPO_PUBLIC_API_URL=http://192.168.1.42:3000
+```
+
+Cleartext to a LAN address works because the generated Info.plist sets
+`NSAllowsLocalNetworking`. `NSAllowsArbitraryLoads` stays false, so a production
+build must talk HTTPS — which the deployed site does anyway.
+
+## What's here
+
+| Screen | State |
+|---|---|
+| Sign in | Password → bearer token |
+| Locked | Face ID / Touch ID / passcode, with a way back to the password |
+| Pickup queue | Grouped by day and slot, polls every 15s, pull to refresh |
+| Scanner | Camera or typed order number → check the name → hand over |
+| Service | Pause ordering, and say what has run out today |
+| Prep | What to bake, per day, totals first |
+
+## The lock
+
+The token is stored with `requireAuthentication`, not guarded by a call to
+`authenticateAsync()`. The difference is the whole security value:
+`authenticateAsync()` returns a JavaScript boolean, and anyone running a patched
+bundle can make it return `true`. `requireAuthentication` makes the OS refuse to
+release the bytes, and there is no boolean in that path to patch.
+
+Locking is therefore just dropping the token from memory. Getting it back means
+asking the OS again, which *is* the prompt.
+
+It locks after ten idle minutes, where idle means no touches — the queue
+refreshes itself every fifteen seconds, so anything keyed on network activity
+would hold the session open forever. Backgrounded time is measured by wall clock
+rather than a timer, because timers do not run reliably while suspended and a
+tablet shut in a drawer overnight would otherwise come back unlocked.
+
+Set `EXPO_PUBLIC_LOCK_MINUTES` to watch it happen without waiting ten minutes.
+
+Two failure modes are handled because they would otherwise strand a shop:
+
+- **A newly enrolled fingerprint invalidates the stored item permanently.** From
+  JavaScript that is indistinguishable from someone cancelling the prompt, so
+  both land on the lock screen and it offers "Use the password instead".
+- **A handset with no passcode or biometric** cannot enforce any of this. The
+  app stores the token at the weaker level and says so on a permanent red strip,
+  rather than implying a protection it does not have.
+- **iOS keeps Keychain items when an app is deleted.** A reinstall would
+  otherwise come back still signed in — which is not what deleting an app means
+  to anyone, and it makes "uninstall it and try again" quietly do nothing.
+  NSUserDefaults *is* wiped, so its emptiness is the signal to clear the
+  Keychain first. Android removes app data on uninstall, so this is iOS only.
+  Found by uninstalling during testing and getting a lock screen instead of a
+  sign-in screen.
+
+## Revocation
+
+Signing in registers a row in `staff_devices` with its own secret, and the token
+is signed with that rather than the shared password. Revoking the row from
+**Settings → Devices** on the web dashboard stops exactly that handset,
+immediately, and touches nothing else — no other tablet signs out and the shared
+password never changes.
+
+The label comes from `Device.deviceName`, because "iPhone" three times over
+makes the revoke decision impossible and "Ana's iPhone" makes it obvious.
+
+Signing in twice on one tablet makes two rows. That is the honest record: the
+first token is still live until somebody revokes it.
+
+Tokens last thirty days rather than the web session's twelve hours. A tablet
+that asks for the password every morning gets the password written on a sticky
+note beside it. The long life is only defensible *because* revocation exists —
+the answer to a lost device is to revoke it, not to hope it expires.
+
+## The scanner
+
+Two steps, deliberately. The scan finds the order; a person still reads the name
+back before anything is marked collected. Going straight from a good scan to
+"collected" would make the pass alone enough to take somebody else's order, and
+passes get forwarded, screenshotted and left open on shared phones.
+
+The scanned string crosses the wire exactly as it came off the QR code. Parsing
+and signature checking stay on the server, so a patched build cannot talk its way
+past them — verified against a real pass with one character of the signature
+changed, and against a valid signature moved onto a different order number. Both
+are refused, because the signature covers the order id.
+
+Manual entry sits *beside* the camera rather than behind a failure. A floury
+lens, a cracked screen, a flat battery — none of those are exceptional at a
+bakery counter, and making staff fail twice before offering the keyboard is its
+own kind of rudeness. There is a torch toggle for the same reason.
+
+## Why there is no router
+
+The Phase 3 plan picks expo-router, and this was the point it was meant to go in.
+It came back out.
+
+On Expo SDK 57, `expo-router` pulls `@expo/ui` → `react-native-reanimated@4.6`,
+which requires `react-native-worklets@0.12`. The `expo-modules-core` that ships
+with the *same SDK* is written against worklets ≤0.10 and fails to compile
+against 0.12 (`no member named 'executeSync'`). Those constraints are mutually
+exclusive; pinning around them means fighting Expo's own dependency tree.
+
+For four screens that is a bad trade. The router's real value — file-based parity
+with the web App Router, and near-free universal links — is for the customer app,
+which has magic links and short links to catch. Revisit it there, or here once
+SDK 57's tree settles.
+
+## Service controls
+
+Pausing and "sold out" live on one screen because they are the same moment: the
+oven died, or the ube ran out, and somebody has to say so before the next order
+arrives. Any delay is an order the shop cannot fill, so nothing is behind a menu.
+
+A branch toggle is disabled while the whole shop is paused, and says "Paused
+everywhere". Turning it on there would change nothing a customer could see, so
+offering it would be a lie.
+
+Marking something sold out applies to every branch at once. Per-location is more
+precise and the web dashboard offers it — but the person tapping this is standing
+in one shop, has just looked in one empty tray, and cannot answer for anywhere
+else. The careful version belongs on a keyboard.
+
+Every change refetches rather than patching local state. These controls decide
+whether the shop is taking money; a toggle that looks flipped when the write
+failed is the one outcome worth ruling out.
+
+The work is shared with the web dashboard — `lib/staff/service-controls.ts` — so
+a rule like "you cannot mark something sold out for yesterday" exists once.
+
+## Prep
+
+The same orders as the queue, pivoted. The queue is a list you work down at the
+counter; prep is what somebody reads at five in the morning, and at that hour
+"4 × 25pc Cheese" is useful where a column of customer names is not. Totals
+first, slot breakdown underneath.
+
+The totals are summed on the server by the same function the web timeline uses.
+Re-adding them from the order items on the phone would be a second answer to
+"what do we make today", and the two would disagree the first time an order was
+cancelled — which is the expensive direction of that mistake.
+
+The web draws lanes across a horizontal rail. That does not survive a phone:
+sixty pickup times become sixty columns nobody can scan. Vertical sections here,
+and only days that actually have orders. It polls every minute rather than every
+fifteen seconds — nothing here changes between orders in a way anyone acts on,
+and this screen gets left open on a bench.
+
+## What's next
+
+**Haptics on a successful scan.** A counter is loud and staff are not looking at
+the screen while they reach for a box.
+
+Beyond that the staff app covers what the Phase 3 plan scoped for it. Sales
+analytics, the settings forms, the print sheet and the audit log stay on the web
+dashboard on purpose — see the top of this file.
+
+expo-router goes in with pickup verification. At two screens it would be configuration
+without a payoff; navigation is a piece of state in `App.tsx` until then.
+
+## Colours
+
+`src/tokens.generated.ts` is written by `scripts/generate-app-theme.mjs` from
+the web's `app/globals.css`, which stays the single source of truth. Run
+`npm run tokens` from the repo root after changing `@theme`; CI regenerates and
+fails on a diff, so a palette change that forgets the apps cannot merge.
+
+They were hand-copied at first and drifted within a day: the brand red was
+`#9E3136` in the apps and `#ce3f23` on the web, alongside a green and an amber
+that appear nowhere in the palette. Nothing looked broken, which is exactly how
+that fails.
+
+## Shared code
+
+None yet, and that is a deliberate holding position rather than an oversight.
+The scheduling engine, cart algebra and every zod schema are worth sharing —
+about 2,500–3,500 lines of the valuable stuff — but that needs the workspace
+move, which cannot land while it would turn an open PR into a 600-file rename
+diff. `src/theme.ts` and `src/api.ts` duplicate things the web app already knows
+and are the first two files that should stop being copies.

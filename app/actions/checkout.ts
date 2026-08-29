@@ -16,10 +16,14 @@ import {
 import { verifyOrderAccessToken } from "@/lib/orders/access";
 import { computeAvailability, type AvailabilityResult } from "@/lib/scheduling/availability";
 import { loadAvailabilityInput } from "@/lib/scheduling/queries";
+import { AVAILABILITY_PREVIEW_DAYS } from "@/lib/store";
 import { getStoreLocation } from "@/lib/locations/server";
+import { normalizePhoneE164 } from "@/lib/phone";
+import { getPauseStateFresh } from "@/lib/settings/pause";
 import { inventoryShortages } from "@/lib/inventory/map";
 import { getInventoryQuantities } from "@/lib/inventory/server";
 import { consumeRateLimit, requestFingerprint } from "@/lib/security/rate-limit";
+import { getCurrentCustomerAccount } from "@/lib/accounts/loyalty";
 
 /**
  * Checkout server actions.
@@ -46,7 +50,7 @@ const cartSchema = z
       if (quantity > 50) {
         context.addIssue({
           code: "custom",
-          message: "A cart line cannot exceed 50 trays",
+          message: "A cart line cannot exceed 50 of one item",
         });
         return;
       }
@@ -56,7 +60,19 @@ const cartSchema = z
 const customerSchema = z.object({
   name: z.string().trim().min(1, "Please enter your name").max(120),
   email: z.email("Please enter a valid email address"),
-  phone: z.string().trim().min(7, "Please enter a phone number").max(30),
+  // Normalized to E.164 so the number we store is one Twilio can text.
+  phone: z
+    .string()
+    .trim()
+    .max(30)
+    .transform((value, context) => {
+      const parsed = normalizePhoneE164(value);
+      if (!parsed.ok) {
+        context.addIssue({ code: "custom", message: parsed.message });
+        return z.NEVER;
+      }
+      return parsed.e164;
+    }),
 });
 
 const checkoutSchema = z.object({
@@ -69,6 +85,9 @@ const checkoutSchema = z.object({
   customer: customerSchema,
   note: z.string().trim().max(500).optional(),
   expectedTotalCents: z.number().int().min(0),
+  redeemReward: z.boolean().optional(),
+  /** Consent to transactional texts ("your order is ready"). Default off. */
+  smsOptIn: z.boolean().optional(),
 });
 
 export type CheckoutInput = z.infer<typeof checkoutSchema>;
@@ -82,13 +101,21 @@ export type CheckoutInput = z.infer<typeof checkoutSchema>;
 export async function getCartAvailability(
   cart: unknown,
   locationId?: unknown,
-): Promise<AvailabilityResult | { ok: false; problem: { kind: "catalog_unavailable" } }> {
+): Promise<
+  | AvailabilityResult
+  | { ok: false; problem: { kind: "catalog_unavailable" } }
+  | { ok: false; problem: { kind: "ordering_paused"; note: string | null } }
+> {
   const parsed = cartSchema.safeParse(cart);
   if (!parsed.success) {
     return { ok: false, problem: { kind: "empty_cart" } };
   }
   if (typeof locationId !== "string" || !locationId || !(await getStoreLocation(locationId))) {
     return { ok: false, problem: { kind: "catalog_unavailable" } };
+  }
+  const paused = await getPauseStateFresh(locationId);
+  if (paused) {
+    return { ok: false, problem: { kind: "ordering_paused", note: paused.note } };
   }
   const limit = await consumeRateLimit(
     "checkout-availability",
@@ -123,7 +150,12 @@ export async function getCartAvailability(
   ).length) {
     return { ok: false, problem: { kind: "catalog_unavailable" } };
   }
-  return computeAvailability(await loadAvailabilityInput(schedulingCart, undefined, locationId));
+  /* Preview window, not the full bookable horizon — see AVAILABILITY_PREVIEW_DAYS.
+     This is refetched on every cart change, so its size is felt on the critical
+     path to payment, on whatever connection the customer happens to have. */
+  return computeAvailability(
+    await loadAvailabilityInput(schedulingCart, undefined, locationId, AVAILABILITY_PREVIEW_DAYS),
+  );
 }
 
 type PublicCreateOrderFailure =
@@ -131,6 +163,7 @@ type PublicCreateOrderFailure =
   | { kind: "insufficient_stock" };
 
 export type StartCheckoutResult =
+  | { ok: false; failure: { kind: "ordering_paused"; note: string | null } }
   | (Extract<CreateOrderResult, { ok: true }> & { locationId: string })
   | { ok: false; failure: PublicCreateOrderFailure }
   | { ok: false; failure: { kind: "invalid_input"; fieldErrors: Record<string, string[]> } }
@@ -174,13 +207,22 @@ export async function startCheckout(input: unknown): Promise<StartCheckoutResult
     return { ok: false, failure: { kind: "rate_limited" } };
   }
 
+  const paused = await getPauseStateFresh(parsed.data.locationId);
+  if (paused) {
+    return { ok: false, failure: { kind: "ordering_paused", note: paused.note } };
+  }
+
   const result = await createPendingOrder({
     locationId: parsed.data.locationId,
     cart: normalizeCart(parsed.data.cart),
     pickup: parsed.data.pickup,
     customer: parsed.data.customer,
     note: parsed.data.note,
+    smsOptIn: parsed.data.smsOptIn === true,
     expectedTotalCents: parsed.data.expectedTotalCents,
+    // Never accept an account id from the browser. A reward may be attached
+    // only to this device's signed-in account and its matching checkout email.
+    ...(await accountForCheckout(parsed.data.customer.email, parsed.data.redeemReward)),
   });
   if (result.ok) return { ...result, locationId: parsed.data.locationId };
   return result.failure.kind === "insufficient_stock"
@@ -188,11 +230,35 @@ export async function startCheckout(input: unknown): Promise<StartCheckoutResult
     : result;
 }
 
+/**
+ * Attach the signed-in account to this order, and say whether it is spending a
+ * reward on it.
+ *
+ * The attachment used to happen only when a reward was being redeemed, so a
+ * signed-in customer who simply bought something placed an order with no
+ * `customer_account_id`: it never appeared in their history and earned no
+ * points, until they pressed "Save my account" on the confirmation page and
+ * backfilled it by hand. Ticking a discount box is not what makes an order
+ * yours.
+ *
+ * The email match is the guard, and it still gates redemption exactly as
+ * before. An account id is never accepted from the browser.
+ */
+async function accountForCheckout(email: string, redeemReward?: boolean) {
+  // Preserve the entirely cookie-free guest checkout path. Besides reducing
+  // work on the hot path, this keeps the action usable in isolated tests.
+  const account = await getCurrentCustomerAccount();
+  if (!account || account.email !== email.trim().toLowerCase()) return {};
+  return { accountId: account.id, redeemReward: Boolean(redeemReward) };
+}
+
 const paySchema = z.object({
   orderId: z.uuid(),
   // Square token payloads are short opaque strings. Bound this before it can
   // become a persisted payment-attempt source on a rate-limited endpoint.
   sourceId: z.string().min(1).max(512),
+  /** Gratuity in cents; payForOrder re-caps it against the order total. */
+  tipCents: z.number().int().min(0).max(50_000).optional(),
 });
 
 /** Charge the card token produced by the Square Web Payments SDK. */
@@ -213,7 +279,7 @@ export async function completeCheckout(input: unknown): Promise<PayResult> {
       message: "Too many payment attempts. Wait a few minutes before trying again.",
     };
   }
-  return payForOrder(parsed.data.orderId, parsed.data.sourceId);
+  return payForOrder(parsed.data.orderId, parsed.data.sourceId, parsed.data.tipCents ?? 0);
 }
 
 const abandonSchema = z.object({

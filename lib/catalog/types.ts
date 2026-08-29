@@ -1,3 +1,4 @@
+import type { Allergen, DietaryTag } from "@/lib/catalog/dietary";
 import type { ProductRule } from "@/lib/scheduling/availability";
 
 /**
@@ -48,6 +49,13 @@ export interface CatalogProduct {
    * where the item has no photography or a referenced image has been deleted.
    */
   imageUrls: string[];
+  /**
+   * Square's reporting category for this item, if it has one. Null both when
+   * the item is uncategorised and when the name lookup failed — the storefront
+   * treats those identically and files the product under "More".
+   */
+  categoryId: string | null;
+  categoryName: string | null;
   variants: CatalogVariant[];
 }
 
@@ -58,6 +66,9 @@ export interface StoreProduct extends CatalogProduct {
   heroImageUrl: string | null;
   descriptionMd: string | null;
   sortOrder: number;
+  /** From lib/catalog/dietary.ts's fixed vocabulary. Empty = not stated, never "free from". */
+  allergens: Allergen[];
+  dietaryTags: DietaryTag[];
 }
 
 export type SkipReason =

@@ -11,6 +11,7 @@ import {
 } from "./raw";
 
 export { INVENTORY_TAG };
+export { fetchTrackedVariationIds } from "./raw";
 
 /**
  * Location inventory visible to a customer.

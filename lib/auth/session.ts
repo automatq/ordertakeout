@@ -20,7 +20,7 @@ import { timingSafeEqual } from "node:crypto";
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // one long shift
 export const SESSION_COOKIE = "staff_session";
 
-async function sign(secret: string, payload: string): Promise<string> {
+export async function sign(secret: string, payload: string): Promise<string> {
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
     "raw",

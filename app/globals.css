@@ -228,98 +228,67 @@
     }
   }
 
-  /* --- Intro sequence -------------------------------------------------------
-     The homepage curtain is the only surface in this app that is darker than
-     the page. It is not a dark theme — it is a lit oven mouth, so every value
-     here is MIXED FROM THE EXISTING BRAND RAMP rather than introduced as a new
-     hue. Retint --color-brand-deep or --color-accent and the whole sequence
-     follows without anyone opening the component.
+}
 
-     The sequence's *timings* deliberately live in lib/intro/session.ts instead,
-     because a blocking inline script and a client component both need them and
-     neither can read CSS. Only the curve is here, because CSS uses it too. */
+/* ============================================================================
+   DARK PALETTE
+   Introduced by the mobile app design (Harina App.dc.html). Defining the tokens
+   here rather than in the apps keeps one source of truth — scripts/
+   generate-app-theme.mjs reads both this block and @theme above, and the
+   mobile apps follow the device's appearance setting.
 
-  /* Near-black pulled warm by the deep brand red, so it reads as the inside of
-     a cooling oven rather than as a modal scrim. */
-  --color-intro-scrim: color-mix(in srgb, var(--color-ink) 72%, var(--color-brand-deep));
+   Nothing on the web reads these yet: they only take effect under
+   [data-theme="dark"], which the web never sets. When the storefront does adopt
+   a dark mode, the values are already here and already agree with the apps.
 
-  /* The heat itself — the bloom behind the logo, and the light that spills from
-     under the lifting curtain. Sits between the gold accent and the bright
-     brand hover, which is where a real oven glow lives. */
-  --color-intro-ember: color-mix(in srgb, var(--color-accent) 62%, var(--color-brand-hover));
+   Not a mechanical inversion. The canvas is a warm near-black rather than grey,
+   so the cream identity survives; the brand red lifts to stay legible on it,
+   and brand-deep becomes *lighter* than brand because on a dark surface the
+   emphatic direction is up, not down.
+   ========================================================================= */
+[data-theme="dark"] {
+  --color-canvas: #15110d;
+  --color-surface: #221c16;
+  --color-surface-sunken: #2c241c;
+  --color-border: #382e24;
+  --color-border-strong: #4d4032;
 
-  /* Flour dust. A warm white rather than #fff — dusted flour on a dark ground
-     is never neutral, and pure white against the scrim reads as dead pixels. */
-  --color-intro-flour: color-mix(in srgb, var(--color-surface) 70%, var(--color-canvas));
+  --color-ink: #f8f2e7;
+  --color-ink-muted: #c6b9a6;
+  --color-ink-subtle: #a99c8a;
 
-  /* A weighted lift: slow to break, fast to clear. The house --ease is a settle
-     curve and makes a full-viewport panel feel like it is floating. Mirrored as
-     a literal array in the curtain component, which drives the lift in JS. */
-  --ease-curtain: cubic-bezier(0.7, 0, 0.2, 1);
+  --color-brand: #e2482a;
+  --color-brand-hover: #f9553c;
+  --color-brand-deep: #ff8f78;
+  --color-brand-soft: #3a1a12;
+  --color-brand-tint: #241611;
+  --color-brand-ink: #ffffff;
 
-  /* One timeline rather than two animations, because a separate breathe would
-     have to re-declare `transform` and would win from time 0 through its
-     backwards fill, cancelling the bloom. */
-  --animate-intro-ember: intro-ember 1500ms var(--ease) both;
-  --animate-intro-mote-in: intro-mote-in 400ms var(--ease) var(--mote-delay, 0ms) both;
-  --animate-intro-mote-drift: intro-mote-drift var(--mote-dur, 5s) linear infinite;
+  --color-accent: #ffc446;
+  --color-accent-hover: #ffd36f;
+  --color-accent-soft: #3a2c10;
+  --color-accent-ink: #ffd36f;
 
-  /* Shared by the glow and the medallion, which need the same timeline at very
-     different strengths — hence --intro-bloom rather than a literal 1. Without
-     it the keyframe's opacity would override whatever the element declares
-     statically, and the medallion would bloom to full and swallow the logo. */
-  @keyframes intro-ember {
-    /* Oven door opening onto heat. */
-    0% {
-      opacity: 0;
-      transform: scale(0.62);
-    }
-    37% {
-      opacity: var(--intro-bloom, 1);
-      transform: scale(1);
-    }
-    /* …then one breath, so the glow is alive under the settled logo. */
-    60% {
-      opacity: var(--intro-bloom, 1);
-      transform: scale(1);
-    }
-    80% {
-      opacity: calc(var(--intro-bloom, 1) * 0.86);
-      transform: scale(1.055);
-    }
-    100% {
-      opacity: var(--intro-bloom, 1);
-      transform: scale(1);
-    }
-  }
+  --color-secondary: #ff8f78;
+  --color-secondary-hover: #f9553c;
+  --color-secondary-soft: #3a1a12;
+  --color-secondary-ink: #15110d;
 
-  @keyframes intro-mote-in {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: var(--mote-opacity, 0.5);
-    }
-  }
+  --color-status-new: #e2482a;
+  --color-status-new-soft: #3a1a12;
+  --color-status-preparing: #ffc446;
+  --color-status-preparing-soft: #3a2c10;
+  --color-status-ready: #ff8f78;
+  --color-status-ready-soft: #3a1a12;
+  --color-status-completed: #a99c8a;
+  --color-status-completed-soft: #2c241c;
+  --color-status-canceled: #a99c8a;
+  --color-status-canceled-soft: #2c241c;
 
-  /* Drifts back to the origin so the loop is seamless. Splitting fade and drift
-     across two animations only works because they touch different properties —
-     opacity here, transform there. */
-  @keyframes intro-mote-drift {
-    0%,
-    100% {
-      transform: translate3d(0, 0, 0);
-    }
-    25% {
-      transform: translate3d(var(--mote-sway, 6px), -1.8vh, 0);
-    }
-    50% {
-      transform: translate3d(0, -3.6vh, 0);
-    }
-    75% {
-      transform: translate3d(calc(var(--mote-sway, 6px) * -1), -1.8vh, 0);
-    }
-  }
+  --color-success: #ff8f78;
+  --color-warning: #ffc446;
+  --color-danger: #ff7a5e;
+  --color-danger-soft: #3a1a12;
 }
 
 /* ============================================================================
@@ -384,22 +353,8 @@
     /* The staff dashboard is used on a kitchen tablet with wet/floury hands;
        generous tap targets and no accidental text selection on controls. */
     -webkit-text-size-adjust: 100%;
-    /* Reserves the scrollbar track permanently. Without it, the intro's scroll
-       lock below takes ~15px away and gives it back, shifting the whole page
-       twice — two layout shifts on the one route we most care about. The cost
-       is a visible gutter on pages too short to scroll. */
-    scrollbar-gutter: stable;
   }
 
-  /* The intro curtain holds the viewport still while it plays. Driven by the
-     attribute rather than by an imperative style so it is live from first paint
-     with no JS timing, and so there is nothing to unwind — the attribute IS the
-     state, and it cannot get stuck half-applied. Released three independent
-     ways: the lift completing, the component unmounting, and the boot script's
-     failsafe (see lib/intro/session.ts). */
-  html[data-intro="playing"] {
-    overflow: hidden;
-  }
 
   body {
     background-color: var(--color-canvas);
@@ -433,7 +388,7 @@
     color: var(--color-brand-deep);
   }
 
-  /* In-page anchors (the storefront's `#trays` jump) should glide, and every
+  /* In-page anchors (the storefront's `#order` jump) should glide, and every
      sticky header in the app is ~5rem tall, so nothing lands underneath one. */
   html {
     scroll-behavior: smooth;
@@ -1085,6 +1040,52 @@
     border-radius: var(--radius-card);
   }
 
+  /* Long-form policy text (privacy, terms, refund policy). Element selectors
+     rather than utilities: the content is static prose, and a class on every
+     paragraph would bury the words. */
+  .policy-prose h1 {
+    font-family: var(--font-display);
+    font-size: var(--text-display-lg);
+    line-height: var(--text-display-lg--line-height);
+    font-weight: 400;
+    text-transform: uppercase;
+    color: var(--color-brand);
+  }
+  .policy-prose h2 {
+    font-family: var(--font-display);
+    font-size: var(--text-display-md);
+    line-height: var(--text-display-md--line-height);
+    font-weight: 400;
+    text-transform: uppercase;
+    color: var(--color-ink);
+    margin-top: 1rem;
+  }
+  .policy-prose p,
+  .policy-prose li {
+    color: var(--color-ink-muted);
+    font-size: 0.9375rem;
+    line-height: 1.7;
+  }
+  .policy-prose ul {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding-left: 1.25rem;
+    list-style: disc;
+  }
+  .policy-prose strong {
+    color: var(--color-ink);
+    font-weight: 500;
+  }
+  .policy-prose a {
+    color: var(--color-brand);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .policy-prose a:hover {
+    color: var(--color-brand-hover);
+  }
+
   /* The small caps line that introduces a section heading. */
   .eyebrow {
     color: var(--color-brand);
@@ -1382,175 +1383,6 @@
     animation: var(--animate-pulse-ring);
   }
 
-  /* Intro sequence -----------------------------------------------------------
-     The homepage curtain: an oven mouth that glows, throws flour, and lifts.
-
-     Everything here is CSS rather than JS on purpose. The curtain ships in the
-     prerendered shell and the boot script reveals it during HTML parse, so on a
-     slow phone it is on screen for several hundred milliseconds before the
-     bundle lands. If the glow and the dust waited for hydration the opening of
-     the sequence would be a flat rectangle. Only the logo and the lift are
-     driven by Motion, in components/storefront/intro/intro-curtain.tsx, and
-     they never touch a node styled here.
-
-     Default is OFF. Nothing shows the curtain except the two attribute values
-     below, so no-JS, a CSP that blocks the inline script, a thrown exception
-     and a returning visitor all land on "page visible" for free. */
-  .intro-curtain {
-    display: none;
-    position: fixed;
-    inset: 0;
-    /* Above the sticky header (50), the mobile order bar (40) and the focused
-       skip link (100). */
-    z-index: 200;
-    place-items: center;
-    overflow: hidden;
-    /* A heat wash rising off the bottom edge, over the warm dark. */
-    background:
-      radial-gradient(
-        ellipse 92% 62% at 50% 108%,
-        color-mix(in srgb, var(--color-brand-deep) 52%, transparent) 0%,
-        transparent 62%
-      ),
-      var(--color-intro-scrim);
-  }
-  html[data-intro="playing"] .intro-curtain,
-  html[data-intro="lifting"] .intro-curtain {
-    display: grid;
-  }
-
-  /* Light spilling out from under the rising edge. This is the detail that
-     sells the lift as a curtain rather than a panel sliding away. */
-  .intro-curtain::after {
-    content: "";
-    position: absolute;
-    inset-inline: 0;
-    bottom: 0;
-    height: 2px;
-    opacity: 0;
-    background: linear-gradient(90deg, transparent, var(--color-intro-ember), transparent);
-    box-shadow: 0 0 32px 6px color-mix(in srgb, var(--color-intro-ember) 45%, transparent);
-    transition: opacity 240ms var(--ease-curtain);
-  }
-  html[data-intro="lifting"] .intro-curtain::after {
-    opacity: 1;
-  }
-
-  /* The crown-and-H badge, blown up far past its resolution and buried in the
-     haze. At a tenth opacity behind a 6px blur the softness is invisible by
-     design, which is what lets the composition carry a scale the 230px lockup
-     cannot. `height: auto` because a CSS width on a next/image needs it to keep
-     the aspect ratio. */
-  .intro-medallion {
-    position: absolute;
-    width: min(70vw, 34rem);
-    height: auto;
-    /* Read by the shared keyframe above — a static `opacity` here would be
-       overridden by it. */
-    --intro-bloom: 0.14;
-    filter: blur(16px);
-    animation: var(--animate-intro-ember);
-  }
-
-  /* The oven glow: a HALO, not a core. Both gradients are deliberately
-     transparent at dead centre and peak in a ring outside the lockup, because
-     the mark is rust-on-transparent and was drawn for a light ground — sat on a
-     bright gold centre its wordmark all but vanishes. Lit from behind and
-     around instead, it reads the way a sign over a shop door does. */
-  .intro-ember {
-    position: absolute;
-    inset: 0;
-    animation: var(--animate-intro-ember);
-    background:
-      radial-gradient(
-        circle 32vmin at 50% 50%,
-        transparent 0%,
-        transparent 26%,
-        color-mix(in srgb, var(--color-accent) 22%, transparent) 58%,
-        transparent 84%
-      ),
-      radial-gradient(
-        ellipse 66% 54% at 50% 50%,
-        transparent 0%,
-        transparent 22%,
-        color-mix(in srgb, var(--color-intro-ember) 28%, transparent) 48%,
-        color-mix(in srgb, var(--color-intro-ember) 9%, transparent) 68%,
-        transparent 86%
-      );
-  }
-
-  /* Flour dust. Positions and timings come from a frozen table in the component
-     — `Math.random()` at render would both break the prerender and desync
-     hydration — and arrive as the --mote-* custom properties read below. */
-  .intro-mote {
-    position: absolute;
-    top: var(--mote-y);
-    left: var(--mote-x);
-    width: var(--mote-size);
-    height: var(--mote-size);
-    border-radius: var(--radius-pill);
-    background: var(--color-intro-flour);
-    box-shadow: 0 0 6px color-mix(in srgb, var(--color-intro-flour) 38%, transparent);
-    animation: var(--animate-intro-mote-in), var(--animate-intro-mote-drift);
-  }
-
-  /* The logo and its kicker line. Motion owns the transforms; this only builds
-     the stack and the backlight that makes a 230px raster mark read as a lit
-     sign rather than a low-resolution image. */
-  .intro-stage {
-    position: relative;
-    display: grid;
-    justify-items: center;
-    gap: 1.25rem;
-    padding-inline: var(--spacing-gutter);
-  }
-  /* The backlight sits on the mark rather than on .intro-logo, because Motion
-     owns that element's `filter` — it animates the entrance blur through it —
-     and an inline filter would simply replace this one. Putting it inside also
-     means the glow blurs in along with the mark, which is the better read: at
-     this size a 230px raster lockup is under-resolution, and a warm halo on a
-     dark ground makes it land as a lit sign rather than a soft image. */
-  .intro-logo > img {
-    /* The lift is not decoration. The lockup is rust-on-transparent, drawn for
-       a cream page; dropped straight onto a dark warm ground its wordmark goes
-       muddy. Brightening pushes the rust up towards --color-brand-hover, which
-       is the palette's own answer to "same colour, more light on it", so the
-       mark reads as lit from behind rather than recoloured. */
-    filter: drop-shadow(0 0 26px color-mix(in srgb, var(--color-intro-ember) 55%, transparent))
-      brightness(1.3) saturate(1.12);
-  }
-  .intro-kicker {
-    margin: 0;
-    color: var(--color-intro-flour);
-    font-family: var(--font-display);
-    font-size: clamp(0.72rem, 2.4vw, 0.95rem);
-    line-height: 1;
-    text-transform: uppercase;
-    /* Motion animates the tracking in from 0.78em; this is where it lands. */
-    letter-spacing: 0.34em;
-    /* The tracking pushes the line off-centre by half its trailing space. */
-    text-indent: 0.34em;
-    white-space: nowrap;
-  }
-
-  /* The handoff. The hero stagger starts as the curtain begins to move, not
-     after it has gone, so the two reads as one continuous shot.
-
-     Gated on an attribute that is ABSENT by default, which is what keeps the
-     hero correct with no JS at all. And scoped inside `no-preference` rather
-     than leaning on the global reduced-motion block further up: that block
-     zeroes animation-duration but NOT animation-delay, so a delayed reveal with
-     a backwards fill would leave the hero blank for its delay window on exactly
-     the machines that asked for less motion. Here the rule simply doesn't
-     exist. */
-  @media (prefers-reduced-motion: no-preference) {
-    html[data-hero-reveal] .hero-reveal [data-reveal] {
-      /* Reuses the house `rise`, whose `both` fill supplies the backwards half
-         that holds each element until its turn. */
-      animation: var(--animate-rise);
-      animation-delay: calc(var(--reveal-step, 0) * 80ms);
-    }
-  }
 }
 
 /* ============================================================================

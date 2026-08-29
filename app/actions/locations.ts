@@ -7,7 +7,7 @@ import { getStoreLocation, getStoreLocations } from "@/lib/locations/server";
 import { consumeRateLimit, requestFingerprint } from "@/lib/security/rate-limit";
 import { getOrderableProducts } from "@/lib/catalog/server";
 import { normalizeCart, resolveCart } from "@/lib/catalog/cart";
-import { inventoryShortages } from "@/lib/inventory/map";
+import { inventoryShortages, VARIANT_AVAILABILITY_LIMIT } from "@/lib/inventory/map";
 
 export type PickupLocationsResult =
   | { ok: true; locations: Awaited<ReturnType<typeof getStoreLocations>> }
@@ -31,7 +31,10 @@ export type VariantAvailabilityResult =
   | { ok: false };
 
 export async function getVariantAvailability(input: unknown): Promise<VariantAvailabilityResult> {
-  const parsed = z.object({ locationId: z.string().min(1), variantIds: z.array(z.string().min(1)).max(100) }).safeParse(input);
+  const parsed = z.object({
+    locationId: z.string().min(1),
+    variantIds: z.array(z.string().min(1)).max(VARIANT_AVAILABILITY_LIMIT),
+  }).safeParse(input);
   if (!parsed.success || !(await getStoreLocation(parsed.data.locationId))) return { ok: false };
   const limit = await consumeRateLimit("inventory", await requestFingerprint(), {
     attempts: 60,

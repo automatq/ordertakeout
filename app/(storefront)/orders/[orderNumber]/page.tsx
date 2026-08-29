@@ -8,6 +8,8 @@ import { OrderProgress } from "@/components/orders/order-progress";
 import { OrderRefresher } from "@/components/orders/order-refresher";
 import { AlertIcon, CalendarIcon, ClockIcon, LoafIcon, MapPinIcon, PhoneIcon } from "@/components/ui/icons";
 import { LoadingRegion, Skeleton } from "@/components/ui/skeleton";
+import { ALLERGEN_DISCLAIMER, ALLERGEN_LABELS } from "@/lib/catalog/dietary";
+import { googleCalendarUrl } from "@/lib/orders/calendar-link";
 import { getOrderByNumber } from "@/lib/orders/lookup";
 import { formatPickupTime, formatStoreDate } from "@/lib/scheduling/time";
 import { formatMoney } from "@/lib/square/money";
@@ -16,8 +18,12 @@ import { hasStaffSession } from "@/lib/auth/guard";
 import { verifyOrderAccessToken } from "@/lib/orders/access";
 import { customerCancellationEligibility } from "@/lib/orders/cancellation";
 import { CancelOrder } from "@/components/orders/cancel-order";
+import { OfflinePassRegistration } from "@/components/orders/offline-pass";
+import { PickupPass } from "@/components/orders/pickup-pass";
 import { getOrderableProducts } from "@/lib/catalog/server";
 import { primaryImage, sizedImage } from "@/lib/catalog/images";
+import { createPickupPass } from "@/lib/orders/pickup-pass";
+import { CreateAccount } from "@/components/accounts/create-account";
 
 type PageProps = {
   params: Promise<{ orderNumber: string }>;
@@ -46,7 +52,9 @@ async function OrderDetail({ params, searchParams }: PageProps) {
   const order = await getOrderByNumber(orderNumber);
 
   if (!order) notFound();
-  if (!(await hasStaffSession()) && !verifyOrderAccessToken(order.id, order.orderNumber, key)) {
+  const staffSession = await hasStaffSession();
+  const hasCustomerAccess = verifyOrderAccessToken(order.id, order.orderNumber, key);
+  if (!staffSession && !hasCustomerAccess) {
     notFound();
   }
 
@@ -135,7 +143,7 @@ async function OrderDetail({ params, searchParams }: PageProps) {
               <PhoneIcon className="h-4 w-4" />
               {pickupPhone}
             </a>
-            <Link href="/#trays" className="btn btn-outline btn-sm rounded-full">
+            <Link href="/#order" className="btn btn-outline btn-sm rounded-full">
               Order again
             </Link>
           </div>
@@ -206,7 +214,7 @@ async function OrderDetail({ params, searchParams }: PageProps) {
                 Directions
               </a>
               <a
-                href={calendarLink(order.pickupDate, order.pickupTime, order.orderNumber, order.pickupLocationName ?? STORE_INFO.name, pickupAddress, pickupCity, pickupPhone)}
+                href={googleCalendarUrl({ date: order.pickupDate, time: order.pickupTime, orderNumber: order.orderNumber, locationName: order.pickupLocationName ?? STORE_INFO.name, address: pickupAddress, city: pickupCity, phone: pickupPhone })}
                 target="_blank"
                 rel="noreferrer"
                 className="btn btn-secondary btn-sm rounded-full"
@@ -223,6 +231,13 @@ async function OrderDetail({ params, searchParams }: PageProps) {
           </section>
 
           <OrderProgress status={order.status} />
+          {paid && order.status !== "completed" ? (
+            <>
+              <PickupPass value={createPickupPass(order.id, order.orderNumber)} />
+              <OfflinePassRegistration />
+            </>
+          ) : null}
+          {paid && hasCustomerAccess && key ? <CreateAccount orderNumber={order.orderNumber} accessToken={key} /> : null}
           <OrderRefresher live={live} />
           {cancellation?.allowed && key ? (
             <section className="card flex flex-col gap-3 rounded-[1.5rem] p-5 sm:p-6">
@@ -280,8 +295,17 @@ async function OrderDetail({ params, searchParams }: PageProps) {
                     <LoafIcon className="h-6 w-6" />
                   )}
                 </span>
-                <span className="text-ink min-w-0 flex-1">
-                  {item.quantity} &times; {item.nameSnapshot}
+                <span className="min-w-0 flex-1">
+                  <span className="text-ink block">
+                    {item.quantity} &times; {item.nameSnapshot}
+                  </span>
+                  {/* Live catalog values, not an order-time snapshot: a recipe
+                      change should update what the customer sees. */}
+                  {product && product.allergens.length > 0 ? (
+                    <span className="text-ink-subtle block text-xs">
+                      Contains {product.allergens.map((allergen) => ALLERGEN_LABELS[allergen].toLowerCase()).join(", ")}
+                    </span>
+                  ) : null}
                 </span>
                 <span className="text-ink shrink-0 font-semibold tabular-nums">
                   {formatMoney(item.totalPriceCents, order.currency)}
@@ -290,6 +314,13 @@ async function OrderDetail({ params, searchParams }: PageProps) {
             );
           })}
         </ul>
+
+        {order.items.some((item) => {
+          const product = item.squareProductId ? productsById.get(item.squareProductId) : null;
+          return product ? product.allergens.length > 0 : false;
+        }) ? (
+          <p className="text-ink-subtle text-xs">{ALLERGEN_DISCLAIMER}</p>
+        ) : null}
 
         <dl className="flex flex-col gap-2">
           <div className="text-ink-muted flex items-baseline justify-between text-sm">
@@ -300,17 +331,23 @@ async function OrderDetail({ params, searchParams }: PageProps) {
             <dt>Taxes</dt>
             <dd className="tabular-nums">{formatMoney(order.taxCents, order.currency)}</dd>
           </div>
+          {order.tipCents > 0 ? (
+            <div className="text-ink-muted flex items-baseline justify-between text-sm">
+              <dt>Tip</dt>
+              <dd className="tabular-nums">{formatMoney(order.tipCents, order.currency)}</dd>
+            </div>
+          ) : null}
           <div className="bg-accent-soft text-ink mt-2 flex items-baseline justify-between rounded-[1.25rem] px-4 py-3 text-lg font-semibold">
             <dt>{paid ? "Paid" : "Total"}</dt>
             <dd className="font-display text-2xl font-normal">
-              {formatMoney(order.totalCents, order.currency)}
+              {formatMoney(order.totalCents + order.tipCents, order.currency)}
             </dd>
           </div>
         </dl>
       </section>
 
       <div className="flex flex-wrap gap-3">
-        <Link href="/#trays" className="btn btn-outline btn-sm rounded-full">
+        <Link href="/#order" className="btn btn-outline btn-sm rounded-full">
           Order something else
         </Link>
         <Link href="/orders" className="btn btn-ghost btn-sm rounded-full">
@@ -319,36 +356,6 @@ async function OrderDetail({ params, searchParams }: PageProps) {
       </div>
     </>
   );
-}
-
-/**
- * A Google Calendar "add event" link for the pickup.
- *
- * Deliberately not an .ics download: that needs a route handler and a MIME
- * type, and this covers the case that actually matters — a customer on a phone
- * who wants a reminder not to forget the tray they've already paid for.
- *
- * The times are the store's wall clock. Google reads a floating (zoneless)
- * timestamp in the viewer's own zone, which is right for a local bakery and
- * wrong only for someone booking from another timezone — a trade for not
- * dragging a tz conversion into a convenience link.
- */
-function calendarLink(date: string, time: string, orderNumber: string, locationName: string, address: string, city: string, phone: string): string {
-  const start = `${date.replace(/-/g, "")}T${time.replace(":", "")}00`;
-  const [hours, minutes] = time.split(":").map(Number) as [number, number];
-  const end = `${date.replace(/-/g, "")}T${String((hours + 1) % 24).padStart(2, "0")}${String(
-    minutes,
-  ).padStart(2, "0")}00`;
-
-  const params = new URLSearchParams({
-    action: "TEMPLATE",
-    text: `Pick up order ${orderNumber} — ${locationName}`,
-    dates: `${start}/${end}`,
-    location: `${address}, ${city}`,
-    details: `Collect your party tray order ${orderNumber}. Call ${phone} if you need to change anything.`,
-  });
-
-  return `https://calendar.google.com/calendar/render?${params.toString()}`;
 }
 
 function hoursForDate(

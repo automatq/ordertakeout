@@ -87,6 +87,20 @@ export const compareDates = (a: StoreDate, b: StoreDate): number => a.localeComp
 export const compareTimes = (a: StoreTime, b: StoreTime): number => a.localeCompare(b);
 
 /**
+ * Add minutes to a store-local wall-clock time.
+ *
+ * Returns null when the result crosses midnight rather than wrapping. Wrapping
+ * would turn "20 minutes after 23:50" into 00:10 *today* — a time that already
+ * passed — which is exactly the class of bug this helper exists to prevent.
+ */
+export function addMinutesToTime(time: StoreTime, minutes: number): StoreTime | null {
+  const [hours, mins] = normalizeTime(time).split(":");
+  const total = Number(hours) * 60 + Number(mins) + minutes;
+  if (!Number.isFinite(total) || total < 0 || total >= 24 * 60) return null;
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+
+/**
  * Convert a store-local date + time into a real instant, for Square's
  * `pickup_at` field. This is the one direction where DST genuinely matters, and
  * date-fns-tz resolves it against the zone's rules.
@@ -133,4 +147,35 @@ export function formatPickupTime(time: StoreTime): string {
   const suffix = hour < 12 ? "AM" : "PM";
   const displayHour = hour % 12 === 0 ? 12 : hour % 12;
   return `${displayHour}:${minute} ${suffix}`;
+}
+
+/**
+ * How long ago something happened, in words.
+ *
+ * Rendered on the server so the string is stable between server and client —
+ * computing it in the browser would be a hydration mismatch, and "now" differs
+ * between the two by however long the response took.
+ *
+ * Coarse on purpose. The staff device list is answering "is this tablet still
+ * in use?", and to that question "3 hours ago" and "3 hours and 12 minutes ago"
+ * are the same answer.
+ */
+export function relativeTime(then: Date, now: Date = new Date()): string {
+  const seconds = Math.round((now.getTime() - then.getTime()) / 1000);
+  /* Negative too: clock skew between the database and the web server can put a
+     just-written timestamp slightly in the future, and "in -3 seconds" is worse
+     than a rounding lie. */
+  if (seconds < 90) return "just now";
+
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} minutes ago`;
+
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return hours === 1 ? "an hour ago" : `${hours} hours ago`;
+
+  const days = Math.round(hours / 24);
+  if (days < 30) return days === 1 ? "yesterday" : `${days} days ago`;
+
+  const months = Math.round(days / 30);
+  return months === 1 ? "a month ago" : `${months} months ago`;
 }

@@ -254,3 +254,20 @@ export function LoafIcon(props: IconProps) {
     </Icon>
   );
 }
+
+/**
+ * Fingerprint, for passkey sign-in. Deliberately generic rather than a Face ID
+ * glyph: the same button covers Touch ID, Windows Hello and hardware keys, and
+ * the system prompt that follows already shows the right platform imagery.
+ */
+export function FingerprintIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 11v3a9 9 0 0 1-.6 3.2" />
+      <path d="M8.5 11a3.5 3.5 0 0 1 7 0v2a13 13 0 0 1-.5 3.5" />
+      <path d="M5 11a7 7 0 0 1 12.2-4.7" />
+      <path d="M18.9 9A7 7 0 0 1 19 11v2c0 1-.1 2-.3 3" />
+      <path d="M5.1 15A9 9 0 0 1 5 13.5V13" />
+    </Icon>
+  );
+}

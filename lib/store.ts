@@ -37,6 +37,19 @@ export const DEFAULT_MAX_ORDERS_PER_SLOT = 5;
 /** How far ahead customers may book; the UI shows the first 21 available dates. */
 export const MAX_ORDER_HORIZON_DAYS = 60;
 
+/**
+ * Calendar days of availability sent to the pickup picker.
+ *
+ * The picker shows the first 21 dates that have any availability, so anything
+ * past roughly four weeks was computed, queried, serialised and shipped only to
+ * be discarded on arrival. Deliberately a little wider than 21 so a run of
+ * closure dates still leaves a full set of options.
+ *
+ * MAX_ORDER_HORIZON_DAYS remains the bookable ceiling: the checkout guard keeps
+ * using it, so narrowing this changes what is *offered*, never what is valid.
+ */
+export const AVAILABILITY_PREVIEW_DAYS = 28;
+
 const ENSAYMADA_PICKUP_TIMES = ["16:00", "17:00", "18:00", "19:00", "20:00"] as const;
 
 export type ProductRuleSeed = {

@@ -12,21 +12,49 @@ import {
 } from "@/components/staff/schedule-settings";
 import { AlertIcon } from "@/components/ui/icons";
 import { FormSkeleton } from "@/components/ui/skeleton";
-import { listBlackoutDates, listOperationalIssues, listProductRules, listSlotCapacity } from "@/lib/admin/queries";
+import Link from "next/link";
+
+import { listAvailabilityOverrides, listBlackoutDates, listOperationalIssues, listProductRules, listSlotCapacity } from "@/lib/admin/queries";
+import { SoldOutList } from "@/components/staff/sold-out-list";
+import { StaffRoster } from "@/components/staff/staff-roster";
+import {
+  StaffDevices,
+  type StaffDeviceView,
+} from "@/components/staff/staff-devices";
+import { listStaffDevices } from "@/lib/auth/device-session";
+import { NotificationSettings } from "@/components/staff/notification-settings";
+import { listStaffMembers } from "@/lib/staff/roster";
+import { getNotificationRecipients } from "@/lib/settings/notifications";
+import { serverEnv } from "@/lib/env";
 import { getStoreCatalog } from "@/lib/catalog/server";
+import { CatalogReadinessPanel } from "@/components/staff/catalog-readiness";
+import { getCatalogReadiness } from "@/lib/catalog/readiness";
 import { primaryImage } from "@/lib/catalog/images";
 import { getStoreLocationsSafe } from "@/lib/locations/server";
-import { DEFAULT_MAX_ORDERS_PER_SLOT } from "@/lib/store";
+import { formatStoreDate, relativeTime, storeToday } from "@/lib/scheduling/time";
+import {
+  FALLBACK_SLOT_CAPACITY,
+  listSlotCapacityDefaults,
+} from "@/lib/settings/capacity";
+import {
+  SlotCapacityDefaults,
+  type CapacityDefaultRow,
+} from "@/components/staff/slot-capacity-defaults";
 
 export const metadata = { title: "Settings — Staff" };
 
 /** Jump links, so the page's four sections are reachable without scrolling. */
 const SECTIONS = [
   { id: "sync", label: "Square sync" },
+  { id: "readiness", label: "Catalog health" },
   { id: "operations", label: "Operations" },
   { id: "rules", label: "Ordering rules" },
+  { id: "soldout", label: "Sold out today" },
   { id: "closures", label: "Closures" },
   { id: "capacity", label: "Slot capacity" },
+  { id: "devices", label: "Devices" },
+  { id: "notifications", label: "Notifications" },
+  { id: "staff", label: "Staff" },
 ] as const;
 
 export default function SettingsPage() {
@@ -53,17 +81,94 @@ export default function SettingsPage() {
   );
 }
 
+async function CatalogHealth() {
+  await connection();
+  return <CatalogReadinessPanel readiness={await getCatalogReadiness()} />;
+}
+
 async function Settings() {
   await connection();
 
-  const [catalog, rules, blackouts, slots, locations, issues] = await Promise.all([
+  const [
+    catalog,
+    rules,
+    blackouts,
+    slots,
+    locations,
+    issues,
+    soldOut,
+    roster,
+    recipients,
+    capacityDefaults,
+    devices,
+  ] = await Promise.all([
     getStoreCatalog(),
     listProductRules(),
     listBlackoutDates(),
     listSlotCapacity(),
     getStoreLocationsSafe(),
     listOperationalIssues(),
+    listAvailabilityOverrides(),
+    listStaffMembers(),
+    getNotificationRecipients(),
+    listSlotCapacityDefaults(),
+    listStaffDevices(),
   ]);
+
+  const env = serverEnv();
+  const providers = {
+    email: Boolean(env.RESEND_API_KEY && env.NOTIFY_FROM_EMAIL),
+    sms: Boolean(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN && env.TWILIO_FROM_NUMBER),
+  };
+
+  const productNames = new Map([
+    ...catalog.products.map((product) => [product.id, product.name] as const),
+    ...catalog.unconfigured.map((product) => [product.id, product.name] as const),
+  ]);
+  const locationNames = new Map(locations.map((location) => [location.id, location.name]));
+  const soldOutEntries = soldOut.map((entry) => ({
+    id: entry.id,
+    productName: productNames.get(entry.productId) ?? entry.productId,
+    locationName: entry.locationId
+      ? locationNames.get(entry.locationId) ?? "Former location"
+      : "All locations",
+    date: entry.date,
+    reason: entry.reason,
+    createdBy: entry.createdBy,
+  }));
+
+  /* The global row first, then each location — a branch with nothing of its own
+     shows the global number as what it is currently using, so the effect of the
+     setting is visible without opening a second screen. */
+  const configuredCapacity = new Map(
+    capacityDefaults.map((row) => [row.locationId, row.maxOrdersPerSlot] as const),
+  );
+  const globalCapacity = configuredCapacity.get(null) ?? FALLBACK_SLOT_CAPACITY;
+  const capacityRows: CapacityDefaultRow[] = [
+    {
+      locationId: null,
+      locationName: "All locations",
+      configured: configuredCapacity.get(null) ?? null,
+      effective: globalCapacity,
+    },
+    ...locations.map((location) => ({
+      locationId: location.id,
+      locationName: location.name,
+      configured: configuredCapacity.get(location.id) ?? null,
+      effective: configuredCapacity.get(location.id) ?? globalCapacity,
+    })),
+  ];
+
+  /* Formatted on the server: "3 hours ago" computed in the browser would be a
+     hydration mismatch, and the exact minute is not what anyone reads this for. */
+  const deviceViews: StaffDeviceView[] = devices.map((device) => ({
+    id: device.id,
+    label: device.label,
+    platform: device.platform,
+    lastSeen: relativeTime(device.lastSeenAt),
+    addedOn: formatStoreDate(storeToday(device.createdAt, env.STORE_TIMEZONE), "short"),
+    revoked: device.revokedAt !== null,
+  }));
 
   const rulesById = new Map(rules.map((rule) => [rule.productId, rule]));
 
@@ -77,12 +182,14 @@ async function Settings() {
       id: product.id,
       name: product.name,
       imageUrl: primaryImage(product),
+      categoryName: product.categoryName,
       unconfigured: true,
     })),
     ...catalog.products.map((product) => ({
       id: product.id,
       name: product.name,
       imageUrl: primaryImage(product),
+      categoryName: product.categoryName,
       rule: rulesById.get(product.id),
       unconfigured: false,
     })),
@@ -92,6 +199,21 @@ async function Settings() {
     <div className="flex flex-col gap-12">
       <section id="sync" className="scroll-mt-24">
         <CatalogResync />
+      </section>
+
+      <section id="readiness" className="flex scroll-mt-24 flex-col gap-4">
+        <div>
+          <h2 className="text-ink text-lg font-semibold">Catalog health</h2>
+          <p className="text-ink-muted text-sm">
+            Products you&rsquo;ve added in Square that can&rsquo;t be sold online yet, and why.
+          </p>
+        </div>
+
+        {/* Its own boundary: this checks stock counts at every branch, so it is
+            the slowest thing on the page and must not hold up the rest. */}
+        <Suspense fallback={<FormSkeleton label="Checking catalog health" fields={2} />}>
+          <CatalogHealth />
+        </Suspense>
       </section>
 
       <section id="operations" className="scroll-mt-24">
@@ -126,12 +248,48 @@ async function Settings() {
         )}
       </section>
 
+      <section id="soldout" className="flex scroll-mt-24 flex-col gap-4">
+        <div>
+          <h2 className="text-ink text-lg font-semibold">Sold out today</h2>
+          <p className="text-ink-muted text-sm">
+            Day-scoped 86 entries. They lift themselves when the date passes.
+          </p>
+        </div>
+        <SoldOutList entries={soldOutEntries} />
+      </section>
+
       <section id="closures" className="scroll-mt-24">
         <BlackoutDates dates={blackouts} locations={locations} />
       </section>
 
-      <section id="capacity" className="scroll-mt-24">
-        <SlotCapacity slots={slots} defaultCap={DEFAULT_MAX_ORDERS_PER_SLOT} locations={locations} />
+      <section id="capacity" className="flex scroll-mt-24 flex-col gap-6">
+        <SlotCapacityDefaults rows={capacityRows} />
+        <SlotCapacity slots={slots} defaultCap={globalCapacity} locations={locations} />
+      </section>
+
+      <section id="devices" className="scroll-mt-24">
+        <StaffDevices devices={deviceViews} />
+      </section>
+
+      <section id="notifications" className="flex scroll-mt-24 flex-col gap-4">
+        <div>
+          <h2 className="text-ink text-lg font-semibold">Notification recipients</h2>
+          <p className="text-ink-muted text-sm">
+            Where new-order, ready, cancellation, and refund alerts go. Changes apply from the
+            next order — no redeploy.
+          </p>
+        </div>
+        <NotificationSettings initial={recipients} locations={locations} providers={providers} />
+      </section>
+
+      <section id="staff" className="flex scroll-mt-24 flex-col gap-4">
+        <div>
+          <h2 className="text-ink text-lg font-semibold">Staff roster</h2>
+          <p className="text-ink-muted text-sm">
+            Who the initials on pickups, refunds, and the <Link href="/staff/audit" className="underline">activity log</Link> belong to.
+          </p>
+        </div>
+        <StaffRoster members={roster} />
       </section>
     </div>
   );

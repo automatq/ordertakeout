@@ -4,14 +4,32 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   db: vi.fn(),
   notifyOrder: vi.fn(),
+  notifyOrderRefund: vi.fn(),
   mirrorToSquare: vi.fn(),
   releaseInventoryHoldsWithin: vi.fn(),
   retainInventoryHoldsAfterPaymentWithin: vi.fn(),
+  resolveWebhookLedgerRow: vi.fn(),
+  settleLedgerRowWithin: vi.fn(),
+  markLedgerRowById: vi.fn(),
+  revokeEarnedPointsWithin: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({ db: mocks.db }));
-vi.mock("@/lib/notifications/dispatch", () => ({ notifyOrder: mocks.notifyOrder }));
+vi.mock("@/lib/notifications/dispatch", () => ({
+  notifyOrder: mocks.notifyOrder,
+  notifyOrderRefund: mocks.notifyOrderRefund,
+}));
 vi.mock("@/lib/orders/transitions", () => ({ mirrorToSquare: mocks.mirrorToSquare }));
+// The ledger has its own suite (refunds.test.ts); stubbing it keeps these tests
+// focused on the orders-table reconciliation choreography.
+vi.mock("@/lib/orders/refunds", () => ({
+  resolveWebhookLedgerRow: mocks.resolveWebhookLedgerRow,
+  settleLedgerRowWithin: mocks.settleLedgerRowWithin,
+  markLedgerRowById: mocks.markLedgerRowById,
+  revokeEarnedPointsWithin: mocks.revokeEarnedPointsWithin,
+  remainingRefundableCents: (order: { totalCents: number; tipCents?: number; refundedTotalCents?: number }) =>
+    Math.max(0, order.totalCents + (order.tipCents ?? 0) - (order.refundedTotalCents ?? 0)),
+}));
 vi.mock("@/lib/inventory/reservations", () => ({
   releaseInventoryHoldsWithin: mocks.releaseInventoryHoldsWithin,
   retainInventoryHoldsAfterPaymentWithin: mocks.retainInventoryHoldsAfterPaymentWithin,
@@ -101,6 +119,9 @@ const ORDER = {
   squareLocationId: "TORONTO_WEST",
   status: "paid",
   totalCents: 2400,
+  tipCents: 0,
+  refundedTotalCents: 0,
+  customerAccountId: null,
   currency: "CAD",
   canceledAt: null,
 };
@@ -192,8 +213,13 @@ describe("applySquareEvent money reconciliation", () => {
     vi.clearAllMocks();
     mocks.mirrorToSquare.mockResolvedValue(undefined);
     mocks.notifyOrder.mockResolvedValue(undefined);
+    mocks.notifyOrderRefund.mockResolvedValue(undefined);
     mocks.releaseInventoryHoldsWithin.mockResolvedValue(undefined);
     mocks.retainInventoryHoldsAfterPaymentWithin.mockResolvedValue(undefined);
+    mocks.resolveWebhookLedgerRow.mockResolvedValue({ id: "ledger-1", status: "pending", amountCents: 2400 });
+    mocks.settleLedgerRowWithin.mockResolvedValue(true);
+    mocks.markLedgerRowById.mockResolvedValue(undefined);
+    mocks.revokeEarnedPointsWithin.mockResolvedValue(undefined);
   });
 
   it("stops production for an exact full refund initiated directly in Square", async () => {
@@ -256,8 +282,11 @@ describe("applySquareEvent money reconciliation", () => {
       ...ORDER,
       status: "canceled",
       refundStatus: "completed",
+      refundedTotalCents: 2400,
       squareRefundId: "REFUND_1",
     };
+    // The ledger already counted this refund; a replay must never bump again.
+    mocks.resolveWebhookLedgerRow.mockResolvedValue({ id: "ledger-1", status: "completed", amountCents: 2400 });
     mocks.db
       .mockReturnValueOnce(selectRowsDb([canceled]))
       .mockReturnValueOnce(captureUpdateDb());
@@ -267,22 +296,60 @@ describe("applySquareEvent money reconciliation", () => {
     });
     expect(mocks.mirrorToSquare).toHaveBeenCalledOnce();
     expect(mocks.notifyOrder).toHaveBeenCalledWith(ORDER.id, "order_canceled");
+    expect(mocks.settleLedgerRowWithin).not.toHaveBeenCalled();
   });
 
-  it("flags a partial refund for manual reconciliation without cancelling", async () => {
+  it("records a partial refund without cancelling or locking the order", async () => {
     let partialWrite: Record<string, unknown> | undefined;
+    mocks.resolveWebhookLedgerRow.mockResolvedValue({ id: "ledger-1", status: "pending", amountCents: 1200 });
     mocks.db
       .mockReturnValueOnce(selectRowsDb([ORDER]))
-      .mockReturnValueOnce(captureUpdateDb([{ id: ORDER.id }], (value) => { partialWrite = value; }));
+      .mockReturnValueOnce(transactionDb([{ id: ORDER.id }], (value) => { partialWrite = value; }));
 
     await expect(applySquareEvent({
       ...COMPLETED_REFUND,
       amountCents: 1200,
-    })).resolves.toMatchObject({ handled: true });
-    expect(partialWrite).toMatchObject({ refundStatus: "failed" });
-    expect(String(partialWrite?.refundError)).toContain("PARTIAL_REFUND_REQUIRES_MANUAL");
+    })).resolves.toMatchObject({ handled: true, detail: expect.stringContaining("partial") });
+    expect(partialWrite).toMatchObject({ refundStatus: "partial", squareRefundId: "REFUND_1" });
+    expect(mocks.settleLedgerRowWithin).toHaveBeenCalled();
+    expect(mocks.notifyOrderRefund).toHaveBeenCalledWith(ORDER.id, "ledger-1");
     expect(mocks.mirrorToSquare).not.toHaveBeenCalled();
     expect(mocks.notifyOrder).not.toHaveBeenCalled();
+  });
+
+  it("classifies a tipped order's full refund by the charged amount, not the order total", async () => {
+    let canceledWrite: Record<string, unknown> | undefined;
+    const tipped = { ...ORDER, tipCents: 600 };
+    mocks.resolveWebhookLedgerRow.mockResolvedValue({ id: "ledger-1", status: "pending", amountCents: 3000 });
+    mocks.db
+      .mockReturnValueOnce(selectRowsDb([tipped]))
+      .mockReturnValueOnce(transactionDb([{ id: ORDER.id }], (value) => { canceledWrite = value; }))
+      .mockReturnValueOnce(captureUpdateDb());
+
+    // 2400 total + 600 tip: only a 3000-cent refund is "the remainder".
+    await expect(applySquareEvent({ ...COMPLETED_REFUND, amountCents: 3000 })).resolves.toMatchObject({
+      handled: true,
+      detail: expect.stringContaining("cancelled"),
+    });
+    expect(canceledWrite).toMatchObject({ status: "canceled", refundStatus: "completed" });
+  });
+
+  it("keeps a completed order completed when its refund lands in full", async () => {
+    let refundWrite: Record<string, unknown> | undefined;
+    const pickedUp = { ...ORDER, status: "completed", customerAccountId: "acct-1" };
+    mocks.db
+      .mockReturnValueOnce(selectRowsDb([pickedUp]))
+      .mockReturnValueOnce(transactionDb([{ id: ORDER.id }], (value) => { refundWrite = value; }));
+
+    await expect(applySquareEvent(COMPLETED_REFUND)).resolves.toMatchObject({
+      handled: true,
+      detail: expect.stringContaining("final"),
+    });
+    expect(refundWrite).toMatchObject({ refundStatus: "completed" });
+    expect(refundWrite).not.toHaveProperty("status");
+    expect(mocks.revokeEarnedPointsWithin).toHaveBeenCalled();
+    expect(mocks.notifyOrderRefund).toHaveBeenCalledWith(ORDER.id, "ledger-1");
+    expect(mocks.releaseInventoryHoldsWithin).not.toHaveBeenCalled();
   });
 
   it("does not let an older refund event overwrite a newer active attempt", async () => {
@@ -388,5 +455,25 @@ describe("applySquareEvent money reconciliation", () => {
       newState: "CANCELED",
     })).resolves.toEqual(expect.objectContaining({ handled: false, retryable: true }));
     expect(mocks.releaseInventoryHoldsWithin).not.toHaveBeenCalled();
+  });
+
+  it("keeps a Square-completed order ready until counter pickup is verified", async () => {
+    let warningWrite: Record<string, unknown> | undefined;
+    mocks.db
+      .mockReturnValueOnce(selectRowsDb([{ ...ORDER, status: "ready" }]))
+      .mockReturnValueOnce(captureUpdateDb([], (value) => { warningWrite = value; }));
+
+    await expect(applySquareEvent({
+      kind: "fulfillment",
+      eventId: "evt-completed",
+      type: "order.fulfillment.updated",
+      squareOrderId: "SQ_ORDER_1",
+      newState: "COMPLETED",
+    })).resolves.toMatchObject({ handled: false, detail: expect.stringContaining("pickup verification") });
+
+    expect(warningWrite).toMatchObject({
+      squareSyncError: expect.stringContaining("Verify pickup"),
+    });
+    expect(warningWrite).not.toHaveProperty("status");
   });
 });

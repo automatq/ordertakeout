@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   addCalendarDays,
+  relativeTime,
   daysBetween,
   formatPickupTime,
   normalizeTime,
@@ -112,5 +113,40 @@ describe("formatPickupTime", () => {
     expect(formatPickupTime("05:45")).toBe("5:45 AM");
     expect(formatPickupTime("00:30")).toBe("12:30 AM");
     expect(formatPickupTime("12:00")).toBe("12:00 PM");
+  });
+});
+
+describe("relativeTime", () => {
+  const now = new Date("2026-08-26T12:00:00Z");
+  const ago = (ms: number) => relativeTime(new Date(now.getTime() - ms), now);
+
+  it("rounds recent moments to 'just now'", () => {
+    expect(ago(0)).toBe("just now");
+    expect(ago(45_000)).toBe("just now");
+    expect(ago(89_000)).toBe("just now");
+  });
+
+  it("handles a timestamp slightly in the future", () => {
+    // Clock skew between the database and the web server; "in -3 seconds" would
+    // be worse than rounding.
+    expect(relativeTime(new Date(now.getTime() + 3_000), now)).toBe("just now");
+  });
+
+  it("counts minutes, then hours, then days, then months", () => {
+    expect(ago(5 * 60_000)).toBe("5 minutes ago");
+    expect(ago(59 * 60_000)).toBe("59 minutes ago");
+    expect(ago(60 * 60_000)).toBe("an hour ago");
+    expect(ago(5 * 3_600_000)).toBe("5 hours ago");
+    expect(ago(24 * 3_600_000)).toBe("yesterday");
+    expect(ago(5 * 24 * 3_600_000)).toBe("5 days ago");
+    expect(ago(30 * 24 * 3_600_000)).toBe("a month ago");
+    expect(ago(120 * 24 * 3_600_000)).toBe("4 months ago");
+  });
+
+  it("never says '1 hours' or '1 days'", () => {
+    // Cheap to get wrong, and it reads as a bug to anyone who sees it.
+    for (const text of [ago(3_600_000), ago(24 * 3_600_000), ago(30 * 24 * 3_600_000)]) {
+      expect(text).not.toMatch(/\b1 (hours|days|months)\b/);
+    }
   });
 });

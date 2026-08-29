@@ -27,13 +27,13 @@ export function NotFoundContent() {
         We couldn&rsquo;t find that page
       </h1>
       <p className="text-ink-muted max-w-md text-lg text-pretty">
-        The link may be out of date, or the tray you&rsquo;re after may no longer be on
+        The link may be out of date, or the item you&rsquo;re after may no longer be on
         the menu. Everything we&rsquo;re baking today is on the home page.
       </p>
 
       <div className="flex flex-wrap justify-center gap-3 pt-2">
-        <Link href="/#trays" className="btn btn-primary">
-          Browse party trays
+        <Link href="/#order" className="btn btn-primary">
+          Browse the menu
         </Link>
         <a href={STORE_INFO.phoneHref} className="btn btn-secondary">
           Call {STORE_INFO.phone}

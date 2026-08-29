@@ -1,14 +1,13 @@
 import "server-only";
 
-import { and, eq, gte, inArray, isNotNull, lt, or } from "drizzle-orm";
+import { and, eq, gte, isNotNull, lt, ne } from "drizzle-orm";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 
 import { db } from "@/lib/db";
-import { orders } from "@/lib/db/schema";
+import { orderRefunds, orders } from "@/lib/db/schema";
 import { serverEnv } from "@/lib/env";
 import { addCalendarDays, assertStoreDate, daysBetween, type StoreDate } from "@/lib/scheduling/time";
 
-const PAID_STATUSES = ["paid", "preparing", "ready", "completed"] as const;
 const MAX_EXPORT_DAYS = 366;
 
 export interface AccountingExportFilter {
@@ -30,6 +29,8 @@ export interface AccountingTransaction {
   currency: string;
   netSalesCents: number;
   taxCents: number;
+  /** Gratuity on the payment; zero on refund rows (refund amounts already include any tip returned). */
+  tipCents: number;
   grossCents: number;
   refundCents: number;
 }
@@ -75,6 +76,7 @@ export function accountingTransactionsCsv(transactions: readonly AccountingTrans
     "currency",
     "net_sales",
     "tax",
+    "tip",
     "gross_amount",
     "refund_amount",
     "fee_source",
@@ -92,6 +94,7 @@ export function accountingTransactionsCsv(transactions: readonly AccountingTrans
     transaction.currency,
     moneyDecimal(transaction.netSalesCents),
     moneyDecimal(transaction.taxCents),
+    moneyDecimal(transaction.tipCents),
     moneyDecimal(transaction.grossCents),
     moneyDecimal(transaction.refundCents),
     "Import Square processing fees from Square payout data",
@@ -112,57 +115,92 @@ export async function getAccountingTransactions(
   const start = fromZonedTime(`${filter.from}T00:00:00`, "Pacific/Kiritimati");
   const end = fromZonedTime(`${addCalendarDays(filter.to, 1)}T00:00:00`, "Etc/GMT+12");
   const location = filter.locationId ? eq(orders.squareLocationId, filter.locationId) : undefined;
-  const rows = await db()
-    .select()
-    .from(orders)
-    .where(and(
-      location,
-      or(
-        and(
-          inArray(orders.status, [...PAID_STATUSES]),
-          isNotNull(orders.paidAt),
-          gte(orders.paidAt, start),
-          lt(orders.paidAt, end),
-        ),
-        and(
-          eq(orders.status, "canceled"),
-          eq(orders.refundStatus, "completed"),
-          isNotNull(orders.canceledAt),
-          gte(orders.canceledAt, start),
-          lt(orders.canceledAt, end),
-        ),
-      ),
-    ));
 
-  return rows
-    .map((order): AccountingTransaction | null => {
-      const isRefund = order.status === "canceled" && order.refundStatus === "completed";
-      const occurredAt = isRefund ? order.canceledAt : order.paidAt;
-      if (!occurredAt) return null;
-      const timeZone = order.pickupLocationTimezone ?? defaultTimeZone;
-      const reference = isRefund
-        ? order.squareRefundId ?? order.id
-        : order.squarePaymentId ?? order.squareOrderId ?? order.id;
-      const sign = isRefund ? -1 : 1;
-      const transactionDate = formatInTimeZone(occurredAt, timeZone, "yyyy-MM-dd");
-      if (transactionDate < filter.from || transactionDate > filter.to) return null;
-      return {
-        transactionType: isRefund ? "refund" : "payment",
-        transactionDate,
-        transactionId: `${isRefund ? "refund" : "payment"}:${reference}`,
-        orderNumber: order.orderNumber,
-        squareOrderId: order.squareOrderId,
-        squarePaymentId: order.squarePaymentId,
-        squareRefundId: order.squareRefundId,
-        locationId: order.squareLocationId,
-        locationName: order.pickupLocationName,
-        currency: order.currency,
-        netSalesCents: sign * order.subtotalCents,
-        taxCents: sign * order.taxCents,
-        grossCents: sign * order.totalCents,
-        refundCents: isRefund ? order.totalCents : 0,
-      };
-    })
+  // Payments key off paidAt regardless of the order's CURRENT status, so a
+  // later cancellation can never retroactively delete a payment from a past
+  // period's export — history must re-export identically. Refunds come from the
+  // order_refunds ledger, one row per completed refund (partials included).
+  const [paymentRows, refundRows] = await Promise.all([
+    db()
+      .select()
+      .from(orders)
+      .where(and(
+        location,
+        ne(orders.status, "pending_payment"),
+        isNotNull(orders.paidAt),
+        gte(orders.paidAt, start),
+        lt(orders.paidAt, end),
+      )),
+    db()
+      .select({ refund: orderRefunds, order: orders })
+      .from(orderRefunds)
+      .innerJoin(orders, eq(orderRefunds.orderId, orders.id))
+      .where(and(
+        location,
+        eq(orderRefunds.status, "completed"),
+        isNotNull(orderRefunds.completedAt),
+        gte(orderRefunds.completedAt, start),
+        lt(orderRefunds.completedAt, end),
+      )),
+  ]);
+
+  const payments = paymentRows.map((order): AccountingTransaction | null => {
+    if (!order.paidAt) return null;
+    const timeZone = order.pickupLocationTimezone ?? defaultTimeZone;
+    const transactionDate = formatInTimeZone(order.paidAt, timeZone, "yyyy-MM-dd");
+    if (transactionDate < filter.from || transactionDate > filter.to) return null;
+    const reference = order.squarePaymentId ?? order.squareOrderId ?? order.id;
+    return {
+      transactionType: "payment",
+      transactionDate,
+      transactionId: `payment:${reference}`,
+      orderNumber: order.orderNumber,
+      squareOrderId: order.squareOrderId,
+      squarePaymentId: order.squarePaymentId,
+      squareRefundId: null,
+      locationId: order.squareLocationId,
+      locationName: order.pickupLocationName,
+      currency: order.currency,
+      netSalesCents: order.subtotalCents,
+      taxCents: order.taxCents,
+      tipCents: order.tipCents,
+      grossCents: order.totalCents + order.tipCents,
+      refundCents: 0,
+    };
+  });
+
+  const refunds = refundRows.map(({ refund, order }): AccountingTransaction | null => {
+    if (!refund.completedAt) return null;
+    const timeZone = order.pickupLocationTimezone ?? defaultTimeZone;
+    const transactionDate = formatInTimeZone(refund.completedAt, timeZone, "yyyy-MM-dd");
+    if (transactionDate < filter.from || transactionDate > filter.to) return null;
+    // A partial refund has no authoritative net/tax split, so it is prorated by
+    // the order's own ratio; a full refund reduces to the exact original figures.
+    const net = order.totalCents > 0
+      ? Math.round((order.subtotalCents * refund.amountCents) / order.totalCents)
+      : refund.amountCents;
+    const tax = refund.amountCents - net;
+    const reference = refund.squareRefundId ?? refund.id;
+    return {
+      transactionType: "refund",
+      transactionDate,
+      transactionId: `refund:${reference}`,
+      orderNumber: order.orderNumber,
+      squareOrderId: order.squareOrderId,
+      squarePaymentId: order.squarePaymentId,
+      squareRefundId: refund.squareRefundId,
+      locationId: order.squareLocationId,
+      locationName: order.pickupLocationName,
+      currency: refund.currency || order.currency,
+      netSalesCents: -net,
+      taxCents: -tax,
+      tipCents: 0,
+      grossCents: -refund.amountCents,
+      refundCents: refund.amountCents,
+    };
+  });
+
+  return [...payments, ...refunds]
     .filter((transaction): transaction is AccountingTransaction => transaction !== null)
     .sort((left, right) => left.transactionDate.localeCompare(right.transactionDate)
       || left.transactionId.localeCompare(right.transactionId));

@@ -2,7 +2,10 @@ import next from "eslint-config-next";
 
 const config = [
   {
-    ignores: [".next/**", "node_modules/**", "drizzle/**", "next-env.d.ts"],
+    /* spike/ and apps/ are standalone Expo projects with their own package.json,
+       tsconfig and lint rules. They are not part of the Next.js app and must
+       not be linted with its config. */
+    ignores: [".next/**", "node_modules/**", "drizzle/**", "next-env.d.ts", "spike/**", "apps/**"],
   },
   ...next,
   {

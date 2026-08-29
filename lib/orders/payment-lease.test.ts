@@ -262,6 +262,7 @@ describe("payment-bound reservation lifecycle", () => {
       {
         attemptKey: "payment-declined",
         sourceId: "source-declined",
+        tipCents: 0,
         paymentMarker: paymentAttemptMarker(ORDER_ID),
         checkoutExpiresAt,
       },
@@ -293,6 +294,7 @@ describe("payment-bound reservation lifecycle", () => {
       {
         attemptKey: "payment-declined",
         sourceId: "source-declined",
+        tipCents: 0,
         paymentMarker: paymentAttemptMarker(ORDER_ID),
         checkoutExpiresAt: new Date(Date.now() - 60_000),
       },

@@ -1,0 +1,102 @@
+# Lint, typecheck, and the vitest suite on every push/PR. The `integration`
+# job adds a real Postgres so the two concurrency suites (slot overbooking,
+# final-unit inventory race) stop being skipped — they are the only tests that
+# can catch a broken advisory lock.
+#
+# Do NOT set TZ anywhere here: vitest.config.ts pins the suite to
+# Pacific/Chatham on purpose (hostile timezone; see README "Testing").
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Actions occasionally drops a pull_request synchronize event and simply never
+  # runs for a pushed commit, which is indistinguishable at a glance from "not
+  # finished yet". This makes a re-run one click rather than a forced push.
+  workflow_dispatch:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      # Generates next-env.d.ts and the route/image type declarations that
+      # `tsc --noEmit` needs; locally `next dev`/`next build` produce them, but
+      # they are gitignored, so a bare CI checkout has none.
+      - run: npx next typegen
+      - run: npm run typecheck
+      - run: npm test
+
+      # The mobile apps mirror the web's colour tokens, because React Native
+      # cannot read CSS custom properties. Regenerate and fail on a diff: a
+      # change to @theme that forgets the apps would otherwise merge, and the
+      # palettes would drift silently — which is exactly what happened when the
+      # values were copied by hand.
+      - name: Mobile colour tokens are up to date
+        run: |
+          node scripts/generate-app-theme.mjs
+          git diff --exit-code -- apps/*/src/tokens.generated.ts
+
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # The integration suites import the real lib/db, so the full server env
+      # must parse. Values are dummies except the database.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      STORE_TIMEZONE: America/Toronto
+      STORE_CURRENCY: CAD
+      SQUARE_ACCESS_TOKEN: ci-dummy-token
+      SQUARE_WEBHOOK_SIGNATURE_KEY: ci-dummy-signature-key
+      SQUARE_WEBHOOK_NOTIFICATION_URL: https://example.com/api/webhooks/square
+      STAFF_DASHBOARD_PASSWORD: ci-dummy-password
+      NEXT_PUBLIC_SQUARE_APPLICATION_ID: ci-dummy-app-id
+      NEXT_PUBLIC_SQUARE_ENVIRONMENT: sandbox
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run db:migrate
+      - run: npm test
+
+  # Non-blocking until proven stable: `next build` with cacheComponents may
+  # exercise more code than the lazy env expects. Never run build:vercel here —
+  # it migrates the production database.
+  build:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      STORE_TIMEZONE: America/Toronto
+      STORE_CURRENCY: CAD
+      NEXT_PUBLIC_SQUARE_APPLICATION_ID: ci-dummy-app-id
+      NEXT_PUBLIC_SQUARE_ENVIRONMENT: sandbox
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build

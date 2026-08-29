@@ -39,6 +39,7 @@ vi.mock("@/lib/square/orders", () => ({
   createSquarePayment: vi.fn(),
 }));
 vi.mock("@/lib/notifications/dispatch", () => ({ notifyOrder: vi.fn() }));
+vi.mock("@/lib/settings/pause", () => ({ getPauseStateFresh: async () => null }));
 vi.mock("next/server", () => ({ after: vi.fn() }));
 
 import { createPendingOrder } from "./create";

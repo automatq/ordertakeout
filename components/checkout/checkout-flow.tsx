@@ -21,6 +21,7 @@ import {
   usePickupLocation,
 } from "@/lib/locations/store";
 import { checkoutLocationId } from "@/lib/locations/checkout";
+import { normalizePhoneE164 } from "@/lib/phone";
 import { getPickupLocations } from "@/app/actions/locations";
 import type { StoreLocation } from "@/lib/locations/types";
 import { resolveCart, type CartItem, type ResolvedCartLine } from "@/lib/catalog/cart";
@@ -35,6 +36,7 @@ import { SLOT_HOLD_TTL_MINUTES, STORE_INFO } from "@/lib/store";
 import { DemoPaymentForm } from "./demo-payment-form";
 import { PaymentForm } from "./payment-form";
 import { PickupPicker, type PickupSelection } from "./pickup-picker";
+import { TipSelector } from "./tip-selector";
 
 /**
  * The checkout flow: pickup selection, customer details, then payment.
@@ -94,17 +96,21 @@ const FIELDS = [
     inputMode: "tel" as const,
     hint: "In case we need to reach you about your pickup.",
     path: "customer.phone",
-    validate: (value: string) =>
-      value.trim().length >= 7 ? null : "Please enter a phone number we can reach you on.",
+    validate: (value: string) => {
+      const parsed = normalizePhoneE164(value);
+      return parsed.ok ? null : parsed.message;
+    },
   },
 ] as const;
 
 export function CheckoutFlow({
   products,
   squareApplicationId,
+  account,
 }: {
   products: CatalogProduct[];
   squareApplicationId: string;
+  account: { name: string; email: string; phone: string; points: number } | null;
 }) {
   const router = useRouter();
   const { items, ready, consume } = useCart();
@@ -118,8 +124,13 @@ export function CheckoutFlow({
   const [availabilityProblem, setAvailabilityProblem] = useState<string | null>(null);
   const [availabilityFor, setAvailabilityFor] = useState<string | null>(null);
   const [pickup, setPickup] = useState<PickupSelection | null>(null);
-  const [customer, setCustomer] = useState<Customer>({ name: "", email: "", phone: "" });
+  const [customer, setCustomer] = useState<Customer>(() => account
+    ? { name: account.name, email: account.email, phone: account.phone }
+    : { name: "", email: "", phone: "" });
+  const [redeemReward, setRedeemReward] = useState(false);
   const [note, setNote] = useState("");
+  const [smsOptIn, setSmsOptIn] = useState(false);
+  const [tipCents, setTipCents] = useState(0);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [reserved, setReserved] = useState<{
@@ -145,7 +156,9 @@ export function CheckoutFlow({
   const paymentTokenRef = useRef<string | null>(null);
 
   const resolved = resolveCart(items, products);
-  const subtotalCents = reserved?.subtotalCents ?? resolved.subtotalCents;
+  const rewardEligible = Boolean(account && account.points >= 100 && resolved.ok && resolved.subtotalCents >= 1_000);
+  const rewardDiscountCents = !reserved && redeemReward && rewardEligible ? 1_000 : 0;
+  const subtotalCents = reserved?.subtotalCents ?? Math.max(0, resolved.subtotalCents - rewardDiscountCents);
   const currency = reserved?.currency ?? resolved.currency;
   const effectiveLocationId = checkoutLocationId(locationId, reserved);
   const availabilityKey = locationId
@@ -176,7 +189,7 @@ export function CheckoutFlow({
           });
         } else {
           setDays([]);
-          setAvailabilityProblem(describeProblem(result.problem.kind));
+          setAvailabilityProblem(describeProblem(result.problem));
           setAvailabilityFor(availabilityKey);
           setPickup(null);
         }
@@ -222,8 +235,8 @@ export function CheckoutFlow({
       <EmptyState
         icon={<BagIcon className="h-6 w-6" />}
         title="Your order is empty"
-        description="Add a party tray and we'll take it from there."
-        action={{ label: "Browse party trays", href: "/#trays" }}
+        description="Add something from the menu and we'll take it from there."
+        action={{ label: "Browse the menu", href: "/#order" }}
       />
     );
   }
@@ -285,6 +298,8 @@ export function CheckoutFlow({
           customer,
           note: note || undefined,
           expectedTotalCents: subtotalCents,
+          redeemReward: rewardDiscountCents > 0,
+          smsOptIn,
         });
 
         if (result.ok) {
@@ -331,7 +346,7 @@ export function CheckoutFlow({
     paymentTokenRef.current = token;
     let result;
     try {
-      result = await completeCheckout({ orderId: reservation.orderId, sourceId: token });
+      result = await completeCheckout({ orderId: reservation.orderId, sourceId: token, tipCents });
     } catch {
       // A lost browser response cannot tell us whether Square received the
       // payment. Keep both reservations protected until an exact retry settles
@@ -560,6 +575,20 @@ export function CheckoutFlow({
                   />
                 ))}
 
+                {account ? (
+                  <div className="border-secondary/20 bg-secondary-soft rounded-[1.25rem] border p-4">
+                    <p className="text-secondary text-xs font-semibold tracking-[0.14em] uppercase">Rewards</p>
+                    {rewardEligible ? (
+                      <label className="mt-2 flex cursor-pointer items-start gap-3 text-sm">
+                        <input type="checkbox" checked={redeemReward} onChange={(event) => setRedeemReward(event.target.checked)} className="mt-0.5 size-4 accent-current" />
+                        <span><strong className="text-ink">Use 100 points for $10 off</strong><br /><span className="text-ink-muted">You have {account.points} points. Points are added only after verified pickup.</span></span>
+                      </label>
+                    ) : (
+                      <p className="text-ink-muted mt-1 text-sm">You have {account.points} points. Earn one point per dollar after verified pickup; 100 points unlock $10 off.</p>
+                    )}
+                  </div>
+                ) : null}
+
                 <label htmlFor="checkout-note" className="flex flex-col gap-1.5">
                   <span className="text-ink-subtle text-sm font-medium">
                     Notes for the store (optional)
@@ -570,9 +599,25 @@ export function CheckoutFlow({
                     onChange={(event) => setNote(event.target.value)}
                     rows={3}
                     maxLength={500}
-                    placeholder="Allergies, a name for the tray, anything we should know."
+                    placeholder="Allergies, a name for the order, anything we should know."
                     className="input"
                   />
+                </label>
+
+                <label className="text-ink flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={smsOptIn}
+                    onChange={(event) => setSmsOptIn(event.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    Text me when my order is ready.
+                    <br />
+                    <span className="text-ink-muted">
+                      Order updates only, never marketing. Message and data rates may apply.
+                    </span>
+                  </span>
                 </label>
               </section>
 
@@ -685,9 +730,17 @@ export function CheckoutFlow({
                 </div>
               ) : null}
 
+              <TipSelector
+                subtotalCents={reserved.subtotalCents}
+                tipCents={tipCents}
+                currency={currency}
+                disabled={paymentBusy || paymentProtected}
+                onChange={setTipCents}
+              />
+
               {isDemoModeClient() ? (
                 <DemoPaymentForm
-                  amountLabel={formatMoney(reserved.totalCents, currency)}
+                  amountLabel={formatMoney(reserved.totalCents + tipCents, currency)}
                   disabled={paymentProtected}
                   onProcessingChange={setPaymentBusy}
                   onToken={handleToken}
@@ -696,7 +749,11 @@ export function CheckoutFlow({
                 <PaymentForm
                   applicationId={squareApplicationId}
                   locationId={reserved.locationId}
-                  amountLabel={formatMoney(reserved.totalCents, currency)}
+                  amountLabel={formatMoney(reserved.totalCents + tipCents, currency)}
+                  totalCents={reserved.totalCents + tipCents}
+                  currency={currency}
+                  countryCode={location?.country ?? null}
+                  orderNumber={reserved.orderNumber}
                   disabled={paymentProtected}
                   onProcessingChange={setPaymentBusy}
                   onToken={handleToken}
@@ -710,10 +767,12 @@ export function CheckoutFlow({
           lines={reserved?.lines ?? (resolved.ok ? resolved.lines : [])}
           subtotalCents={subtotalCents}
           taxCents={reserved?.taxCents ?? null}
-          totalCents={reserved?.totalCents ?? subtotalCents}
+          totalCents={(reserved?.totalCents ?? subtotalCents) + (reserved ? tipCents : 0)}
+          tipCents={reserved ? tipCents : 0}
           currency={currency}
           pickup={pickup}
           location={location}
+          rewardDiscountCents={rewardDiscountCents}
         />
       </div>
     </div>
@@ -868,17 +927,21 @@ function OrderSummary({
   subtotalCents,
   taxCents,
   totalCents,
+  tipCents,
   currency,
   pickup,
   location,
+  rewardDiscountCents,
 }: {
   lines: ResolvedCartLine[];
   subtotalCents: number;
   taxCents: number | null;
   totalCents: number;
+  tipCents: number;
   currency: string;
   pickup: PickupSelection | null;
   location: StoreLocation | null;
+  rewardDiscountCents: number;
 }) {
   return (
     <aside
@@ -931,15 +994,22 @@ function OrderSummary({
 
         <div className="flex flex-col gap-2">
           <div className="text-ink-muted flex items-baseline justify-between text-sm">
-            <span>Subtotal</span>
+            <span>{rewardDiscountCents ? "Subtotal after rewards" : "Subtotal"}</span>
             <span className="tabular-nums">{formatMoney(subtotalCents, currency)}</span>
           </div>
+          {rewardDiscountCents ? <p className="text-brand text-xs">100 reward points applied — $10 off</p> : null}
           <div className="text-ink-muted flex items-baseline justify-between text-sm">
             <span>Taxes</span>
             <span className="tabular-nums">
               {taxCents === null ? "Calculated at payment" : formatMoney(taxCents, currency)}
             </span>
           </div>
+          {tipCents > 0 ? (
+            <div className="text-ink-muted flex items-baseline justify-between text-sm">
+              <span>Tip</span>
+              <span className="tabular-nums">{formatMoney(tipCents, currency)}</span>
+            </div>
+          ) : null}
           <div className="bg-accent-soft text-ink mt-1 flex items-baseline justify-between rounded-[1.25rem] px-4 py-3 font-semibold">
             <span>Total</span>
             <span className="font-display text-3xl font-normal">
@@ -1036,19 +1106,29 @@ function CheckoutSkeleton() {
   );
 }
 
-function describeProblem(kind: string): string {
-  switch (kind) {
+function pausedMessage(note?: string | null): string {
+  return note
+    ? `Online ordering is paused right now: ${note}`
+    : "Online ordering is paused right now. Please try again later or call the store.";
+}
+
+function describeProblem(problem: { kind: string; note?: string | null }): string {
+  switch (problem.kind) {
     case "no_common_pickup_time":
       return "The items in your order have different pickup times. Please place them as separate orders.";
     case "catalog_unavailable":
       return "We can't load pickup times right now. Please try again shortly or call the store.";
+    case "ordering_paused":
+      return pausedMessage(problem.note);
     default:
       return "We couldn't work out pickup times for this order. Please call the store.";
   }
 }
 
-function describeFailure(failure: { kind: string }): string {
+function describeFailure(failure: { kind: string; note?: string | null }): string {
   switch (failure.kind) {
+    case "ordering_paused":
+      return pausedMessage(failure.note);
     case "slot_rejected":
       return "That pickup time was just taken. Please choose another.";
     case "price_changed":
@@ -1061,6 +1141,8 @@ function describeFailure(failure: { kind: string }): string {
       return "We can't reach our menu right now. Please try again shortly or call the store.";
     case "rate_limited":
       return "Too many checkout attempts were started. Wait a few minutes, then try again.";
+    case "reward_unavailable":
+      return "That reward is no longer available. Your points were not used; refresh your account and try again.";
     default:
       return "We couldn't start checkout. Please try again.";
   }

@@ -7,8 +7,11 @@ import { and, eq, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { resolveCart, toSchedulingCart, type CartItem } from "@/lib/catalog/cart";
 import { getOrderableProducts } from "@/lib/catalog/server";
 import { db } from "@/lib/db";
-import { orderItems, orders, slotHolds } from "@/lib/db/schema";
+import { customerAccounts, loyaltyEntries, orderItems, orders, slotHolds } from "@/lib/db/schema";
+import { REWARD_DISCOUNT_CENTS, REWARD_POINTS } from "@/lib/accounts/loyalty";
+import { reportError } from "@/lib/monitoring/report";
 import { reserveSlotWithin } from "@/lib/scheduling/queries";
+import { getPauseStateFresh } from "@/lib/settings/pause";
 import { slotKey, type SelectionRejection } from "@/lib/scheduling/availability";
 import { normalizeTime, type StoreDate, type StoreTime } from "@/lib/scheduling/time";
 import { notifyOrder } from "@/lib/notifications/dispatch";
@@ -99,7 +102,9 @@ export type CreateOrderFailure =
       kind: "price_changed";
       shownCents: number;
       actualCents: number;
-    };
+    }
+  | { kind: "reward_unavailable" }
+  | { kind: "ordering_paused" };
 
 export type CreateOrderResult =
   | {
@@ -122,8 +127,13 @@ export async function createPendingOrder(input: {
   pickup: { date: StoreDate; time: StoreTime };
   customer: CustomerDetails;
   note?: string;
+  /** Consent to transactional texts; recorded on the order with its timestamp. */
+  smsOptIn?: boolean;
   /** Total shown to the customer, in cents — compared against Square's own. */
   expectedTotalCents: number;
+  /** Set only when this signed-in account has chosen an available reward. */
+  accountId?: string;
+  redeemReward?: boolean;
 }): Promise<CreateOrderResult> {
   if (input.cart.length === 0) {
     return { ok: false, failure: { kind: "empty_cart" } };
@@ -143,11 +153,17 @@ export async function createPendingOrder(input: {
   const location = await getStoreLocation(input.locationId);
   if (!location) return { ok: false, failure: { kind: "catalog_unavailable" } };
 
+  // Belt-and-braces: the server action already refused, but this function is
+  // the last gate before a slot hold is taken.
+  if (await getPauseStateFresh(location.id)) {
+    return { ok: false, failure: { kind: "ordering_paused" } };
+  }
+
   // Hobby deployments can run the housekeeping cron only once per day. Clear
   // one stale payment-bound reservation for this location before it can reject
   // the next real customer; the cron remains the no-traffic backstop.
   await recoverStalePaymentAttempts({ limit: 1, locationId: location.id }).catch((cause) => {
-    console.error(`[checkout] stale payment recovery failed for ${location.id}:`, cause);
+    reportError("checkout", "stale payment recovery failed", cause, { locationId: location.id });
   });
 
   const rawInventory = await getFreshRawInventoryQuantities(
@@ -175,6 +191,10 @@ export async function createPendingOrder(input: {
 
   const pickup = { date: input.pickup.date, time: normalizeTime(input.pickup.time) };
   const schedulingCart = toSchedulingCart(resolved.lines);
+  const rewardDiscountCents = input.redeemReward ? REWARD_DISCOUNT_CENTS : 0;
+  if (rewardDiscountCents && (!input.accountId || resolved.subtotalCents < rewardDiscountCents)) {
+    return { ok: false, failure: { kind: "reward_unavailable" } };
+  }
   let orderNumber: string | undefined;
   let created: { orderId: string; expiresAt: Date } | undefined;
 
@@ -186,6 +206,15 @@ export async function createPendingOrder(input: {
 
     try {
       created = await db().transaction(async (tx) => {
+        if (input.redeemReward && input.accountId) {
+          // Serialize redemptions for this account. A balance check outside this
+          // lock would let two tabs spend the same 100 points.
+          await tx.execute(sql`select id from ${customerAccounts} where ${customerAccounts.id} = ${input.accountId} for update`);
+          const [balance] = await tx.select({
+            points: sql<number>`coalesce(sum(${loyaltyEntries.points}), 0)`,
+          }).from(loyaltyEntries).where(eq(loyaltyEntries.customerAccountId, input.accountId));
+          if (Number(balance?.points ?? 0) < REWARD_POINTS) throw new RewardUnavailableError();
+        }
         const [order] = await tx
           .insert(orders)
           .values({
@@ -193,6 +222,9 @@ export async function createPendingOrder(input: {
             customerName: input.customer.name,
             customerEmail: input.customer.email,
             customerPhone: input.customer.phone,
+            customerSmsOptIn: input.smsOptIn === true,
+            customerSmsConsentAt: input.smsOptIn === true ? new Date() : null,
+            customerAccountId: input.accountId ?? null,
             squareLocationId: location.id,
             ...{
               pickupLocationName: location.name,
@@ -249,11 +281,23 @@ export async function createPendingOrder(input: {
           throw new InventoryRejectedError(inventoryClaim.shortages);
         }
 
+        if (input.redeemReward && input.accountId) {
+          await tx.insert(loyaltyEntries).values({
+            customerAccountId: input.accountId,
+            orderId: order.id,
+            kind: "redeemed",
+            points: -REWARD_POINTS,
+          });
+        }
+
         return { orderId: order.id, expiresAt: claim.expiresAt };
       });
       orderNumber = candidateOrderNumber;
       break;
     } catch (cause) {
+      if (cause instanceof RewardUnavailableError) {
+        return { ok: false, failure: { kind: "reward_unavailable" } };
+      }
       if (cause instanceof SlotRejectedError) {
         return { ok: false, failure: { kind: "slot_rejected", rejection: cause.rejection } };
       }
@@ -293,12 +337,13 @@ export async function createPendingOrder(input: {
       customer: input.customer,
       note: input.note ?? null,
       timeZone: location.timezone ?? undefined,
+      rewardDiscountCents,
     });
   } catch (cause) {
     // A failed Square/network call must not leave a live hold consuming this
     // store's capacity for the rest of its TTL.
     await abandonOrder(created.orderId).catch((cleanupCause) => {
-      console.error("[checkout] could not release a failed Square draft hold:", cleanupCause);
+      reportError("checkout", "could not release a failed Square draft hold", cleanupCause);
     });
     throw cause;
   }
@@ -335,7 +380,7 @@ export async function createPendingOrder(input: {
     if (!linked.length) throw new Error("Pending order changed before its Square draft was linked");
   } catch (cause) {
     await abandonOrder(created.orderId).catch((cleanupCause) => {
-      console.error("[checkout] could not release an unlinked Square draft hold:", cleanupCause);
+      reportError("checkout", "could not release an unlinked Square draft hold", cleanupCause);
     });
     throw cause;
   }
@@ -367,6 +412,13 @@ class InventoryRejectedError extends Error {
   }
 }
 
+class RewardUnavailableError extends Error {
+  constructor() {
+    super("Reward is no longer available");
+    this.name = "RewardUnavailableError";
+  }
+}
+
 export type PayResult =
   | { ok: true; orderNumber: string; accessToken: string }
   | {
@@ -384,6 +436,8 @@ type PaymentLine = { variationId: string; quantity: number };
 type PaymentAttemptClaim = {
   attemptKey: string;
   sourceId: string;
+  /** Pinned with the key: retries of the same attempt replay the same tip. */
+  tipCents: number;
   paymentMarker: string;
   checkoutExpiresAt: Date;
 };
@@ -403,6 +457,7 @@ export async function claimPaymentAttempt(
   order: typeof orders.$inferSelect,
   items: readonly PaymentLine[],
   sourceId: string,
+  requestedTipCents = 0,
 ): Promise<PaymentAttemptClaim | null> {
   const locationId = order.squareLocationId;
   if (!locationId) throw new PaymentReservationExpiredError();
@@ -416,6 +471,12 @@ export async function claimPaymentAttempt(
   const attemptKey = order.paymentAttemptKey
     ?? (legacyAttempt ? order.id : createPaymentAttemptKey());
   const attemptSourceId = order.paymentAttemptSourceId ?? (legacyAttempt ? null : sourceId);
+  // A fresh claim records the requested tip; a retry of an existing attempt
+  // must replay the tip that attempt was created with, whatever the client
+  // sends now — key and amount travel together.
+  const attemptTipCents = order.paymentAttemptKey || legacyAttempt
+    ? order.tipCents
+    : Math.max(0, Math.floor(requestedTipCents));
   // The pre-migration code did not persist Square's opaque source token. It is
   // unsafe to reuse its old key with a newly tokenized source. The webhook or
   // stale-attempt cancellation path must reconcile that legacy attempt.
@@ -430,6 +491,7 @@ export async function claimPaymentAttempt(
           paymentAttemptKey: attemptKey,
           paymentAttemptSourceId: attemptSourceId,
           paymentAttemptStartedAt: now,
+          tipCents: attemptTipCents,
           updatedAt: now,
         })
         .where(and(
@@ -512,6 +574,7 @@ export async function claimPaymentAttempt(
       return {
         attemptKey,
         sourceId: attemptSourceId,
+        tipCents: attemptTipCents,
         paymentMarker,
         checkoutExpiresAt,
       };
@@ -537,6 +600,9 @@ export async function restoreAfterDefinitivePaymentFailure(
         paymentAttemptKey: null,
         paymentAttemptSourceId: null,
         paymentAttemptStartedAt: null,
+        // A definitively failed attempt releases its pinned tip; the customer
+        // may pick a different one on their next try.
+        tipCents: 0,
         updatedAt: now,
       })
       .where(and(
@@ -586,7 +652,11 @@ export async function restoreAfterDefinitivePaymentFailure(
  *     reconciles the order independently. The payment id is recoverable from
  *     Square by the same idempotency key, so nothing is lost.
  */
-export async function payForOrder(orderId: string, sourceId: string): Promise<PayResult> {
+export async function payForOrder(
+  orderId: string,
+  sourceId: string,
+  tipCents = 0,
+): Promise<PayResult> {
   const [order] = await db().select().from(orders).where(eq(orders.id, orderId)).limit(1);
 
   if (!order) {
@@ -643,7 +713,11 @@ export async function payForOrder(orderId: string, sourceId: string): Promise<Pa
     }
   }
 
-  const claim = await claimPaymentAttempt(order, items, sourceId);
+  if (!Number.isInteger(tipCents) || tipCents < 0 || tipCents > order.totalCents) {
+    return { ok: false, code: "INVALID_TIP", message: "That tip amount isn't valid. Please review it and try again." };
+  }
+
+  const claim = await claimPaymentAttempt(order, items, sourceId, tipCents);
   if (!claim) {
     const [fresh] = await db()
       .select({
@@ -684,6 +758,7 @@ export async function payForOrder(orderId: string, sourceId: string): Promise<Pa
     orderId,
     squareOrderId: order.squareOrderId,
     amountCents: order.totalCents,
+    tipCents: claim.tipCents,
     currency: order.currency,
     sourceId: claim.sourceId,
     buyerEmail: order.customerEmail,
@@ -745,7 +820,7 @@ export async function payForOrder(orderId: string, sourceId: string): Promise<Pa
       return rows;
     });
   } catch (cause) {
-    console.error("[checkout] payment completed but local confirmation failed:", cause);
+    reportError("checkout", "payment completed but local confirmation failed", cause);
     return {
       ok: false,
       code: "PAYMENT_RECONCILING",
@@ -836,7 +911,9 @@ export async function recoverStalePaymentAttempts(
   for (const attempt of stale) {
     const attemptKey = attempt.paymentAttemptKey;
     if (!attemptKey || attempt.squarePaymentId !== paymentAttemptMarker(attempt.id)) {
-      console.error(`[maintenance] inconsistent payment attempt for ${attempt.orderNumber}`);
+      reportError("maintenance", "inconsistent payment attempt", undefined, {
+        orderNumber: attempt.orderNumber,
+      });
       unresolved += 1;
       continue;
     }
@@ -865,9 +942,9 @@ export async function recoverStalePaymentAttempts(
 
       const cancellation = await cancelSquarePaymentAttempt(attemptKey);
       if (!cancellation.ok) {
-        console.error(
-          `[maintenance] payment attempt ${attempt.orderNumber} remains unresolved: ${cancellation.code}`,
-        );
+        reportError("maintenance", `payment attempt remains unresolved: ${cancellation.code}`, undefined, {
+          orderNumber: attempt.orderNumber,
+        });
         unresolved += 1;
         continue;
       }
@@ -889,7 +966,9 @@ export async function recoverStalePaymentAttempts(
         else unresolved += 1;
       }
     } catch (cause) {
-      console.error(`[maintenance] payment recovery failed for ${attempt.orderNumber}:`, cause);
+      reportError("maintenance", "payment recovery failed", cause, {
+        orderNumber: attempt.orderNumber,
+      });
       unresolved += 1;
     }
   }

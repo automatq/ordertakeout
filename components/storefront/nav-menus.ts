@@ -48,13 +48,13 @@ const orderMenu: MegaMenu = {
   id: "order",
   label: "Order",
   eyebrow: "Section 01 / Pre-order",
-  intro: "Party trays baked to order. Choose a pickup time and collect them fresh in store.",
+  intro: "Baked to order. Choose a pickup time and collect it fresh in store.",
   items: [
     {
       num: "01",
-      title: "Party trays",
-      desc: "Order-ahead trays for pickup. Pick your time, we bake it fresh.",
-      href: "/#trays",
+      title: "Order ahead",
+      desc: "Pre-order for pickup. Pick your time, we bake it fresh.",
+      href: "/#order",
     },
     {
       num: "02",
@@ -71,10 +71,10 @@ const orderMenu: MegaMenu = {
   ],
   feature: {
     eyebrow: "Get started",
-    title: "Party trays, ready when you are.",
+    title: "Order ahead, pick up fresh.",
     body: `Order ahead and pick up in store. Open ${STORE_HOURS.opens}–${STORE_HOURS.closes}, every day.`,
     ctaLabel: "Start your order",
-    ctaHref: "/#trays",
+    ctaHref: "/#order",
   },
 };
 
@@ -99,7 +99,7 @@ const visitMenu: MegaMenu = {
     {
       num: "03",
       title: "Call the store",
-      desc: "Questions about a tray or a large order? Talk to us directly.",
+      desc: "Questions about an order, large or small? Talk to us directly.",
       href: STORE_INFO.phoneHref,
     },
   ],
@@ -115,4 +115,7 @@ const visitMenu: MegaMenu = {
 export const megaMenus: MegaMenu[] = [orderMenu, visitMenu];
 
 /** Plain links shown to the right of the megamenu triggers. */
-export const plainNavLinks: PlainNavLink[] = [{ href: "/orders", label: "Track order" }];
+export const plainNavLinks: PlainNavLink[] = [
+  { href: "/menu", label: "Menu" },
+  { href: "/orders", label: "Track order" },
+];

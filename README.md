@@ -71,12 +71,36 @@ npm run dev
 - **`SQUARE_WEBHOOK_NOTIFICATION_URL`** must match the subscription URL in the Square
   console character for character — it's part of the signed payload, so even a trailing
   slash mismatch will fail verification.
-- **`CRON_SECRET`** protects the maintenance endpoint that expires holds, retries provider
-  failures, and applies the configured customer-data retention policy. `vercel.json` runs it
-  once daily at 08:17 UTC, which is compatible with Vercel Hobby cron limits.
+- **`CRON_SECRET`** protects the maintenance endpoint. Maintenance runs on two schedules:
+  `vercel.json` runs the full pass (including pruning and the customer-data retention
+  policy) once daily at 08:17 UTC — the most a Vercel Hobby cron allows — and the
+  `maintenance-fast` GitHub Actions workflow calls `?scope=fast` every 5 minutes for the
+  jobs that can't wait a day: notification retries, stale payment recovery, Square
+  sync retries, and morning-of pickup reminders (08:00–10:59 in each pickup location's
+  own timezone — never keyed off the UTC daily cron, which fires at 03:17 Toronto time). Configure the workflow's `MAINTENANCE_URL` variable and `CRON_SECRET`
+  secret in the GitHub repo settings; without them the fast schedule is skipped and
+  retries degrade to daily.
 
 Notification channels are all optional; an unset channel is skipped by the dispatcher, so
 the store can enable one later without a code change.
+
+### Digital wallets (Apple Pay, Google Pay, Cash App Pay)
+
+Google Pay and Cash App Pay work as soon as the Square Web Payments SDK loads — no extra
+setup. Apple Pay needs two one-time steps per domain (repeat for sandbox and production
+domains separately):
+
+1. **Domain verification file.** Download the merchant-domain verification file from the
+   Square Developer Dashboard (Web Payments SDK → Apple Pay) and serve it at
+   `public/.well-known/apple-developer-merchantid-domain-association`. The file is signed
+   by Square — it cannot be written by hand, and each Square account's file is different.
+2. **Register the domain** with a one-off call: `squareClient().applePay.registerDomain({
+   domainName: "order.example.com" })` (Node REPL or a scratch script; scheme-less
+   hostname). Square verifies the hosted file during this call, so deploy step 1 first.
+
+Until both are done the Apple Pay button simply doesn't render — checkout falls back to
+Google Pay / Cash App Pay / card with no error. Wallets never appear in the demo
+(`npm run demo`) because the demo payment form doesn't load the Square SDK at all.
 
 ### Accounting handoff
 
@@ -202,8 +226,12 @@ Worth knowing before changing anything in `lib/orders/create.ts`:
 - **Square prices the order, not us.** Line items carry catalog ids and no amounts. Square's
   computed total is compared against what the customer was shown, and a mismatch aborts
   checkout rather than charging a different number — even a lower one.
-- **The payment idempotency key is the order id.** Stable per order, so a double-clicked pay
-  button or a network retry cannot double-charge. Never regenerate it on retry.
+- **Payments run under a per-attempt lease, not a per-order key.** Each attempt persists its
+  idempotency key, source token, and start time on the order (`payment_attempt_*`, migration
+  0007). A double-clicked pay button or a network retry replays the *same* attempt — an
+  ambiguous outcome never rotates the key — while a definitively failed attempt clears the
+  lease so the customer can try a new card. Stale leases are recovered after 15 minutes by
+  checkout traffic and the maintenance cron.
 - **The slot is reserved before the card form appears**, and the reservation expires on its
   own — an abandoned checkout frees the slot with no compensating action.
 
@@ -250,17 +278,22 @@ Worth knowing before changing anything in `lib/orders/create.ts`:
 - **Phase 8 — Admin:** done. `/staff/settings` for per-product ordering rules, closure
   dates, per-slot caps and an immediate catalog re-sync.
 
-**All build phases are code complete.** What remains before launch is verification against
-a real database and Square Sandbox — see *Not yet covered* below.
+**All build phases are code complete.** What remains before launch is finishing the
+sandbox end-to-end verification — see [`docs/RELEASE-GATE-A.md`](docs/RELEASE-GATE-A.md)
+for the executed scenarios, the evidence, and the remaining blockers.
 
-182 tests pass, with 5 database integration tests intentionally skipped unless
-`TEST_DATABASE_URL` is set. See the full build phases in [`docs/SCOPE.md`](docs/SCOPE.md).
+470 tests pass, with the 8 database integration tests skipped unless
+`TEST_DATABASE_URL` is set (they run in CI against a Postgres service container, and have
+been verified against the staging Neon database through its pooler). See the full build
+phases in [`docs/SCOPE.md`](docs/SCOPE.md).
 
 ## Admin
 
 `/staff/settings`. Staff can set each product's lead time, cutoff, pickup times and daily
-tray cap; add closure dates; cap or close individual pickup slots; and pull item names and
-prices from Square on demand.
+tray cap; pick its allergens and dietary notes from a fixed vocabulary
+(`lib/catalog/dietary.ts` — chips, never free text, because it's a health-claim surface);
+add closure dates; cap or close individual pickup slots; and pull item names and prices
+from Square on demand.
 
 - **Products Square knows about but we have no rules for are listed first**, flagged as not
   yet orderable. They can't be sold without a cutoff — that would mean promising a pickup
@@ -282,8 +315,10 @@ retry units, so a partial Resend failure cannot duplicate the recipient that suc
 Every attempt is written to `notification_log`, so *"the store says they never got the
 text"* is an answerable question rather than a guess.
 
-Fired from three places: checkout (`order_paid`), staff status changes (`order_ready`,
-`order_canceled`), and webhook reconciliation. Delivery runs inside Next's `after()`, so
+Fired from four places: checkout (`order_paid`), staff status changes (`order_ready`,
+`order_canceled`), webhook reconciliation, and the fast cron (`order_reminder`, the
+morning-of pickup nudge — customer channels only, claimed per pickup date so the
+three-hour window can refire without duplicates). Delivery runs inside Next's `after()`, so
 nobody waits on Resend or Twilio to see their confirmation page, and a notification failure
 can never fail a payment that has already gone through.
 
@@ -298,6 +333,29 @@ can never fail a payment that has already gone through.
 - **The store's SMS is capped to one 160-character segment**, dropping items with a
   "+N more" suffix. A message that silently spills into three segments triples the bill on
   every order.
+- **Customer texts keep the link and shorten the words.** A full tracking URL is ~95 of the
+  160 characters, so appending it "if it fits" meant it never did — every text went out
+  without the one thing that opens the pickup pass. Texts now carry a short link
+  (`/o/<code>`, ~47 characters) and trim the sentence around it; the URL itself is never
+  truncated, because half a link looks clickable and isn't.
+
+## Customer sign-in
+
+Two passwordless methods, both single-use and rate limited per IP and per identifier.
+
+- **Text me a code** (default). Six digits, ten-minute expiry, killed after five wrong
+  guesses — six digits is a million possibilities, so bounding the guesses is what makes it
+  safe, not the expiry. Preferred on phones because a magic link tapped inside a mail app
+  often opens in a different browser than the customer started in, landing the session
+  where they aren't; a code typed into the open tab can't miss, and `autocomplete=
+  "one-time-code"` makes it a one-tap autofill.
+- **Email me a link.** Fifteen-minute expiry, consumed by a button POST so inbox scanners
+  can't burn it with a GET. Email stays the durable identity and the fallback.
+
+`customer_accounts.phone` is deliberately **not** unique — a household can register two
+accounts against one number. Phone sign-in refuses an ambiguous number rather than guessing
+which member is holding the phone; those customers use email, which is always on screen
+beside it. Neither method reveals whether an account exists.
 
 ## Staff dashboard
 
@@ -352,10 +410,23 @@ Three things to know before touching this code:
 character — the URL is part of the signed payload, so a trailing-slash difference fails
 verification. There's a test for exactly that.
 
-### Known tradeoff
+## SEO, legal pages and PWA
 
-`/products/[slug]` uses partial prerendering, so the shell streams before the product
-lookup resolves. An unknown slug therefore returns **HTTP 200 with 404 content** (a
-soft-404). Fine for customers, not ideal for search engines. If that matters, either add
-`generateStaticParams` for the real slugs or set `export const instant = false` on the
-route to make it blocking and return a true 404 — at the cost of the instant shell.
+`/privacy`, `/terms` and `/refund-policy` are static pages whose copy states what the code
+actually does (the cancellation cutoff, tip-inclusive refunds, the retention anonymizer,
+SMS consent). If behavior changes, the policy page changes in the same PR. `app/robots.ts`
+and `app/sitemap.ts` only expose the site when `NEXT_PUBLIC_SQUARE_ENVIRONMENT=production`
+— a sandbox deployment is a staging site taking fake payments and must never be indexed.
+`app/manifest.ts` makes the storefront installable; `public/harina/icon-512.png` is
+upscaled from the 256px badge and should be replaced with designer artwork before a
+marketing push.
+
+`/products/[slug]` resolves the slug in the page body — `notFound()` before any JSX. Under
+Cache Components every dynamic route streams its static shell before the page resolves, so
+the HTTP status is already `200` by the time an unknown slug is detected; what Next does
+instead is inject `<meta name="robots" content="noindex">` into the streamed 404 content,
+which its docs (and Google's) say prevents indexing. Verified with `curl` against
+`next start`. A genuine `404` status would need a slug check in a root `proxy.ts` — a
+per-request catalog lookup at the routing layer, not worth it for this catalog. Known
+slugs stay fast because the catalog lookup is `"use cache"`; `loading.tsx` covers cold
+navigations.

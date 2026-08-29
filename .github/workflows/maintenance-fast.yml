@@ -1,0 +1,38 @@
+# Fast-cadence maintenance for a Vercel Hobby deployment (Hobby crons are
+# daily-only). Calls the same authenticated endpoint the daily Vercel cron
+# uses, with ?scope=fast: notification retries, stale payment recovery,
+# Square-sync retries, hold sweeps. Skipping a run is harmless — every job is
+# idempotent and capacity never depends on a sweep — so GitHub's schedule
+# jitter is acceptable.
+#
+# Repo configuration required:
+#   Settings -> Secrets and variables -> Actions
+#     variable MAINTENANCE_URL  e.g. https://your-app.vercel.app/api/cron/maintenance
+#     secret   CRON_SECRET      must match the Vercel env var of the same name
+#
+# Note: GitHub pauses scheduled workflows after ~60 days without repo activity;
+# any push re-enables them.
+name: maintenance-fast
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: maintenance-fast
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    if: vars.MAINTENANCE_URL != ''
+    steps:
+      - name: Run fast maintenance
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          MAINTENANCE_URL: ${{ vars.MAINTENANCE_URL }}
+        run: |
+          curl --fail --silent --show-error --max-time 60 \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${MAINTENANCE_URL}?scope=fast"

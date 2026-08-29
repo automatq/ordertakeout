@@ -1,8 +1,8 @@
 import Link from "next/link";
 
-import { RANGES, type SalesAnalytics } from "@/lib/orders/analytics";
+import { MARKETPLACE_FEE_RATE, RANGES, type SalesAnalytics } from "@/lib/orders/analytics";
 import { salesAnalyticsCsv } from "@/lib/orders/analytics-export";
-import { formatStoreDate } from "@/lib/scheduling/time";
+import { formatPickupTime, formatStoreDate } from "@/lib/scheduling/time";
 import { formatMoney } from "@/lib/square/money";
 import type { StoreLocation } from "@/lib/locations/types";
 
@@ -48,7 +48,7 @@ export function SalesAnalytics({ data, locations, locationId }: { data: SalesAna
         {/* Filters in one row above the charts. */}
         <nav aria-label="Date range" className="flex gap-2">
           {RANGES.map((range) => {
-            const isActive = range.days === data.days;
+            const isActive = range.days === data.preset;
             return (
               <Link
                 key={range.days}
@@ -68,7 +68,17 @@ export function SalesAnalytics({ data, locations, locationId }: { data: SalesAna
       </div>
 
       <form method="get" className="flex flex-wrap items-end gap-3">
-        <input type="hidden" name="range" value={data.days} />
+        {/* Explicit dates win over the preset (see parseAnalyticsWindow); the
+            hidden range keeps preset links working when the dates are cleared. */}
+        {data.preset ? <input type="hidden" name="range" value={data.preset} /> : null}
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-ink-subtle font-medium">From</span>
+          <input type="date" name="from" defaultValue={data.preset ? "" : data.from} className="input" />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-ink-subtle font-medium">To</span>
+          <input type="date" name="to" defaultValue={data.preset ? "" : data.to} className="input" />
+        </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-ink-subtle font-medium">Location</span>
           <select name="location" defaultValue={locationId ?? ""} className="input">
@@ -122,14 +132,121 @@ export function SalesAnalytics({ data, locations, locationId }: { data: SalesAna
         />
       </div>
 
+      <DirectChannel data={data} />
+
       <RevenueChart data={data} />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <TopItems data={data} />
         <Booked data={data} />
+        <ByWeekday data={data} />
+        <BySlot data={data} />
       </div>
     </div>
   );
+}
+
+/** The staffing question: which days of the week actually carry the trade. */
+function ByWeekday({ data }: { data: SalesAnalytics }) {
+  const max = Math.max(...data.byWeekday.map((point) => point.revenueCents), 0);
+  return (
+    <section className="card flex flex-col gap-3 p-5">
+      <h2 className="text-ink font-semibold">By day of week</h2>
+      {max === 0 ? (
+        <p className="text-ink-muted text-sm">No sales in this range yet.</p>
+      ) : (
+        <ol className="flex flex-col gap-3">
+          {data.byWeekday.map((point) => (
+            <li key={point.weekday} className="flex flex-col gap-1">
+              <div className="flex items-baseline gap-2 text-sm">
+                <span className="text-ink-subtle w-9 shrink-0 font-semibold">{point.label}</span>
+                <span className="text-ink flex-1 tabular-nums">
+                  {point.orderCount} order{point.orderCount === 1 ? "" : "s"}
+                </span>
+                <span className="text-ink-subtle w-24 text-right tabular-nums">
+                  {formatMoney(point.revenueCents, data.currency)}
+                </span>
+              </div>
+              <div className="bg-surface-sunken ml-11 h-1.5 overflow-hidden rounded-full">
+                <div
+                  className="bg-brand h-full rounded-full"
+                  style={{ width: `${(point.revenueCents / max) * 100}%` }}
+                />
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+      <p className="text-ink-subtle text-xs">
+        Totals over the selected range, not averages — a range with more Saturdays shows more
+        Saturday revenue.
+      </p>
+    </section>
+  );
+}
+
+/** Which pickup slots carry the demand — the input for opening, closing or re-capping times. */
+function BySlot({ data }: { data: SalesAnalytics }) {
+  const max = Math.max(...data.bySlot.map((point) => point.orderCount), 0);
+  return (
+    <section className="card flex flex-col gap-3 p-5">
+      <h2 className="text-ink font-semibold">By pickup time</h2>
+      {data.bySlot.length === 0 || max === 0 ? (
+        <p className="text-ink-muted text-sm">No pickups in this range yet.</p>
+      ) : (
+        <ol className="flex flex-col gap-3">
+          {data.bySlot.map((point) => (
+            <li key={point.time} className="flex flex-col gap-1">
+              <div className="flex items-baseline gap-2 text-sm">
+                <span className="text-ink-subtle w-16 shrink-0 font-semibold tabular-nums">
+                  {formatPickupTime(point.time)}
+                </span>
+                <span className="text-ink flex-1 tabular-nums">
+                  {point.orderCount} order{point.orderCount === 1 ? "" : "s"}
+                </span>
+                <span className="text-ink-subtle w-24 text-right tabular-nums">
+                  {formatMoney(point.revenueCents, data.currency)}
+                </span>
+              </div>
+              <div className="bg-surface-sunken ml-18 h-1.5 overflow-hidden rounded-full">
+                <div
+                  className="bg-brand h-full rounded-full"
+                  style={{ width: `${(point.orderCount / max) * 100}%` }}
+                />
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
+}
+
+/** Owner-facing proof that direct pickup is retaining value, not just taking orders. */
+function DirectChannel({ data }: { data: SalesAnalytics }) {
+  const { direct, currency } = data;
+  return (
+    <section className="bg-secondary text-secondary-ink flex flex-col gap-4 rounded-[1.5rem] p-5" aria-labelledby="direct-channel-heading">
+      <div>
+        <p className="text-accent text-xs font-semibold tracking-[0.14em] uppercase">Direct pickup channel</p>
+        <h2 id="direct-channel-heading" className="font-display mt-1 text-3xl font-normal uppercase">What direct ordering retained</h2>
+        <p className="text-secondary-ink/75 mt-1 text-sm">Estimated against a {(MARKETPLACE_FEE_RATE * 100).toFixed(0)}% delivery-marketplace fee. This is not a payment-processor fee calculation.</p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <DirectStat label="Direct pickup sales" value={formatMoney(direct.retainedRevenueCents, currency)} />
+        <DirectStat label="Est. fees avoided" value={formatMoney(direct.estimatedMarketplaceFeesCents, currency)} emphasis />
+        <DirectStat label="Repeat member orders" value={`${direct.repeatMemberOrderCount} of ${direct.memberOrderCount || 0}`} />
+        <DirectStat label="Rewards activity" value={`${direct.pointsEarned} earned · ${direct.rewardsRedeemed} used`} />
+      </div>
+    </section>
+  );
+}
+
+function DirectStat({ label, value, emphasis = false }: { label: string; value: string; emphasis?: boolean }) {
+  return <div className={`rounded-[1.25rem] p-4 ${emphasis ? "bg-accent text-ink" : "bg-secondary-ink/10"}`}>
+    <p className="text-xs font-semibold tracking-wide uppercase">{label}</p>
+    <p className="font-display mt-1 text-2xl font-normal tabular-nums">{value}</p>
+  </div>;
 }
 
 /** Percentage change, or null when there's no baseline to compare against. */
@@ -425,6 +542,20 @@ function Booked({ data }: { data: SalesAnalytics }) {
           across {data.upcoming.orderCount} order{data.upcoming.orderCount === 1 ? "" : "s"}
         </span>
       </div>
+      {data.current.tipsCents > 0 ? (
+        <p className="text-ink-muted border-border mt-2 border-t pt-2 text-sm">
+          Tips collected: {formatMoney(data.current.tipsCents, data.currency)} — on top of the
+          revenue above, never counted in it.
+        </p>
+      ) : null}
+      {data.refunds.refundCount > 0 ? (
+        <p className="text-ink-muted border-border mt-2 border-t pt-2 text-sm">
+          Refunded in this range: {formatMoney(data.refunds.refundedCents, data.currency)} across{" "}
+          {data.refunds.refundCount} refund{data.refunds.refundCount === 1 ? "" : "s"} (by refund
+          date) — net revenue{" "}
+          {formatMoney(data.current.revenueCents - data.refunds.refundedCents, data.currency)}.
+        </p>
+      ) : null}
       <Link href="/staff/timeline" className="btn btn-ghost btn-sm mt-2 self-start">
         See the prep timeline
       </Link>

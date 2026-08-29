@@ -6,3 +6,12 @@
 # Local-only working files.
 .context
 tsconfig.tsbuildinfo
+
+# The native Expo projects and design-source assets ship through their own
+# build pipelines. They include local Pods/Gradle artifacts that can exceed
+# Vercel's source-upload limit, while the Next.js storefront never imports
+# them.
+apps/customer-mobile/
+apps/staff-mobile/
+spike/
+assets-src/

@@ -6,6 +6,8 @@ export interface StoreLocation {
   city: string | null;
   timezone: string | null;
   currency: string | null;
+  /** ISO 3166 two-letter country — the digital wallets' payment request needs it. */
+  country: string | null;
   phone: string | null;
   businessHours: StoreHoursPeriod[];
   coordinates: { latitude: number; longitude: number } | null;

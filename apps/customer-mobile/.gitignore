@@ -1,0 +1,7 @@
+node_modules/
+.expo/
+dist/
+.env
+# Outputs of `expo prebuild`, not sources.
+ios/
+android/

@@ -6,9 +6,9 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 
 import { AddToCart } from "@/components/cart/add-to-cart";
+import { DietaryInfo } from "@/components/catalog/dietary-info";
 import { ProductGrid } from "@/components/product-grid";
 import { ArrowLeftIcon, ClockIcon, LoafIcon, MapPinIcon } from "@/components/ui/icons";
-import { LoadingRegion, Skeleton } from "@/components/ui/skeleton";
 import { productImages, sizedImage } from "@/lib/catalog/images";
 import { getOrderableProducts, getProductBySlug } from "@/lib/catalog/server";
 import type { StoreProduct } from "@/lib/catalog/types";
@@ -32,46 +32,39 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 }
 
 /**
- * The page shell is static; the product itself streams in.
- *
- * With Cache Components enabled, reading `params` is runtime data — touching it
- * directly in the page body would block the whole route from prerendering. Doing
- * the lookup inside <Suspense> lets the header and navigation render instantly
- * from the static shell while the catalog resolves.
+ * The slug is resolved and `notFound()` decided in the page body, before any
+ * JSX. Under Cache Components the shell streams before the page resolves, so
+ * an unknown slug is HTTP 200 no matter where the check runs; Next injects
+ * `<meta name="robots" content="noindex">` into the streamed not-found
+ * document, which is what keeps those URLs out of search engines (see README
+ * "SEO, legal pages and PWA" — a real 404 status would need a proxy.ts check).
+ * Resolving in the body still buys three things: no pass-through wrapper
+ * component, no gratuitous `connection()` call, and metadata + page sharing
+ * one `"use cache"` lookup — so known slugs stay warm-cache fast, with
+ * `loading.tsx` covering the cold path.
  *
  * The layout is two columns from `lg`: gallery left, order panel right. It used
  * to be a single `max-w-3xl` text column with no imagery at all — the highest
  * intent page in the funnel, and the customer couldn't see the product.
  */
-export default function ProductPage({ params }: PageProps) {
-  return (
-    <main className="shell flex flex-col gap-12 py-8 sm:py-12 lg:gap-16 lg:py-16">
-      <nav aria-label="Breadcrumb">
-        <Link
-          href="/#trays"
-          className="border-brand/25 bg-surface text-brand hover:bg-brand hover:text-brand-ink inline-flex min-h-11 items-center gap-2 rounded-full border-2 px-4 text-sm font-medium transition-colors"
-        >
-          <ArrowLeftIcon className="h-4 w-4" />
-          All party trays
-        </Link>
-      </nav>
-
-      <Suspense fallback={<ProductSkeleton />}>
-        <ProductDetail params={params} />
-      </Suspense>
-    </main>
-  );
-}
-
-async function ProductDetail({ params }: PageProps) {
-  await connection();
+export default async function ProductPage({ params }: PageProps) {
   const { slug } = await params;
   const product = await getProductBySlug(slug);
 
   if (!product) notFound();
 
   return (
-    <>
+    <main className="shell flex flex-col gap-12 py-8 sm:py-12 lg:gap-16 lg:py-16">
+      <nav aria-label="Breadcrumb">
+        <Link
+          href="/#order"
+          className="border-brand/25 bg-surface text-brand hover:bg-brand hover:text-brand-ink inline-flex min-h-11 items-center gap-2 rounded-full border-2 px-4 text-sm font-medium transition-colors"
+        >
+          <ArrowLeftIcon className="h-4 w-4" />
+          All products
+        </Link>
+      </nav>
+
       <section
         aria-labelledby="product-heading"
         className="grid gap-8 lg:grid-cols-[1.08fr_0.92fr] lg:items-start lg:gap-12"
@@ -93,8 +86,10 @@ async function ProductDetail({ params }: PageProps) {
 
           {/* Above the size picker, not below it. The lead time is the single
               biggest constraint on this purchase, and customers were choosing a
-              size before finding out the tray needs a day's notice. */}
+              size before finding out the item needs a day's notice. */}
           <OrderingRules product={product} />
+
+          <DietaryInfo allergens={product.allergens} dietaryTags={product.dietaryTags} />
 
           <AddToCart
             variants={product.variants}
@@ -106,12 +101,11 @@ async function ProductDetail({ params }: PageProps) {
       </section>
 
       <Suspense fallback={null}>
-        <RelatedTrays currentId={product.id} />
+        <RelatedProducts currentId={product.id} />
       </Suspense>
-    </>
+    </main>
   );
 }
-
 /** Staff copy overrides Square copy; paragraphs stay plain text and XSS-safe. */
 function ProductDescription({
   product,
@@ -260,13 +254,13 @@ function OrderingRules({ product }: { product: StoreProduct }) {
 }
 
 /**
- * The other trays.
+ * The rest of the menu.
  *
  * A dead end here means the customer's only route onward is the back button —
  * and with three products in the catalog, showing the rest costs one already
  * cached call.
  */
-async function RelatedTrays({ currentId }: { currentId: string }) {
+async function RelatedProducts({ currentId }: { currentId: string }) {
   await connection();
   const { products } = await getOrderableProducts();
   const others = products.filter((product) => product.id !== currentId);
@@ -284,33 +278,10 @@ async function RelatedTrays({ currentId }: { currentId: string }) {
           id="related-heading"
           className="font-display text-brand text-display-md font-normal uppercase"
         >
-          Other party trays
+          More from the bakery
         </h2>
       </header>
       <ProductGrid products={others} />
     </section>
-  );
-}
-
-function ProductSkeleton() {
-  return (
-    <LoadingRegion
-      label="Loading party tray"
-      className="grid gap-8 lg:grid-cols-[1.08fr_0.92fr] lg:items-start lg:gap-12"
-    >
-      <div className="border-surface shadow-raised overflow-hidden rounded-[2.5rem] border-8">
-        <Skeleton className="aspect-[4/3] w-full rounded-none" />
-      </div>
-      <div className="flex flex-col gap-6">
-        <div className="bg-brand flex flex-col gap-4 rounded-[2.25rem] p-6 sm:p-8">
-          <Skeleton className="h-8 w-1/3" />
-          <Skeleton className="h-16 w-3/4" />
-          <Skeleton className="h-5 w-full" />
-          <Skeleton className="h-5 w-2/3" />
-        </div>
-        <Skeleton className="h-44 w-full rounded-[2rem]" />
-        <Skeleton className="h-72 w-full rounded-[2rem]" />
-      </div>
-    </LoadingRegion>
   );
 }

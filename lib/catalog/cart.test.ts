@@ -16,6 +16,8 @@ const ENSAYMADA: CatalogProduct = {
   description: null,
   imageIds: [],
   imageUrls: [],
+  categoryId: null,
+  categoryName: null,
   variants: [
     { id: "VAR_25_UBE", name: "25 pcs Ube", priceCents: 2500, currency: "USD", sku: null, ordinal: 0 },
     { id: "VAR_56_CHEESE", name: "56 pcs Cheese", priceCents: 4000, currency: "USD", sku: null, ordinal: 1 },
@@ -28,6 +30,8 @@ const HOPIA: CatalogProduct = {
   description: null,
   imageIds: [],
   imageUrls: [],
+  categoryId: null,
+  categoryName: null,
   variants: [
     { id: "VAR_HOPIA_60", name: "60 pcs", priceCents: 4500, currency: "USD", sku: null, ordinal: 0 },
   ],

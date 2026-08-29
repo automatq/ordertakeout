@@ -48,7 +48,8 @@ export function DemoPaymentForm({
         <p className="text-accent-ink text-sm font-semibold">Demo mode — no card required</p>
         <p className="text-ink-muted mt-1 text-sm">
           No real payment is taken and nothing is sent to Square. Everything else —
-          pickup rules, slot limits, the kitchen screen — is running for real.
+          pickup rules, slot limits, the kitchen screen — is running for real. Apple Pay,
+          Google Pay and Cash App Pay only appear with live Square credentials.
         </p>
       </div>
 

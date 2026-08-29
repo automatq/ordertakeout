@@ -20,6 +20,7 @@ vi.mock("@/lib/orders/create", () => orderMocks);
 vi.mock("@/lib/security/rate-limit", () => securityMocks);
 vi.mock("@/lib/locations/server", () => locationMocks);
 vi.mock("@/lib/orders/access", () => accessMocks);
+vi.mock("@/lib/settings/pause", () => ({ getPauseStateFresh: async () => null }));
 
 import {
   abandonCheckout,

@@ -23,7 +23,9 @@ export const DEMO_PRODUCTS: CatalogProduct[] = [
     description:
       "Soft, buttery brioche rolls topped with cheese or ube, baked fresh for your party.",
     imageIds: [],
-    imageUrls: ["/harina/ube-pandesal.webp", "/harina/freshly-baked.webp"],
+    imageUrls: ["/harina/ensaymada-tray.webp"],
+    categoryId: "DEMO_CAT_TRAYS",
+    categoryName: "Party Trays",
     variants: [
       {
         id: "DEMO_VAR_ENSAYMADA_25_UBE",
@@ -64,7 +66,9 @@ export const DEMO_PRODUCTS: CatalogProduct[] = [
     name: "Hopia Ube / Hopia Baboy",
     description: "Flaky bean-filled pastries, in ube or classic baboy.",
     imageIds: [],
-    imageUrls: ["/harina/hopia-pirat-baboy.webp"],
+    imageUrls: ["/harina/hopia-ube.webp", "/harina/hopia-pirat-baboy.webp"],
+    categoryId: "DEMO_CAT_TRAYS",
+    categoryName: "Party Trays",
     variants: [
       {
         id: "DEMO_VAR_HOPIA_60",
@@ -90,6 +94,8 @@ export const DEMO_PRODUCTS: CatalogProduct[] = [
     description: "Purple yam bars, rich and not too sweet.",
     imageIds: [],
     imageUrls: ["/harina/ube-bars.webp"],
+    categoryId: "DEMO_CAT_TRAYS",
+    categoryName: "Party Trays",
     variants: [
       {
         id: "DEMO_VAR_UBE_BARS_BIG",
@@ -111,7 +117,11 @@ export const DEMO_PRODUCTS: CatalogProduct[] = [
   },
 ];
 
-/** Ordering rules to seed, matching the requirements document. */
+/**
+ * Ordering rules to seed, matching the requirements document. Allergen and
+ * dietary values are plausible for the recipes but exist to demo the feature —
+ * the real store enters its own from /staff/settings before launch.
+ */
 export const DEMO_PRODUCT_RULES = [
   {
     productId: "DEMO_ITEM_ENSAYMADA",
@@ -121,6 +131,8 @@ export const DEMO_PRODUCT_RULES = [
     allowedPickupTimes: ["16:00", "17:00", "18:00", "19:00", "20:00"],
     maxUnitsPerDay: 40,
     sortOrder: 0,
+    allergens: ["wheat", "dairy", "eggs"],
+    dietaryTags: ["vegetarian"],
   },
   {
     // Placeholder rules — the store hasn't confirmed these. See docs/SCOPE.md.
@@ -131,6 +143,8 @@ export const DEMO_PRODUCT_RULES = [
     allowedPickupTimes: ["16:00", "17:00", "18:00", "19:00", "20:00"],
     maxUnitsPerDay: 30,
     sortOrder: 1,
+    allergens: ["wheat"],
+    dietaryTags: ["contains_pork"],
   },
   {
     productId: "DEMO_ITEM_UBE_BARS",
@@ -140,5 +154,7 @@ export const DEMO_PRODUCT_RULES = [
     allowedPickupTimes: ["16:00", "17:00", "18:00", "19:00", "20:00"],
     maxUnitsPerDay: 20,
     sortOrder: 2,
+    allergens: ["wheat", "dairy", "eggs"],
+    dietaryTags: ["vegetarian"],
   },
 ] as const;

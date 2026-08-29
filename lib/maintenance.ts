@@ -2,33 +2,62 @@ import "server-only";
 
 import { and, inArray, lt, sql } from "drizzle-orm";
 
+import { sweepMagicLinkTokens } from "@/lib/accounts/magic-link";
+import { sweepPhoneSignInCodes } from "@/lib/accounts/phone-sign-in";
 import { db } from "@/lib/db";
 import { notificationLog, orders, rateLimits, webhookEvents } from "@/lib/db/schema";
 import { serverEnv } from "@/lib/env";
 import { sweepExpiredInventoryHolds } from "@/lib/inventory/reservations";
 import { retryFailedNotifications } from "@/lib/notifications/dispatch";
+import { sendPickupReminders } from "@/lib/notifications/reminders";
 import { recoverStalePaymentAttempts } from "@/lib/orders/create";
 import { sweepExpiredHolds } from "@/lib/scheduling/queries";
 import { retrySquareOrderSync } from "@/lib/orders/transitions";
 
-export async function runMaintenance() {
-  const [holds, inventoryHolds, retries, squareRetries, paymentAttempts, operationalRows, anonymizedOrders] = await Promise.all([
-    sweepExpiredHolds(),
-    sweepExpiredInventoryHolds(),
-    retryFailedNotifications(),
-    retrySquareSyncFailures(),
-    recoverStalePaymentAttempts(),
-    pruneOperationalData(),
-    anonymizeExpiredCustomerData(),
-  ]);
+/**
+ * The minutes-scale jobs: notification retries (next_attempt_at is +5 min),
+ * stale payment recovery, Square-sync retries, and hold sweeps. Capacity is
+ * never blocked by an expired hold — both read paths filter expires_at — so
+ * the sweeps here are housekeeping; the retries are the reason this runs
+ * often. Vercel Hobby only allows daily crons, so a GitHub Actions schedule
+ * calls this every few minutes via /api/cron/maintenance?scope=fast.
+ */
+export async function runFastMaintenance() {
+  const [holds, inventoryHolds, retries, squareRetries, paymentAttempts, reminders] =
+    await Promise.all([
+      sweepExpiredHolds(),
+      sweepExpiredInventoryHolds(),
+      retryFailedNotifications(),
+      retrySquareSyncFailures(),
+      recoverStalePaymentAttempts(),
+      sendPickupReminders(),
+    ]);
   return {
     holds,
     inventoryHolds,
     retries,
     squareRetries,
     paymentAttempts,
+    reminders,
+  };
+}
+
+/** The full daily run: everything in the fast pass plus pruning and PII retention. */
+export async function runMaintenance() {
+  const [fast, operationalRows, anonymizedOrders, magicLinkRows, phoneCodeRows] =
+    await Promise.all([
+      runFastMaintenance(),
+      pruneOperationalData(),
+      anonymizeExpiredCustomerData(),
+      sweepMagicLinkTokens(),
+      sweepPhoneSignInCodes(),
+    ]);
+  return {
+    ...fast,
     operationalRows,
     anonymizedOrders,
+    magicLinkRows,
+    phoneCodeRows,
   };
 }
 

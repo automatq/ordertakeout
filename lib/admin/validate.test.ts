@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   blackoutSchema,
+  bulkProductRulesSchema,
+  slugFromName,
+  uniqueSlug,
   parsePickupTimes,
   productRulesSchema,
   slotCapacitySchema,
@@ -201,5 +204,104 @@ describe("blackout and capacity schemas", () => {
         maxOrders: "-1",
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("bulk product configuration", () => {
+  it("derives a URL name from a product name", () => {
+    expect(slugFromName("Ube Cheese Pandesal")).toBe("ube-cheese-pandesal");
+    expect(slugFromName("  Hopia Ube / Hopia Baboy  ")).toBe("hopia-ube-hopia-baboy");
+    expect(slugFromName("!!!")).toBe("");
+  });
+
+  it("resolves collisions instead of failing the batch", () => {
+    // Configuring one at a time made these rare enough to surface as a raw
+    // unique violation. Deriving forty slugs at once makes them routine —
+    // "Ube Cake" and "Ube Cake " both reduce to the same thing.
+    const taken = new Set(["ube-cake"]);
+    expect(uniqueSlug("Ube Cake", taken)).toBe("ube-cake-2");
+
+    taken.add("ube-cake-2");
+    expect(uniqueSlug("Ube Cake", taken)).toBe("ube-cake-3");
+  });
+
+  it("keeps a resolved slug inside the column limit", () => {
+    const long = "A".repeat(80);
+    const taken = new Set([slugFromName(long)]);
+    const resolved = uniqueSlug(long, taken);
+    expect(resolved.length).toBeLessThanOrEqual(60);
+    expect(resolved.endsWith("-2")).toBe(true);
+  });
+
+  it("falls back to a usable name when nothing survives slugification", () => {
+    expect(uniqueSlug("!!!", new Set())).toBe("product");
+  });
+
+  it("accepts a template and rejects an empty selection", () => {
+    const template = {
+      leadTimeDays: "0",
+      orderCutoffTime: "20:00",
+      pickupTimes: "05:45, 06:15",
+      maxUnitsPerDay: "",
+      isOrderable: "true",
+      allergens: "wheat",
+      dietaryTags: "",
+    };
+
+    const ok = bulkProductRulesSchema.safeParse({ ...template, productIds: ["P1", "P2"] });
+    expect(ok.success).toBe(true);
+    if (ok.success) {
+      expect(ok.data.maxUnitsPerDay).toBeNull();
+      expect(ok.data.isOrderable).toBe(true);
+      expect(ok.data.allergens).toEqual(["wheat"]);
+    }
+
+    expect(bulkProductRulesSchema.safeParse({ ...template, productIds: [] }).success).toBe(false);
+  });
+
+  it("rejects an allergen outside the fixed vocabulary", () => {
+    const parsed = bulkProductRulesSchema.safeParse({
+      productIds: ["P1"],
+      leadTimeDays: "0",
+      orderCutoffTime: "20:00",
+      pickupTimes: "06:00",
+      maxUnitsPerDay: "",
+      isOrderable: "true",
+      allergens: "gluten",
+      dietaryTags: "",
+    });
+    expect(parsed.success).toBe(false);
+  });
+});
+
+describe("menu position", () => {
+  const base = {
+    productId: "P1",
+    slug: "pandesal",
+    leadTimeDays: "0",
+    orderCutoffTime: "20:00",
+    pickupTimes: "06:00",
+    maxUnitsPerDay: "",
+    isOrderable: "true",
+    allergens: "",
+    dietaryTags: "",
+  };
+
+  it("accepts a position and defaults a blank or absent one to zero", () => {
+    // The column existed from the first migration and nothing ever wrote to it,
+    // so every row kept 0 and the menu was permanently alphabetical.
+    const withValue = productRulesSchema.safeParse({ ...base, sortOrder: "3" });
+    expect(withValue.success && withValue.data.sortOrder).toBe(3);
+
+    const blank = productRulesSchema.safeParse({ ...base, sortOrder: "" });
+    expect(blank.success && blank.data.sortOrder).toBe(0);
+
+    const absent = productRulesSchema.safeParse(base);
+    expect(absent.success && absent.data.sortOrder).toBe(0);
+  });
+
+  it("rejects a negative or fractional position", () => {
+    expect(productRulesSchema.safeParse({ ...base, sortOrder: "-1" }).success).toBe(false);
+    expect(productRulesSchema.safeParse({ ...base, sortOrder: "1.5" }).success).toBe(false);
   });
 });

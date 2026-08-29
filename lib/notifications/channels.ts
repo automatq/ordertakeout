@@ -1,9 +1,12 @@
 import "server-only";
 
 import { serverEnv } from "@/lib/env";
+import { resolveStoreEmails, resolveStorePhone } from "@/lib/settings/notifications";
 
+import { renderCustomerEmailHtml } from "./email-html";
 import {
   renderCustomerEmail,
+  renderCustomerSms,
   renderDiscord,
   renderSlack,
   renderStoreEmail,
@@ -51,16 +54,13 @@ async function expectOk(response: Response, channel: ChannelName): Promise<Chann
 
 /* -------------------------------------------------------------------------- */
 
-function resendConfig(event: NotificationEvent) {
+async function resendConfig(event: NotificationEvent) {
   const env = serverEnv();
-  const storeEmail = notificationEmailFor(
-    event.order.pickupLocationId,
-    env.LOCATION_NOTIFY_EMAILS,
-  ) ?? env.STORE_NOTIFY_EMAIL;
-  if (!env.RESEND_API_KEY || !env.NOTIFY_FROM_EMAIL || !storeEmail) return null;
+  if (!env.RESEND_API_KEY || !env.NOTIFY_FROM_EMAIL) return null;
 
   return {
-    storeEmail,
+    /** May be empty: the store inbox is optional and must not block customer email. */
+    storeEmails: await resolveStoreEmails(event.order.pickupLocationId),
     from: env.NOTIFY_FROM_EMAIL,
     headers: {
       Authorization: `Bearer ${env.RESEND_API_KEY}`,
@@ -71,8 +71,8 @@ function resendConfig(event: NotificationEvent) {
 
 /** Store and customer email are separate retry units to prevent partial duplicates. */
 export async function sendStoreEmail(event: NotificationEvent): Promise<ChannelResult> {
-  const config = resendConfig(event);
-  if (!config) return skip("email_store");
+  const config = await resendConfig(event);
+  if (!config || config.storeEmails.length === 0) return skip("email_store");
 
   const store = renderStoreEmail(event);
   const response = await post("https://api.resend.com/emails", {
@@ -80,7 +80,7 @@ export async function sendStoreEmail(event: NotificationEvent): Promise<ChannelR
     headers: config.headers,
     body: JSON.stringify({
       from: config.from,
-      to: [config.storeEmail],
+      to: config.storeEmails,
       subject: store.subject,
       text: store.text,
     }),
@@ -89,65 +89,31 @@ export async function sendStoreEmail(event: NotificationEvent): Promise<ChannelR
 }
 
 export async function sendCustomerEmail(event: NotificationEvent): Promise<ChannelResult> {
-  const config = resendConfig(event);
+  const config = await resendConfig(event);
   const customer = renderCustomerEmail(event);
   if (!config || !customer || !event.order.customerEmail) return skip("email_customer");
 
+  const html = renderCustomerEmailHtml(event);
   const response = await post("https://api.resend.com/emails", {
     method: "POST",
     headers: config.headers,
     body: JSON.stringify({
       from: config.from,
       to: [event.order.customerEmail],
-      reply_to: config.storeEmail,
+      ...(config.storeEmails[0] ? { reply_to: config.storeEmails[0] } : {}),
       subject: customer.subject,
       text: customer.text,
+      ...(html ? { html } : {}),
     }),
   });
   return expectOk(response, "email_customer");
 }
 
-function notificationEmailFor(
-  locationId: string | null | undefined,
-  raw: string | undefined,
-): string | null {
-  if (!locationId || !raw) return null;
-  try {
-    const value: unknown = JSON.parse(raw);
-    if (!value || typeof value !== "object") return null;
-    const email = (value as Record<string, unknown>)[locationId];
-    return typeof email === "string" && /^\S+@\S+\.\S+$/.test(email) ? email : null;
-  } catch {
-    console.error("[notifications] LOCATION_NOTIFY_EMAILS is not valid JSON");
-    return null;
-  }
-}
-
-function notificationDestinationFor(
-  locationId: string | null | undefined,
-  raw: string | undefined,
-  pattern: RegExp,
-): string | null {
-  if (!locationId || !raw) return null;
-  try {
-    const value: unknown = JSON.parse(raw);
-    if (!value || typeof value !== "object") return null;
-    const destination = (value as Record<string, unknown>)[locationId];
-    return typeof destination === "string" && pattern.test(destination) ? destination : null;
-  } catch {
-    console.error("[notifications] location destination map is not valid JSON");
-    return null;
-  }
-}
 
 /** SMS to the store via Twilio. Customers are emailed, not texted, in v1. */
 export async function sendSms(event: NotificationEvent): Promise<ChannelResult> {
   const env = serverEnv();
-  const storePhone = notificationDestinationFor(
-    event.order.pickupLocationId,
-    env.LOCATION_NOTIFY_PHONES,
-    /^\+?[\d ()-]{7,}$/,
-  ) ?? env.STORE_NOTIFY_PHONE;
+  const storePhone = await resolveStorePhone(event.order.pickupLocationId);
   if (
     !env.TWILIO_ACCOUNT_SID ||
     !env.TWILIO_AUTH_TOKEN ||
@@ -178,6 +144,62 @@ export async function sendSms(event: NotificationEvent): Promise<ChannelResult> 
   );
 
   return expectOk(response, "sms");
+}
+
+/**
+ * Transactional texts TO THE CUSTOMER — ready and cancelled only, and only
+ * when this order carries their explicit opt-in. Paid stays email-only
+ * (the confirmation needs the full detail an SMS can't hold), which also
+ * keeps the per-order SMS cost to at most two segments.
+ */
+export async function sendCustomerSms(event: NotificationEvent): Promise<ChannelResult> {
+  const env = serverEnv();
+  if (!env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN || !env.TWILIO_FROM_NUMBER) {
+    return skip("sms_customer");
+  }
+  if (!event.order.customerSmsOptIn) return skip("sms_customer");
+  /* order_paid is included deliberately: the confirmation is the one message
+     that carries the tracking link at the moment the customer most wants it,
+     and email was previously its only channel. Everything here is
+     transactional — order state the customer asked to be told about — never
+     marketing. */
+  if (
+    event.kind !== "order_paid" &&
+    event.kind !== "order_ready" &&
+    event.kind !== "order_canceled" &&
+    event.kind !== "order_refunded" &&
+    event.kind !== "order_reminder"
+  ) {
+    return skip("sms_customer");
+  }
+  // Anonymized orders ("Deleted") and legacy free-form numbers fail this shape
+  // check and are skipped rather than handed to Twilio to bounce.
+  if (!/^\+\d{8,15}$/.test(event.order.customerPhone)) return skip("sms_customer");
+
+  const body = renderCustomerSms(event);
+  if (!body) return skip("sms_customer");
+
+  const credentials = Buffer.from(
+    `${env.TWILIO_ACCOUNT_SID}:${env.TWILIO_AUTH_TOKEN}`,
+  ).toString("base64");
+
+  const response = await post(
+    `https://api.twilio.com/2010-04-01/Accounts/${env.TWILIO_ACCOUNT_SID}/Messages.json`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${credentials}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        To: event.order.customerPhone,
+        From: env.TWILIO_FROM_NUMBER,
+        Body: body,
+      }).toString(),
+    },
+  );
+
+  return expectOk(response, "sms_customer");
 }
 
 export async function sendDiscord(event: NotificationEvent): Promise<ChannelResult> {
@@ -245,6 +267,7 @@ export const CHANNELS: Record<Exclude<ChannelName, "email">,
   email_store: sendStoreEmail,
   email_customer: sendCustomerEmail,
   sms: sendSms,
+  sms_customer: sendCustomerSms,
   discord: sendDiscord,
   slack: sendSlack,
   trello: sendTrello,

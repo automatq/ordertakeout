@@ -1,11 +1,14 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
+
 import { and, eq, lt, lte, or, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { notificationLog, orderItems, orders } from "@/lib/db/schema";
+import { notificationLog, orderItems, orderRefunds, orders } from "@/lib/db/schema";
+import { reportError } from "@/lib/monitoring/report";
 import { normalizeTime } from "@/lib/scheduling/time";
-import { orderTrackingUrl } from "@/lib/orders/access";
+import { orderShortUrl, orderTrackingUrl } from "@/lib/orders/access";
 
 import { CHANNELS } from "./channels";
 import type {
@@ -38,11 +41,15 @@ export async function dispatch(event: NotificationEvent): Promise<ChannelResult[
     (typeof CHANNELS)[Exclude<ChannelName, "email">],
   ][];
 
+  const dedupeKey = event.dedupeKey ?? event.kind;
   const results = await Promise.all(
     entries.map(async ([name, send]): Promise<ChannelResult> => {
+      if (event.channels && !event.channels.includes(name)) {
+        return { channel: name, ok: true, skipped: true };
+      }
       // Claim the unique delivery before touching the provider. This closes the
       // old check-then-send race between checkout and Square's payment webhook.
-      if (!(await claim(event.order.orderId, event.kind, name))) {
+      if (!(await claim(event.order.orderId, dedupeKey, name))) {
         return { channel: name, ok: true, skipped: true };
       }
 
@@ -54,7 +61,9 @@ export async function dispatch(event: NotificationEvent): Promise<ChannelResult[
         const message = cause instanceof Error ? cause.message : String(cause);
         const result: ChannelResult = { channel: name, ok: false, error: message };
         await record(event, name, result).catch(() => {});
-        console.error(`[notifications] ${name} failed for ${event.order.orderNumber}:`, message);
+        reportError("notifications", `${name} delivery failed`, cause, {
+          orderNumber: event.order.orderNumber,
+        });
         return result;
       }
     }),
@@ -65,12 +74,12 @@ export async function dispatch(event: NotificationEvent): Promise<ChannelResult[
 
 async function claim(
   orderId: string,
-  kind: NotificationEventKind,
+  dedupeKey: string,
   channel: ChannelName,
 ): Promise<boolean> {
   const rows = await db().execute<{ id: string }>(sql`
     INSERT INTO ${notificationLog} (order_id, channel, event, status, attempts, created_at)
-    VALUES (${orderId}, ${channel}::notification_channel, ${kind}, 'pending', 1, now())
+    VALUES (${orderId}, ${channel}::notification_channel, ${dedupeKey}, 'pending', 1, now())
     ON CONFLICT (order_id, event, channel) DO UPDATE
       SET status = 'pending',
           attempts = ${notificationLog.attempts} + 1,
@@ -95,7 +104,7 @@ async function record(
 ): Promise<void> {
   const delivery = and(
     eq(notificationLog.orderId, event.order.orderId),
-    eq(notificationLog.event, event.kind),
+    eq(notificationLog.event, event.dedupeKey ?? event.kind),
     eq(notificationLog.channel, channel),
   );
 
@@ -134,7 +143,30 @@ export async function retryFailedNotifications(limit = 50): Promise<number> {
 
   const unique = [...new Map(due.map((entry) => [`${entry.orderId}:${entry.event}`, entry])).values()];
   for (const entry of unique) {
-    if (isNotificationKind(entry.event)) await notifyOrder(entry.orderId, entry.event);
+    // The event column stores the dedupe key; the kind is its prefix
+    // (e.g. "order_refunded:<refundId>").
+    const kind = entry.event.split(":")[0] ?? entry.event;
+    if (kind === "order_refunded") {
+      const refundId = entry.event.slice("order_refunded:".length);
+      if (refundId) await notifyOrderRefund(entry.orderId, refundId);
+      continue;
+    }
+    if (kind === "order_reminder") {
+      // Rebuilt with the original dedupe key and the customer-only channel
+      // filter — a retry through notifyOrder would fan out to store channels
+      // and claim under the bare kind.
+      const order = await buildOrderNotification(entry.orderId);
+      if (order) {
+        await dispatch({
+          kind: "order_reminder",
+          order,
+          dedupeKey: entry.event,
+          channels: ["email_customer", "sms_customer"],
+        });
+      }
+      continue;
+    }
+    if (isNotificationKind(kind)) await notifyOrder(entry.orderId, kind);
   }
   return unique.length;
 }
@@ -167,10 +199,13 @@ export async function buildOrderNotification(
     pickupLocationId: order.squareLocationId,
     pickupLocationAddress: order.pickupLocationAddress,
     totalCents: order.totalCents,
+    tipCents: order.tipCents,
     currency: order.currency,
     items: items.map((item) => ({ quantity: item.quantity, name: item.nameSnapshot })),
     note: order.customerNote,
     trackingUrl: orderTrackingUrl(order.id, order.orderNumber),
+    trackingShortUrl: orderShortUrl(order.id, order.orderNumber),
+    customerSmsOptIn: order.customerSmsOptIn,
   };
 }
 
@@ -188,11 +223,99 @@ export async function notifyOrder(
   try {
     const order = await buildOrderNotification(orderId);
     if (!order) {
-      console.error(`[notifications] no order ${orderId} to notify about`);
+      reportError("notifications", "no order to notify about", undefined, { orderId });
       return;
     }
     await dispatch({ kind, order });
   } catch (cause) {
-    console.error("[notifications] dispatch failed:", cause);
+    reportError("notifications", "dispatch failed", cause);
+  }
+}
+
+/**
+ * Staff-triggered re-send of the customer's confirmation email.
+ *
+ * Each click is its own dedupe unit (random suffix), capped at three per
+ * 24 hours so a wrong address can't be hammered; only the customer email
+ * channel fires — the store was already notified the first time.
+ */
+export async function resendCustomerConfirmation(
+  orderId: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const [order] = await db().select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (!order) return { ok: false, reason: "Order not found." };
+  if (!["paid", "preparing", "ready", "completed"].includes(order.status)) {
+    return { ok: false, reason: "Only paid orders can have their confirmation re-sent." };
+  }
+  if (order.customerEmail === "deleted@invalid.example") {
+    return { ok: false, reason: "This order's customer details were anonymized under the retention policy." };
+  }
+
+  const [countRow] = await db()
+    .select({ count: sql<string>`count(*)` })
+    .from(notificationLog)
+    .where(and(
+      eq(notificationLog.orderId, orderId),
+      sql`${notificationLog.event} LIKE 'order_paid_resend:%'`,
+      sql`${notificationLog.createdAt} > now() - interval '24 hours'`,
+    ));
+  if (Number(countRow?.count ?? 0) >= 3) {
+    return { ok: false, reason: "Already re-sent three times today. Confirm the email address with the customer instead." };
+  }
+
+  const notification = await buildOrderNotification(orderId);
+  if (!notification) return { ok: false, reason: "Order not found." };
+
+  const results = await dispatch({
+    kind: "order_paid",
+    order: notification,
+    dedupeKey: `order_paid_resend:${randomUUID().slice(0, 8)}`,
+    channels: ["email_customer"],
+  });
+  const email = results.find((result) => result.channel === "email_customer");
+  if (!email || email.skipped) {
+    return { ok: false, reason: "Customer email isn't configured on this deployment." };
+  }
+  if (!email.ok) {
+    return { ok: false, reason: `The email didn't send: ${email.error ?? "unknown error"}.` };
+  }
+  return { ok: true };
+}
+
+/**
+ * Notify about one completed refund from the ledger.
+ *
+ * The amount is re-read from order_refunds rather than passed by the caller so
+ * cron retries reconstruct the identical event; the per-refund dedupe key means
+ * a second partial refund still notifies while replays of the same one don't.
+ */
+export async function notifyOrderRefund(orderId: string, refundId: string): Promise<void> {
+  try {
+    const [refund] = await db()
+      .select({
+        amountCents: orderRefunds.amountCents,
+        status: orderRefunds.status,
+      })
+      .from(orderRefunds)
+      .where(eq(orderRefunds.id, refundId))
+      .limit(1);
+    if (!refund || refund.status !== "completed") return;
+
+    const order = await buildOrderNotification(orderId);
+    if (!order) {
+      reportError("notifications", "no order to notify about", undefined, { orderId });
+      return;
+    }
+    await dispatch({
+      kind: "order_refunded",
+      order,
+      dedupeKey: `order_refunded:${refundId}`,
+      refund: {
+        amountCents: refund.amountCents,
+        partial: refund.amountCents < order.totalCents + (order.tipCents ?? 0),
+      },
+    });
+  } catch (cause) {
+    reportError("notifications", "refund dispatch failed", cause);
   }
 }

@@ -37,7 +37,7 @@ export function LoadingRegion({
 export function ProductGridSkeleton({ count = 3 }: { count?: number }) {
   return (
     <LoadingRegion
-      label="Loading party trays"
+      label="Loading products"
       className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3"
     >
       {Array.from({ length: count }, (_, index) => (

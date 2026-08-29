@@ -43,6 +43,8 @@ export const notificationChannel = pgEnum("notification_channel", [
   "email_store",
   "email_customer",
   "sms",
+  /** Transactional texts to the customer — opt-in per order. */
+  "sms_customer",
   "discord",
   "slack",
   "trello",
@@ -60,6 +62,30 @@ export const refundStatus = pgEnum("refund_status", [
   "pending",
   "completed",
   "failed",
+  /** ≥1 completed refund for less than the order total, nothing in flight. */
+  "partial",
+]);
+
+/** Where a refund originated: our cancellation flow, a staff refund, or Square-side directly. */
+export const orderRefundOrigin = pgEnum("order_refund_origin", [
+  "cancellation",
+  "staff",
+  "external",
+]);
+
+/** How staff established that an order was collected at the counter. */
+export const pickupVerificationMethod = pgEnum("pickup_verification_method", [
+  "qr",
+  "manual",
+]);
+
+/** A ledger is used instead of a mutable points balance so every change is explainable. */
+export const loyaltyEntryKind = pgEnum("loyalty_entry_kind", [
+  "earned",
+  "redeemed",
+  "reversed",
+  /** Earned points clawed back when a completed pickup is later fully refunded. */
+  "revoked",
 ]);
 
 /* -------------------------------------------------------------------------- */
@@ -96,6 +122,14 @@ export const productsConfig = pgTable(
     /** Optional overrides for when Square's own image/description aren't enough. */
     heroImageUrl: text("hero_image_url"),
     descriptionMd: text("description_md"),
+
+    /**
+     * Tokens from lib/catalog/dietary.ts's fixed vocabulary — free text is
+     * rejected at the action layer, and unknown stored tokens are filtered on
+     * read. Empty means "not stated", never "free from".
+     */
+    allergens: jsonb("allergens").$type<string[]>().notNull().default([]),
+    dietaryTags: jsonb("dietary_tags").$type<string[]>().notNull().default([]),
 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -152,6 +186,32 @@ export const blackoutDates = pgTable(
 /* Orders                                                                     */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Optional, passwordless customer identity. Guest ordering remains supported;
+ * this record is created only from a signed order-confirmation page.
+ */
+export const customerAccounts = pgTable(
+  "customer_accounts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Always normalized to lowercase before persistence. */
+    email: text("email").notNull(),
+    name: text("name").notNull(),
+    phone: text("phone").notNull(),
+    /** Prefill only — the order row carries the consent that authorizes each text. */
+    smsOptIn: boolean("sms_opt_in").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("customer_accounts_email_key").on(t.email),
+    /* Phone sign-in resolves an account by number. Deliberately NOT unique:
+       a household can share one phone across two accounts, and the sign-in
+       path treats that ambiguity as a refusal rather than a guess. */
+    index("customer_accounts_phone_idx").on(t.phone),
+  ],
+);
+
 export const orders = pgTable(
   "orders",
   {
@@ -174,11 +234,24 @@ export const orders = pgTable(
     refundAttemptStartedAt: timestamp("refund_attempt_started_at", { withTimezone: true }),
     refundStatus: refundStatus("refund_status").notNull().default("not_required"),
     refundError: text("refund_error"),
+    /** Sum of completed refunds (order_refunds ledger); maintained inside the same transactions. */
+    refundedTotalCents: integer("refunded_total_cents").notNull().default(0),
+    /**
+     * Gratuity charged ON THE PAYMENT, not the Square order — Square's order
+     * total stays untipped, which is what keeps the total-match invariant in
+     * lib/orders/create.ts intact. Pinned at payment-attempt claim time so an
+     * ambiguous retry replays the identical request. Refunds cap at
+     * total + tip; loyalty points never count tips.
+     */
+    tipCents: integer("tip_cents").notNull().default(0),
     squareSyncError: text("square_sync_error"),
 
     customerName: text("customer_name").notNull(),
     customerEmail: text("customer_email").notNull(),
     customerPhone: text("customer_phone").notNull(),
+    customerAccountId: uuid("customer_account_id").references(() => customerAccounts.id, {
+      onDelete: "set null",
+    }),
     /** Square location chosen at checkout; never inferred later from the current store list. */
     squareLocationId: text("square_location_id"),
     pickupLocationName: text("pickup_location_name"),
@@ -202,11 +275,25 @@ export const orders = pgTable(
     currency: text("currency").notNull().default("USD"),
 
     customerNote: text("customer_note"),
+    /** Per-order consent to transactional texts; the ORDER row is the compliance record. */
+    customerSmsOptIn: boolean("customer_sms_opt_in").notNull().default(false),
+    customerSmsConsentAt: timestamp("customer_sms_consent_at", { withTimezone: true }),
+    /** Dormant: no writer or reader yet (the anonymizer only nulls it). Kept for the planned staff order-notes feature. */
     staffNote: text("staff_note"),
 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     paidAt: timestamp("paid_at", { withTimezone: true }),
+    /**
+     * When the kitchen started this order.
+     *
+     * Without it the gap between paid and ready is one opaque number, so nothing
+     * can report how long the kitchen actually takes — the metric every
+     * comparable ordering platform leads with. Nullable and not backfilled: it
+     * reads null for every order placed before this column existed, which is
+     * honest, and correct from the first transition after it ships.
+     */
+    preparingAt: timestamp("preparing_at", { withTimezone: true }),
     readyAt: timestamp("ready_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     canceledAt: timestamp("canceled_at", { withTimezone: true }),
@@ -241,6 +328,204 @@ export const orderItems = pgTable(
     totalPriceCents: integer("total_price_cents").notNull(),
   },
   (t) => [index("order_items_order_id_idx").on(t.orderId)],
+);
+
+/**
+ * Immutable counter record for an order collection.
+ *
+ * An order can only be collected once, so this is deliberately a one-to-one
+ * row rather than a mutable field on `orders`. It preserves the proof used at
+ * the counter independently from the order's lifecycle timestamps.
+ */
+/**
+ * A phone or tablet signed in to the staff app.
+ *
+ * The reason this table exists is revocation. Staff sessions are signed with the
+ * shared dashboard password, so the only way to invalidate one is to rotate that
+ * password — which signs out every counter tablet at once, mid-shift. The
+ * practical consequence is that nobody ever does it, and a handset that walks
+ * out of the shop keeps working until its token expires.
+ *
+ * Each device therefore gets its own secret, and its token is signed with that
+ * rather than the shared password. Deleting or revoking the row makes the token
+ * unverifiable on its own, without touching any other device, and without the
+ * shared password being involved at all.
+ */
+export const staffDevices = pgTable(
+  "staff_devices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Shown in the staff device list — "Counter iPad", "Ana's phone". */
+    label: text("label").notNull(),
+    platform: text("platform"),
+    /**
+     * Per-device HMAC key. Never leaves the server: the device holds only a
+     * token signed with it, so a stolen database row cannot be replayed as a
+     * token and a stolen token cannot be traced back to a key.
+     */
+    secret: text("secret").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * Written lazily — at most once every fifteen minutes per device — because
+     * the queue polls every fifteen seconds and this would otherwise be a
+     * database write on the hottest path in the app.
+     */
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * The login this handset was registered under.
+     *
+     * Nullable through the dual-auth window only — a device signed in with the
+     * old shared password has no user to point at. Every remaining null row is
+     * revoked at cutover and the column becomes NOT NULL, or un-migrated
+     * handsets would be a way around named accounts entirely.
+     */
+    staffUserId: uuid("staff_user_id").references(() => staffUsers.id, { onDelete: "cascade" }),
+    /** Set rather than deleted, so the audit log still resolves the device. */
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [index("staff_devices_last_seen_idx").on(t.lastSeenAt)],
+);
+
+export const pickupVerifications = pgTable(
+  "pickup_verifications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "cascade" }),
+    method: pickupVerificationMethod("method").notNull(),
+    /** Operational attribution while staff authentication remains shared. */
+    staffInitials: text("staff_initials").notNull(),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("pickup_verifications_order_id_key").on(t.orderId)],
+);
+
+/** One immutable entry per order action; points are never edited in place. */
+/**
+ * WebAuthn passkeys — Face ID, Touch ID, Windows Hello, hardware keys.
+ *
+ * A third sign-in method beside the magic link and the SMS code, and the only
+ * one that is phishing-resistant: the credential is bound to this origin by the
+ * browser, so a lookalike domain cannot use it however convincing it looks.
+ *
+ * Only the public key is stored, so this table is not a secret — a stolen copy
+ * lets nobody sign in as anybody. The private key never leaves the customer's
+ * device.
+ */
+export const customerPasskeys = pgTable(
+  "customer_passkeys",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    customerAccountId: uuid("customer_account_id")
+      .notNull()
+      .references(() => customerAccounts.id, { onDelete: "cascade" }),
+    /** Base64url credential id, as returned by the authenticator. */
+    credentialId: text("credential_id").notNull(),
+    /** Base64url COSE public key. */
+    publicKey: text("public_key").notNull(),
+    /**
+     * Signature counter for cloned-authenticator detection. Platform
+     * authenticators (the Face ID case) report 0 permanently, so this is only
+     * meaningful for hardware keys — hence integer rather than bigint.
+     */
+    counter: integer("counter").notNull().default(0),
+    /** Transport hints, so the browser prompts for the right thing next time. */
+    transports: jsonb("transports").$type<string[]>().notNull().default([]),
+    /** Best-effort label from the enrolling browser, so a revoke list is readable. */
+    deviceLabel: text("device_label"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("customer_passkeys_credential_key").on(t.credentialId),
+    index("customer_passkeys_account_idx").on(t.customerAccountId),
+  ],
+);
+
+/**
+ * Single-use email sign-in tokens.
+ *
+ * Only a sha256 hash of the token is stored — a database read can never mint a
+ * working link. Single use is enforced by the atomic
+ * `UPDATE … WHERE used_at IS NULL … RETURNING` in lib/accounts/magic-link.ts,
+ * not by application-level check-then-write.
+ */
+export const magicLinkTokens = pgTable(
+  "magic_link_tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    customerAccountId: uuid("customer_account_id")
+      .notNull()
+      .references(() => customerAccounts.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("magic_link_tokens_hash_key").on(t.tokenHash),
+    index("magic_link_tokens_expires_idx").on(t.expiresAt),
+    index("magic_link_tokens_account_idx").on(t.customerAccountId),
+  ],
+);
+
+/**
+ * Six-digit SMS sign-in codes.
+ *
+ * Only a salted hash is stored, like magic-link tokens. The `attempts` counter
+ * is the load-bearing control: six digits is a million possibilities, which is
+ * trivially brute-forced without a cap, so the code is burned after a handful
+ * of wrong guesses regardless of expiry.
+ */
+export const phoneSignInCodes = pgTable(
+  "phone_sign_in_codes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /**
+     * Null for a code texted to a number with no account yet.
+     *
+     * Sign-up runs through this same table so that requesting a code looks
+     * identical from the outside whether or not the number is known — the
+     * enumeration-safety contract in lib/accounts/phone-auth.ts. A row with no
+     * account is redeemable only into profile creation, never into a session.
+     */
+    customerAccountId: uuid("customer_account_id")
+      .references(() => customerAccounts.id, { onDelete: "cascade" }),
+    /** E.164, always recorded — it is the only subject a sign-up code has. */
+    phone: text("phone").notNull(),
+    codeHash: text("code_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    attempts: integer("attempts").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("phone_sign_in_codes_account_idx").on(t.customerAccountId),
+    index("phone_sign_in_codes_phone_idx").on(t.phone),
+    index("phone_sign_in_codes_expires_idx").on(t.expiresAt),
+  ],
+);
+
+export const loyaltyEntries = pgTable(
+  "loyalty_entries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    customerAccountId: uuid("customer_account_id")
+      .notNull()
+      .references(() => customerAccounts.id, { onDelete: "cascade" }),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "cascade" }),
+    kind: loyaltyEntryKind("kind").notNull(),
+    /** Positive for earned/reversed points and negative for redemptions. */
+    points: integer("points").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("loyalty_entries_order_kind_key").on(t.orderId, t.kind),
+    index("loyalty_entries_account_created_idx").on(t.customerAccountId, t.createdAt),
+  ],
 );
 
 /**
@@ -376,19 +661,270 @@ export const appSettings = pgTable("app_settings", {
     .default(sql`now()`),
 });
 
+/**
+ * "Sold out today" — a date-scoped 86 for one product, optionally one location.
+ *
+ * Distinct from `products_config.is_orderable` (a permanent switch someone must
+ * remember to flip back) and from Square inventory counts (unit-level): rows
+ * here simply stop matching once their date passes, so 86ing ube for one busy
+ * Saturday needs no restore step. A NULL location means every location; the
+ * quick actions write one row per location instead, because the unique index
+ * cannot see NULLs.
+ */
+export const productAvailabilityOverrides = pgTable(
+  "product_availability_overrides",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    squareProductId: text("square_product_id").notNull(),
+    squareLocationId: text("square_location_id"),
+    date: date("date").notNull(),
+    reason: text("reason"),
+    /** Roster initials. */
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("product_availability_overrides_key").on(t.squareProductId, t.squareLocationId, t.date),
+    index("product_availability_overrides_date_idx").on(t.date),
+  ],
+);
+
+/**
+ * One row per logical refund — the money history the orders row can't hold.
+ *
+ * The `orders.refund_*` columns remain the coarse per-order lock (one refund in
+ * flight, attempt-lease semantics); this table records every refund — the
+ * cancellation flow's, staff partial/post-pickup refunds, and refunds issued
+ * directly in Square — so "how much has been returned on this order, when, by
+ * whom, and why" is answerable. The partial unique index makes "one in-flight
+ * refund per order" a database guarantee rather than an application promise.
+ */
+export const orderRefunds = pgTable(
+  "order_refunds",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "cascade" }),
+    /** Null until Square answers; also null forever for rows we never initiated. */
+    squareRefundId: text("square_refund_id"),
+    /** Our idempotency key for the attempt; null for Square-initiated (external) rows. */
+    attemptKey: text("attempt_key"),
+    origin: orderRefundOrigin("origin").notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    currency: text("currency").notNull(),
+    /** Only pending | completed | failed are used at row level. */
+    status: refundStatus("status").notNull(),
+    reason: text("reason"),
+    /** Roster initials for staff refunds. */
+    initiatedBy: text("initiated_by"),
+    error: text("error"),
+    attemptStartedAt: timestamp("attempt_started_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("order_refunds_pending_key").on(t.orderId).where(sql`${t.status} = 'pending'`),
+    uniqueIndex("order_refunds_square_id_key").on(t.squareRefundId).where(sql`${t.squareRefundId} IS NOT NULL`),
+    uniqueIndex("order_refunds_attempt_key").on(t.attemptKey).where(sql`${t.attemptKey} IS NOT NULL`),
+    index("order_refunds_order_idx").on(t.orderId),
+    index("order_refunds_completed_idx").on(t.completedAt),
+    check("order_refunds_amount_positive", sql`${t.amountCents} > 0`),
+  ],
+);
+
+/**
+ * The staff roster: attribution, not authentication.
+ *
+ * The dashboard stays behind one shared password; these rows exist so the
+ * initials typed at pickup verification, refunds, and settings changes resolve
+ * to a real person. Members are deactivated rather than deleted so historical
+ * attribution keeps meaning. `initials` are stored uppercased (normalized in
+ * lib/staff/roster.ts) — the unique index depends on it.
+ */
+export const staffMembers = pgTable(
+  "staff_members",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    initials: text("initials").notNull(),
+    /** Optional 4-digit PIN (HMAC, lib/staff/roster.ts) required for refunds only. Attribution hardening, not security. */
+    pinHash: text("pin_hash"),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("staff_members_initials_key").on(t.initials)],
+);
+
+export const staffRole = pgEnum("staff_role", ["director", "manager", "staff"]);
+export type StaffRole = (typeof staffRole.enumValues)[number];
+
+/**
+ * Named staff logins — authentication, as distinct from the roster above.
+ *
+ * Two tables rather than columns on `staff_members` because they answer different
+ * questions. The roster is a permanent attribution anchor: rows are deactivated,
+ * never deleted, so a pickup verified in March still resolves to a person in
+ * December. A login is revocable and may not exist at all for someone who has
+ * left. Folding them together would make `active` mean both "appears in the
+ * initials picker" and "can sign in", which are genuinely different — parental
+ * leave keeps the first and loses the second.
+ *
+ * It also keeps a password hash out of `validateInitials`, which selects every
+ * active member on the counter's hot path at each pickup.
+ *
+ * The FK is NOT NULL and unique, so every login resolves to exactly one roster
+ * person and `initials` keeps a single source of truth.
+ */
+export const staffUsers = pgTable(
+  "staff_users",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    staffMemberId: uuid("staff_member_id")
+      .notNull()
+      .references(() => staffMembers.id, { onDelete: "restrict" }),
+    /** Stored lowercased; the unique index depends on it. */
+    email: text("email").notNull(),
+    /** scrypt, self-describing parameters — see lib/auth/password.ts. */
+    passwordHash: text("password_hash").notNull(),
+    role: staffRole("role").notNull(),
+    /**
+     * Explicit, rather than inferring "all" from an empty grant list. An empty
+     * collection silently meaning "unrestricted" is exactly the bug in the
+     * roster's own bootstrap rule; one of those in a codebase is enough.
+     */
+    allLocations: boolean("all_locations").notNull().default(false),
+    active: boolean("active").notNull().default(true),
+    mustChangePassword: boolean("must_change_password").notNull().default(false),
+    /**
+     * The revocation lever. Sessions are stateless and carry their issue time;
+     * any token issued before this instant is refused. Bumping it signs one
+     * person out of every device, cookie and handset alike, without a session
+     * table and without touching anybody else.
+     */
+    sessionsValidFrom: timestamp("sessions_valid_from", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastSignInAt: timestamp("last_sign_in_at", { withTimezone: true }),
+    failedAttempts: integer("failed_attempts").notNull().default(0),
+    lockedUntil: timestamp("locked_until", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("staff_users_email_key").on(t.email),
+    uniqueIndex("staff_users_member_key").on(t.staffMemberId),
+    /* A director is defined by seeing everything; letting the two disagree would
+       make "director" mean something different per row. */
+    check("staff_users_director_all_locations", sql`role <> 'director' OR all_locations`),
+  ],
+);
+
+/**
+ * Which branches a manager may see.
+ *
+ * No foreign key on the location: there is no local locations table — they come
+ * from the Square API via lib/locations/server.ts — which is why
+ * `orders.square_location_id` and `slot_capacity.square_location_id` are bare
+ * text too. Rows exist only for managers; a director implies every location and
+ * a staff member has no group view at all.
+ */
+export const staffUserLocations = pgTable(
+  "staff_user_locations",
+  {
+    staffUserId: uuid("staff_user_id")
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: "cascade" }),
+    squareLocationId: text("square_location_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.staffUserId, t.squareLocationId] })],
+);
+
+/**
+ * Append-only record of operator-relevant actions: status changes, refunds,
+ * cancellations, 86ing, pause toggles, settings writes. No update or delete
+ * path exists in code. `metadata` must never contain customer PII — the
+ * retention anonymizer does not touch this table.
+ */
+export const auditLog = pgTable(
+  "audit_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** "staff" | "system:webhook" | "system:cron" | "customer" */
+    actorType: text("actor_type").notNull(),
+    actorInitials: text("actor_initials"),
+    /**
+     * The acting login, once staff have named accounts.
+     *
+     * Kept alongside `actor_initials` rather than replacing it: initials are what
+     * /staff/audit filters on today, and they remain the right answer for a
+     * shared counter device where the session identifies the tablet's morning
+     * rather than the person. The user id is the answer that cannot be typed in
+     * by somebody else.
+     */
+    actorUserId: uuid("actor_user_id").references(() => staffUsers.id, { onDelete: "set null" }),
+    /** Request context. Derived server-side; never accepted from the client. */
+    ip: text("ip"),
+    userAgent: text("user_agent"),
+    requestId: text("request_id"),
+    /** Dotted verb slug, e.g. "order.status_changed", "order.refunded", "product.86ed". */
+    action: text("action").notNull(),
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id"),
+    /** Kept nullable so audit history survives order deletion. */
+    orderId: uuid("order_id").references(() => orders.id, { onDelete: "set null" }),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("audit_log_created_idx").on(t.createdAt),
+    index("audit_log_order_idx").on(t.orderId),
+    index("audit_log_action_idx").on(t.action),
+    /* "what did this person do" is the question an audit trail exists to answer,
+       and it is the one the table could not answer before. */
+    index("audit_log_actor_idx").on(t.actorUserId, t.createdAt),
+  ],
+);
+
 /* -------------------------------------------------------------------------- */
 /* Relations                                                                  */
 /* -------------------------------------------------------------------------- */
 
-export const ordersRelations = relations(orders, ({ many }) => ({
+export const ordersRelations = relations(orders, ({ one, many }) => ({
+  customerAccount: one(customerAccounts, {
+    fields: [orders.customerAccountId],
+    references: [customerAccounts.id],
+  }),
   items: many(orderItems),
+  pickupVerifications: many(pickupVerifications),
   notifications: many(notificationLog),
   holds: many(slotHolds),
   inventoryHolds: many(inventoryHolds),
+  loyaltyEntries: many(loyaltyEntries),
+}));
+
+export const customerAccountsRelations = relations(customerAccounts, ({ many }) => ({
+  orders: many(orders),
+  loyaltyEntries: many(loyaltyEntries),
 }));
 
 export const orderItemsRelations = relations(orderItems, ({ one }) => ({
   order: one(orders, { fields: [orderItems.orderId], references: [orders.id] }),
+}));
+
+export const pickupVerificationsRelations = relations(pickupVerifications, ({ one }) => ({
+  order: one(orders, { fields: [pickupVerifications.orderId], references: [orders.id] }),
+}));
+
+export const loyaltyEntriesRelations = relations(loyaltyEntries, ({ one }) => ({
+  customerAccount: one(customerAccounts, {
+    fields: [loyaltyEntries.customerAccountId],
+    references: [customerAccounts.id],
+  }),
+  order: one(orders, { fields: [loyaltyEntries.orderId], references: [orders.id] }),
 }));
 
 export const slotHoldsRelations = relations(slotHolds, ({ one }) => ({
@@ -406,6 +942,9 @@ export const notificationLogRelations = relations(notificationLog, ({ one }) => 
 export type Order = typeof orders.$inferSelect;
 export type NewOrder = typeof orders.$inferInsert;
 export type OrderItem = typeof orderItems.$inferSelect;
+export type PickupVerification = typeof pickupVerifications.$inferSelect;
+export type CustomerAccount = typeof customerAccounts.$inferSelect;
+export type LoyaltyEntry = typeof loyaltyEntries.$inferSelect;
 export type InventoryHold = typeof inventoryHolds.$inferSelect;
 export type ProductConfig = typeof productsConfig.$inferSelect;
 export type OrderStatus = (typeof orderStatus.enumValues)[number];

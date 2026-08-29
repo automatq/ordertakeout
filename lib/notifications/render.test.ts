@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   SMS_SEGMENT_LIMIT,
   renderCustomerEmail,
+  renderCustomerSms,
   renderDiscord,
   renderSlack,
   renderStoreEmail,
@@ -175,5 +176,103 @@ describe("chat and board payloads", () => {
         note: null,
       },
     });
+  });
+});
+
+describe("renderCustomerSms", () => {
+  const base = {
+    orderId: "o1",
+    orderNumber: "PT-1001",
+    customerName: "Maria",
+    customerEmail: "m@example.com",
+    customerPhone: "+14165550142",
+    pickupDate: "2026-08-24" as const,
+    pickupTime: "16:00" as const,
+    pickupLocationName: "Wilson Ave",
+    totalCents: 4500,
+    currency: "CAD",
+    items: [{ quantity: 1, name: "25 pcs Ube" }],
+    note: null,
+    trackingUrl: "https://harina.example/orders/PT-1001?key=abc123",
+    customerSmsOptIn: true,
+  };
+
+  it("stays within one GSM-7 segment, link included when it fits", () => {
+    const body = renderCustomerSms({ kind: "order_ready", order: base });
+    expect(body).not.toBeNull();
+    expect(body!.length).toBeLessThanOrEqual(SMS_SEGMENT_LIMIT);
+    expect(body).toContain("PT-1001");
+    expect(body).toContain("https://harina.example");
+    // Printable ASCII only — anything else flips the whole message to UCS-2.
+    expect(body).toMatch(/^[\x20-\x7E]*$/);
+  });
+
+  it("shortens the message rather than dropping the link", () => {
+    // Regression: the link used to be appended only if the whole message fit,
+    // so a long branch name silently cost the customer their pickup pass.
+    const link = `https://harina.example/orders/PT-1001?key=${"x".repeat(80)}`;
+    const body = renderCustomerSms({
+      kind: "order_ready",
+      order: {
+        ...base,
+        pickupLocationName: "The Extremely Long Location Name At The Far End Of Town Plaza",
+        trackingUrl: link,
+        trackingShortUrl: null,
+      },
+    });
+    expect(body).not.toBeNull();
+    expect(body!.length).toBeLessThanOrEqual(SMS_SEGMENT_LIMIT);
+    expect(body).toContain(link);
+    expect(body).toContain("PT-1001");
+  });
+
+  it("never truncates the URL itself, even with no room for prose", () => {
+    // Half a link looks clickable and isn't — worse than saying less.
+    const link = `https://harina.example/o/${"x".repeat(120)}`;
+    const body = renderCustomerSms({
+      kind: "order_ready",
+      order: { ...base, trackingUrl: link, trackingShortUrl: null },
+    });
+    expect(body).toContain(link);
+  });
+
+  it("prefers the short link over the full tracking URL", () => {
+    const body = renderCustomerSms({
+      kind: "order_ready",
+      order: { ...base, trackingShortUrl: "https://harina.example/o/1001abcd" },
+    });
+    expect(body).toContain("https://harina.example/o/1001abcd");
+    expect(body).not.toContain("key=abc123");
+  });
+
+  it("texts the paid confirmation, link included", () => {
+    // The confirmation carries the tracking link at the moment the customer
+    // most wants it; email used to be its only channel.
+    const body = renderCustomerSms({
+      kind: "order_paid",
+      order: { ...base, trackingShortUrl: "https://harina.example/o/1001abcd" },
+    });
+    expect(body).not.toBeNull();
+    expect(body!.length).toBeLessThanOrEqual(SMS_SEGMENT_LIMIT);
+    expect(body).toContain("PT-1001");
+    expect(body).toContain("https://harina.example/o/1001abcd");
+    expect(body).toMatch(/^[\x20-\x7E]*$/);
+  });
+
+  it("strips non-ASCII from fancy location names", () => {
+    const body = renderCustomerSms({
+      kind: "order_ready",
+      order: { ...base, pickupLocationName: "Café — Où", trackingUrl: null },
+    });
+    expect(body).toMatch(/^[\x20-\x7E]*$/);
+  });
+
+  it("returns null for a kind it has no copy for", () => {
+    // Defensive branch: a future event kind must not silently text something
+    // generic. Cast because every kind in the union is currently handled.
+    const unknown = { kind: "order_escheated", order: base } as unknown as Parameters<
+      typeof renderCustomerSms
+    >[0];
+    expect(renderCustomerSms(unknown)).toBeNull();
   });
 });

@@ -1,3 +1,4 @@
+import { PauseBanner } from "@/components/storefront/pause-banner";
 import { SiteFooter } from "@/components/storefront/site-footer";
 import { SiteHeader } from "@/components/storefront/site-header";
 import { LocationSelector } from "@/components/storefront/location-selector";
@@ -39,6 +40,10 @@ export default function StorefrontLayout({
 
       <Suspense fallback={<LocationBarFallback />}>
         <LocationBar />
+      </Suspense>
+
+      <Suspense fallback={null}>
+        <PauseBanner />
       </Suspense>
 
       <Suspense fallback={null}>

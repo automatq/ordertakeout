@@ -86,7 +86,7 @@ export function AddToCart({
   return (
     <div className="bg-surface shadow-raised flex flex-col gap-6 rounded-[2rem] p-5 sm:p-7">
       <div className="flex items-center justify-between gap-4">
-        <p className="eyebrow text-secondary">Build your tray</p>
+        <p className="eyebrow text-secondary">Add to order</p>
         <span className="tag tag-accent">
           {variants.length} size{variants.length === 1 ? "" : "s"}
         </span>
@@ -182,7 +182,7 @@ export function AddToCart({
           onClamp={(attempted) =>
             toast({
               tone: "info",
-              message: `Online quantities are limited to ${MAX_QUANTITY} trays — we've set it to ${MAX_QUANTITY}. For ${attempted}, please call the store.`,
+              message: `Online quantities are limited to ${MAX_QUANTITY} per item — we've set it to ${MAX_QUANTITY}. For ${attempted}, please call the store.`,
             })
           }
         />

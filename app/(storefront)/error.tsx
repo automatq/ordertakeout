@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 
 import { AlertIcon } from "@/components/ui/icons";
+import { reportBoundaryError } from "@/lib/monitoring/report-client";
 import { STORE_INFO } from "@/lib/store";
 
 /**
@@ -23,7 +24,7 @@ export default function StorefrontError({
   retry: () => void;
 }) {
   useEffect(() => {
-    console.error(error);
+    reportBoundaryError(error);
   }, [error]);
 
   return (

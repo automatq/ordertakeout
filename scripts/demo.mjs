@@ -58,6 +58,10 @@ function run(command, args, { inherit = true } = {}) {
 const npx = process.platform === "win32" ? "npx.cmd" : "npx";
 
 try {
+  /* The demo starts `next dev` directly, so npm's predev hook never fires and
+     the staff QR scanner's WASM decoder would be missing from public/. */
+  await run(process.execPath, ["scripts/copy-barcode-wasm.mjs"]);
+
   console.log("\n▸ Applying migrations…");
   await run(npx, ["drizzle-kit", "migrate"]);
 

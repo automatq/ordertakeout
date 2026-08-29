@@ -11,6 +11,7 @@ import {
   type ProductRule,
 } from "./availability";
 import { pickupInstant } from "./time";
+import { AVAILABILITY_PREVIEW_DAYS, MAX_ORDER_HORIZON_DAYS } from "@/lib/store";
 
 const LA = "America/Los_Angeles";
 
@@ -280,6 +281,53 @@ describe("slot capacity (client question 9)", () => {
     expect(result.days[0]?.slots.find((s) => s.time === "16:00")?.remainingOrders).toBe(0);
   });
 
+  /* The number this reads is a setting the bakery owns (lib/settings/capacity.ts),
+     not a constant. Five orders an hour suits party trays; a shop selling bread
+     all day needs a far bigger number, and nothing else in the engine should
+     have to change for that to work. */
+  it("scales with the configured default rather than a compiled-in five", () => {
+    const busy = expectOk(
+      computeAvailability(
+        makeInput({
+          defaultSlotCapacity: 40,
+          slotUsage: new Map([[slotKey("2026-03-03", "16:00"), 30]]),
+        }),
+      ),
+    );
+    const slot = busy.days[0]?.slots.find((s) => s.time === "16:00");
+    expect(slot).toMatchObject({ available: true, remainingOrders: 10 });
+
+    // And the same usage against the old default would have closed it.
+    const narrow = expectOk(
+      computeAvailability(
+        makeInput({
+          defaultSlotCapacity: 5,
+          slotUsage: new Map([[slotKey("2026-03-03", "16:00"), 30]]),
+        }),
+      ),
+    );
+    expect(narrow.days[0]?.slots.find((s) => s.time === "16:00")).toMatchObject({
+      available: false,
+      reason: "slot_full",
+    });
+  });
+
+  it("lets a per-date override cut below a raised default", () => {
+    // The two controls stack: a big everyday number, trimmed for one date.
+    const result = expectOk(
+      computeAvailability(
+        makeInput({
+          defaultSlotCapacity: 40,
+          slotCapacityOverrides: new Map([[slotKey("2026-03-03", "16:00"), 2]]),
+          slotUsage: new Map([[slotKey("2026-03-03", "16:00"), 2]]),
+        }),
+      ),
+    );
+    const day = result.days[0];
+    expect(day?.slots.find((s) => s.time === "16:00")?.available).toBe(false);
+    expect(day?.slots.find((s) => s.time === "17:00")?.remainingOrders).toBe(40);
+  });
+
   it("honours a staff override for a single slot", () => {
     const result = expectOk(
       computeAvailability(
@@ -484,5 +532,201 @@ describe("validatePickupSelection (the server-side checkout guard)", () => {
       ok: false,
       rejection: { kind: "cart_problem", problem: { kind: "empty_cart" } },
     });
+  });
+});
+
+describe("per-day 86 (staff 'sold out today')", () => {
+  it("blocks every slot on the 86ed day for that product, like a one-item blackout", () => {
+    const result = expectOk(
+      computeAvailability(makeInput({
+        productDateBlocks: new Set([productDayKey(ENSAYMADA.productId, "2026-03-03")]),
+      })),
+    );
+    const blocked = result.days.find((day) => day.date === "2026-03-03");
+    expect(blocked?.hasAvailability).toBe(false);
+    expect(blocked?.slots.every((slot) => slot.reason === "product_sold_out")).toBe(true);
+    const open = result.days.find((day) => day.date === "2026-03-04");
+    expect(open?.hasAvailability).toBe(true);
+  });
+
+  it("does not touch other products' days", () => {
+    const result = expectOk(
+      computeAvailability(makeInput({
+        productDateBlocks: new Set([productDayKey("some-other-product", "2026-03-03")]),
+      })),
+    );
+    expect(result.days.find((day) => day.date === "2026-03-03")?.hasAvailability).toBe(true);
+  });
+
+  it("is enforced by the server-side checkout guard", () => {
+    const rejection = validatePickupSelection(
+      makeInput({
+        productDateBlocks: new Set([productDayKey(ENSAYMADA.productId, "2026-03-03")]),
+      }),
+      { date: "2026-03-03", time: "16:00" },
+    );
+    expect(rejection).toEqual({
+      ok: false,
+      rejection: { kind: "slot_unavailable", reason: "product_sold_out" },
+    });
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+
+describe("same-day ordering (lead time 0)", () => {
+  /** Everyday bread: orderable today, collectable across the whole trading day. */
+  const PANDESAL: ProductRule = {
+    productId: "pandesal",
+    leadTimeDays: 0,
+    orderCutoffTime: "20:00",
+    allowedPickupTimes: ["06:00", "09:00", "12:00", "15:00", "18:00"],
+    maxUnitsPerDay: null,
+    isOrderable: true,
+  };
+
+  const sameDayInput = (overrides: Partial<AvailabilityInput> = {}) =>
+    makeInput({
+      cart: [{ productId: PANDESAL.productId, quantity: 1 }],
+      rules: [PANDESAL],
+      ...overrides,
+    });
+
+  it("never offers a pickup time that has already passed", () => {
+    // Regression: buildDay never received the current time, so at 3 PM the
+    // engine offered this morning's 06:00, 09:00 and 12:00 slots. It stayed
+    // hidden because every product had leadTimeDays >= 1, which guarantees the
+    // offered date is in the future.
+    const result = expectOk(computeAvailability(sameDayInput({ now: at("2026-03-02", "15:00") })));
+    const today = result.days.find((day) => day.date === "2026-03-02")!;
+
+    expect(today.slots.filter((slot) => slot.available).map((slot) => slot.time)).toEqual([
+      "15:00",
+      "18:00",
+    ]);
+    for (const time of ["06:00", "09:00", "12:00"]) {
+      expect(today.slots.find((slot) => slot.time === time)).toMatchObject({
+        available: false,
+        reason: "time_passed",
+      });
+    }
+  });
+
+  it("refuses a passed time at checkout, not just in the calendar", () => {
+    // validatePickupSelection runs the same engine, and claimSlot re-validates
+    // through it — so the server-side guard must reject this too.
+    const result = validatePickupSelection(sameDayInput({ now: at("2026-03-02", "15:00") }), {
+      date: "2026-03-02",
+      time: "09:00",
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      rejection: { kind: "slot_unavailable", reason: "time_passed" },
+    });
+  });
+
+  it("still offers a slot at exactly the current time", () => {
+    const result = expectOk(computeAvailability(sameDayInput({ now: at("2026-03-02", "15:00") })));
+    const today = result.days.find((day) => day.date === "2026-03-02")!;
+    expect(today.slots.find((slot) => slot.time === "15:00")?.available).toBe(true);
+  });
+
+  it("holds back slots inside the prep window", () => {
+    const result = expectOk(
+      computeAvailability(
+        sameDayInput({
+          now: at("2026-03-02", "14:50"),
+          rules: [{ ...PANDESAL, minimumPrepMinutes: 20 }],
+        }),
+      ),
+    );
+    const today = result.days.find((day) => day.date === "2026-03-02")!;
+
+    // 15:00 is only 10 minutes away and the kitchen needs 20.
+    expect(today.slots.find((slot) => slot.time === "15:00")).toMatchObject({
+      available: false,
+      reason: "time_passed",
+    });
+    expect(today.slots.find((slot) => slot.time === "18:00")?.available).toBe(true);
+  });
+
+  it("closes the day entirely when the prep window runs past midnight", () => {
+    const result = expectOk(
+      computeAvailability(
+        sameDayInput({
+          now: at("2026-03-02", "23:50"),
+          // Past the 20:00 cutoff, so today is gone anyway — pin the cutoff open
+          // to isolate the midnight-wrap behaviour.
+          rules: [{ ...PANDESAL, orderCutoffTime: "23:59", minimumPrepMinutes: 30 }],
+        }),
+      ),
+    );
+    const today = result.days.find((day) => day.date === "2026-03-02");
+
+    expect(today?.hasAvailability).toBe(false);
+    expect(today?.slots.every((slot) => slot.reason === "time_passed")).toBe(true);
+  });
+
+  it("gates a mixed cart on the slowest item's prep time", () => {
+    const result = expectOk(
+      computeAvailability(
+        sameDayInput({
+          now: at("2026-03-02", "14:30"),
+          cart: [
+            { productId: "pandesal", quantity: 1 },
+            { productId: "hot-pie", quantity: 1 },
+          ],
+          rules: [
+            { ...PANDESAL, minimumPrepMinutes: 0 },
+            { ...PANDESAL, productId: "hot-pie", minimumPrepMinutes: 45 },
+          ],
+        }),
+      ),
+    );
+    const today = result.days.find((day) => day.date === "2026-03-02")!;
+
+    // 15:00 is 30 minutes out; the pie needs 45.
+    expect(today.slots.find((slot) => slot.time === "15:00")?.available).toBe(false);
+    expect(today.slots.find((slot) => slot.time === "18:00")?.available).toBe(true);
+  });
+
+  it("leaves future days untouched", () => {
+    const result = expectOk(computeAvailability(sameDayInput({ now: at("2026-03-02", "15:00") })));
+    const tomorrow = result.days.find((day) => day.date === "2026-03-03")!;
+    expect(tomorrow.slots.every((slot) => slot.available)).toBe(true);
+  });
+});
+
+describe("the storefront preview window", () => {
+  it("is narrower than the bookable horizon, and never wider", () => {
+    /* These are deliberately different numbers: the picker only ever shows the
+       first 21 dates with availability, so shipping the full 60-day horizon
+       computed, queried and serialised five extra weeks of slots for nothing —
+       on a payload refetched every time a quantity changes. Collapsing them to
+       one value would either restore that waste or silently shrink what
+       customers can book. */
+    expect(AVAILABILITY_PREVIEW_DAYS).toBeLessThan(MAX_ORDER_HORIZON_DAYS);
+    // Wide enough that a run of closure dates still leaves a full set of options.
+    expect(AVAILABILITY_PREVIEW_DAYS).toBeGreaterThan(21);
+  });
+
+  it("bounds the days built, without changing what validates", () => {
+    const preview = expectOk(
+      computeAvailability(makeInput({ horizonDays: AVAILABILITY_PREVIEW_DAYS })),
+    );
+    const full = expectOk(computeAvailability(makeInput({ horizonDays: MAX_ORDER_HORIZON_DAYS })));
+
+    expect(preview.days.length).toBeLessThan(full.days.length);
+
+    // A date past the preview window is still bookable — claimSlot re-validates
+    // against the full horizon, so narrowing the preview must not reject it.
+    const beyondPreview = full.days[AVAILABILITY_PREVIEW_DAYS + 1]!;
+    expect(
+      validatePickupSelection(makeInput({ horizonDays: MAX_ORDER_HORIZON_DAYS }), {
+        date: beyondPreview.date,
+        time: beyondPreview.slots.find((slot) => slot.available)!.time,
+      }),
+    ).toEqual({ ok: true });
   });
 });

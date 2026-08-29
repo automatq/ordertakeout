@@ -10,10 +10,11 @@ import { DEMO_PRODUCTS, DEMO_PRODUCT_RULES } from "@/lib/demo/catalog";
 import { isDemoMode } from "@/lib/demo/config";
 import { matchProductConfig } from "@/lib/demo/product-config";
 import { serverEnv } from "@/lib/env";
+import { reportError } from "@/lib/monitoring/report";
 import { squareClient } from "@/lib/square/client";
-import { getInStockVariationIds } from "@/lib/inventory/server";
-import { getStoreLocation } from "@/lib/locations/server";
 
+import { parseAllergens, parseDietaryTags, type Allergen, type DietaryTag } from "./dietary";
+import { attachCategoryNames, collectCategoryIds } from "./categories";
 import { attachImageUrls, collectImageIds, extractImageUrls } from "./images";
 import { mapCatalogItems } from "./map";
 import type { CatalogProduct, SkippedCatalogObject, StoreProduct } from "./types";
@@ -72,14 +73,15 @@ async function fetchSquareCatalog(): Promise<CatalogLoad> {
     } while (cursor);
 
     const mapped = mapCatalogItems(objects, { expectedCurrency: serverEnv().STORE_CURRENCY });
+    const withImages = attachImageUrls(mapped.products, await fetchImageUrls(client, mapped));
 
     return {
       ...mapped,
-      products: attachImageUrls(mapped.products, await fetchImageUrls(client, mapped)),
+      products: attachCategoryNames(withImages, await fetchCategoryNames(client, withImages)),
     };
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
-    console.error("[catalog] Square catalog fetch failed:", message);
+    reportError("catalog", "Square catalog fetch failed", cause);
     return { products: [], skipped: [], error: message };
   }
 }
@@ -116,10 +118,42 @@ async function fetchImageUrls(
 
     return urls;
   } catch (cause) {
-    console.error(
-      "[catalog] image resolution failed, falling back to text tiles:",
-      cause instanceof Error ? cause.message : String(cause),
-    );
+    reportError("catalog", "image resolution failed, falling back to text tiles", cause);
+    return new Map();
+  }
+}
+
+/**
+ * Resolve the CATEGORY objects the items reference.
+ *
+ * `searchItems` returns category *ids* on each item, never names, so this is a
+ * second lookup with the same shape as image resolution — and non-fatal for the
+ * same reason. A menu that renders ungrouped is a degraded storefront; a menu
+ * that fails to load because a category lookup timed out is a closed one.
+ */
+async function fetchCategoryNames(
+  client: ReturnType<typeof squareClient>,
+  products: readonly CatalogProduct[],
+): Promise<Map<string, string>> {
+  const ids = collectCategoryIds(products);
+  if (ids.length === 0) return new Map();
+
+  try {
+    const names = new Map<string, string>();
+
+    for (let start = 0; start < ids.length; start += 1000) {
+      const response = await client.catalog.batchGet({
+        objectIds: ids.slice(start, start + 1000),
+      });
+      for (const object of response.objects ?? []) {
+        const name = object.type === "CATEGORY" ? object.categoryData?.name?.trim() : null;
+        if (object.id && name) names.set(object.id, name);
+      }
+    }
+
+    return names;
+  } catch (cause) {
+    reportError("catalog", "category resolution failed, menu will be ungrouped", cause);
     return new Map();
   }
 }
@@ -135,6 +169,8 @@ interface ProductConfigRow {
   sortOrder: number;
   heroImageUrl: string | null;
   descriptionMd: string | null;
+  allergens: Allergen[];
+  dietaryTags: DietaryTag[];
 }
 
 /**
@@ -163,11 +199,13 @@ async function fetchProductConfig(): Promise<{ rows: ProductConfigRow[]; error?:
         sortOrder: row.sortOrder,
         heroImageUrl: row.heroImageUrl,
         descriptionMd: row.descriptionMd,
+        allergens: parseAllergens(row.allergens),
+        dietaryTags: parseDietaryTags(row.dietaryTags),
       })),
     };
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
-    console.error("[catalog] product config fetch failed:", message);
+    reportError("catalog", "product config fetch failed", cause);
     return { rows: [], error: message };
   }
 }
@@ -218,6 +256,8 @@ export async function getStoreCatalog(): Promise<StoreCatalog> {
       heroImageUrl: rules.heroImageUrl,
       descriptionMd: rules.descriptionMd,
       sortOrder: rules.sortOrder,
+      allergens: rules.allergens,
+      dietaryTags: rules.dietaryTags,
       rule: {
         productId: rules.productId,
         leadTimeDays: rules.leadTimeDays,
@@ -243,26 +283,6 @@ export async function getStoreCatalog(): Promise<StoreCatalog> {
 export async function getOrderableProducts(): Promise<StoreCatalog> {
   const catalog = await getStoreCatalog();
   return { ...catalog, products: catalog.products.filter((p) => p.rule.isOrderable) };
-}
-
-/** Catalog enriched with live inventory for one validated pickup location. */
-export async function getOrderableProductsForLocation(locationId: string): Promise<StoreCatalog> {
-  const catalog = await getOrderableProducts();
-  if (catalog.error) return catalog;
-  if (!(await getStoreLocation(locationId))) {
-    return { ...catalog, products: [], error: "Pickup location is not active" };
-  }
-  const inStock = await getInStockVariationIds(
-    locationId,
-    catalog.products.flatMap((product) => product.variants.map((variant) => variant.id)),
-  );
-  return {
-    ...catalog,
-    products: catalog.products.map((product) => ({
-      ...product,
-      variants: product.variants.map((variant) => ({ ...variant, available: inStock.has(variant.id) })),
-    })),
-  };
 }
 
 export async function getProductBySlug(slug: string): Promise<StoreProduct | null> {

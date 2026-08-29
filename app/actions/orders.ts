@@ -2,11 +2,10 @@
 
 import { z } from "zod";
 
+import { cancelOrderWithToken } from "@/lib/api/order-cancel";
 import { getOrderByNumber } from "@/lib/orders/lookup";
 import { consumeRateLimit, requestFingerprint } from "@/lib/security/rate-limit";
-import { createOrderAccessToken, verifyOrderAccessToken } from "@/lib/orders/access";
-import { customerCancellationEligibility } from "@/lib/orders/cancellation";
-import { advanceOrder } from "@/lib/orders/transitions";
+import { createOrderAccessToken } from "@/lib/orders/access";
 
 /**
  * Customer-facing order lookup.
@@ -74,29 +73,9 @@ export async function findOrder(
   };
 }
 
-const cancelSchema = z.object({ orderNumber: z.string().min(1), accessToken: z.string().min(20) });
-
 export async function cancelCustomerOrder(input: unknown): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const limit = await consumeRateLimit("customer-cancel", await requestFingerprint(), {
-    attempts: 5,
-    windowMs: 15 * 60_000,
-  });
-  if (!limit.allowed) return { ok: false, reason: "Too many attempts. Wait a few minutes and try again." };
-
-  const parsed = cancelSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, reason: "That cancellation link is invalid." };
-  const order = await getOrderByNumber(parsed.data.orderNumber);
-  if (!order || !verifyOrderAccessToken(order.id, order.orderNumber, parsed.data.accessToken)) {
-    return { ok: false, reason: "That cancellation link is invalid." };
-  }
-  const eligibility = await customerCancellationEligibility(order);
-  if (!eligibility.allowed) return { ok: false, reason: eligibility.reason };
-  const result = await advanceOrder(order.id, "canceled");
-  if (result.ok && result.status === "canceled") return { ok: true };
-  return {
-    ok: false,
-    reason: result.ok
-      ? result.notice ?? "Your refund is still processing. The order remains active until Square confirms it."
-      : result.reason,
-  };
+  const result = await cancelOrderWithToken(input, await requestFingerprint());
+  /* `code` is for the API route's status line; the pages that call this render
+     the reason and nothing else, so it is dropped rather than widened. */
+  return result.ok ? { ok: true } : { ok: false, reason: result.reason };
 }

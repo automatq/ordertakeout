@@ -3,6 +3,7 @@ import type { NextConfig } from "next";
 import { SQUARE_PRODUCT_IMAGE_HOSTNAMES } from "./lib/catalog/image-policy";
 import {
   buildContentSecurityPolicy,
+  sentryIngestOriginFromDsn,
   type SquareWebPaymentsEnvironment,
 } from "./lib/security/content-security-policy";
 
@@ -33,7 +34,11 @@ const nextConfig: NextConfig = {
     const production = process.env.NODE_ENV === "production";
     const squareEnvironment: SquareWebPaymentsEnvironment =
       process.env.NEXT_PUBLIC_SQUARE_ENVIRONMENT === "production" ? "production" : "sandbox";
-    const contentSecurityPolicy = buildContentSecurityPolicy({ production, squareEnvironment });
+    const contentSecurityPolicy = buildContentSecurityPolicy({
+      production,
+      squareEnvironment,
+      sentryIngestOrigin: sentryIngestOriginFromDsn(process.env.NEXT_PUBLIC_SENTRY_DSN),
+    });
 
     return [{
       source: "/:path*",
@@ -42,7 +47,10 @@ const nextConfig: NextConfig = {
         { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
         { key: "X-Content-Type-Options", value: "nosniff" },
         { key: "X-Frame-Options", value: "DENY" },
-        { key: "Permissions-Policy", value: "geolocation=(self), camera=(), microphone=()" },
+        // Camera is used only after a staff member explicitly opens the pickup
+        // verifier; the storefront never requests it. HTTPS/localhost remains
+        // required by the browser for getUserMedia.
+        { key: "Permissions-Policy", value: "geolocation=(self), camera=(self), microphone=()" },
         ...(production ? [{ key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" }] : []),
       ],
     }];

@@ -7,6 +7,7 @@ import {
   blackoutDates as blackoutDatesTable,
   orderItems,
   orders,
+  productAvailabilityOverrides,
   productsConfig,
   slotCapacity,
   slotHolds,
@@ -14,8 +15,8 @@ import {
 } from "@/lib/db/schema";
 import { serverEnv } from "@/lib/env";
 import { getStoreLocation } from "@/lib/locations/server";
+import { getSlotCapacityDefault } from "@/lib/settings/capacity";
 import {
-  DEFAULT_MAX_ORDERS_PER_SLOT,
   MAX_ORDER_HORIZON_DAYS,
   SLOT_HOLD_TTL_MINUTES,
 } from "@/lib/store";
@@ -102,16 +103,27 @@ export async function loadAvailabilityInput(
   cart: readonly CartLine[],
   exec: Executor = db(),
   locationId?: string,
+  /**
+   * How far ahead to build. Defaults to the full bookable horizon, which is
+   * what the checkout guard needs; the storefront passes a shorter preview
+   * window so it does not query, serialise and ship five weeks of slots the
+   * picker will discard. Narrowing this narrows the supporting queries too.
+   */
+  horizonDays: number = MAX_ORDER_HORIZON_DAYS,
 ): Promise<AvailabilityInput> {
   const location = locationId ? await getStoreLocation(locationId) : null;
   const timeZone = location?.timezone ?? serverEnv().STORE_TIMEZONE;
   const now = new Date();
   const today = storeToday(now, timeZone);
-  const lastDate = addCalendarDays(today, MAX_ORDER_HORIZON_DAYS);
+  const lastDate = addCalendarDays(today, horizonDays);
 
   const rules = await loadProductRules(cart.map((line) => line.productId), exec);
+  // Staff-configurable, per location, with the compiled-in constant only as a
+  // last resort — see lib/settings/capacity.ts for why this stopped being a
+  // hardcoded number.
+  const defaultSlotCapacity = await getSlotCapacityDefault(locationId);
 
-  const [blackouts, capacities, slotCounts, productCounts] = await Promise.all([
+  const [blackouts, capacities, slotCounts, productCounts, soldOutOverrides] = await Promise.all([
     exec
       .select({ date: blackoutDatesTable.date })
       .from(blackoutDatesTable)
@@ -141,6 +153,24 @@ export async function loadAvailabilityInput(
       ),
     countOrdersPerSlot(today, lastDate, exec, locationId),
     countUnitsPerProductPerDay(today, lastDate, exec, locationId),
+    exec
+      .select({
+        productId: productAvailabilityOverrides.squareProductId,
+        date: productAvailabilityOverrides.date,
+      })
+      .from(productAvailabilityOverrides)
+      .where(
+        and(
+          sql`${productAvailabilityOverrides.date} >= ${today}`,
+          sql`${productAvailabilityOverrides.date} <= ${lastDate}`,
+          locationId
+            ? or(
+                eq(productAvailabilityOverrides.squareLocationId, locationId),
+                isNull(productAvailabilityOverrides.squareLocationId),
+              )
+            : undefined,
+        ),
+      ),
   ]);
 
   return {
@@ -148,15 +178,18 @@ export async function loadAvailabilityInput(
     timeZone,
     cart,
     rules,
-    horizonDays: MAX_ORDER_HORIZON_DAYS,
+    horizonDays,
     blackoutDates: new Set(blackouts.map((b) => b.date)),
+    productDateBlocks: new Set(
+      soldOutOverrides.map((row) => productDayKey(row.productId, row.date)),
+    ),
     slotUsage: new Map(slotCounts.map((r) => [slotKey(r.date, r.time), r.count])),
     slotCapacityOverrides: new Map(
       capacities
         .sort((a, b) => Number(Boolean(a.squareLocationId)) - Number(Boolean(b.squareLocationId)))
         .map((c) => [slotKey(c.pickupDate, c.pickupTime), c.maxOrders]),
     ),
-    defaultSlotCapacity: DEFAULT_MAX_ORDERS_PER_SLOT,
+    defaultSlotCapacity,
     productDayUsage: new Map(
       productCounts.map((r) => [productDayKey(r.productId, r.date), r.units]),
     ),

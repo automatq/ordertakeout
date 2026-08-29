@@ -22,6 +22,7 @@ const LINKS = [
   { href: "/staff/timeline", label: "Timeline" },
   { href: "/staff/analytics", label: "Sales" },
   { href: "/staff/closed", label: "Completed" },
+  { href: "/staff/audit", label: "Activity" },
   { href: "/staff/settings", label: "Settings" },
 ] as const;
 

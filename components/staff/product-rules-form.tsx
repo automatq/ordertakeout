@@ -5,7 +5,14 @@ import { useEffect, useId, useState, useTransition } from "react";
 import { saveProductRulesAction, type AdminResult } from "@/app/actions/admin";
 import { AlertIcon, CheckIcon } from "@/components/ui/icons";
 import { useToast } from "@/components/ui/toast";
+import { slugFromName } from "@/lib/admin/validate";
 import type { ProductRuleRow } from "@/lib/admin/queries";
+import {
+  ALLERGEN_LABELS,
+  ALLERGENS,
+  DIETARY_LABELS,
+  DIETARY_TAGS,
+} from "@/lib/catalog/dietary";
 import { formatPickupTime } from "@/lib/scheduling/time";
 
 /**
@@ -51,6 +58,8 @@ export function ProductRulesForm({
   const [pickupTimes, setPickupTimes] = useState<string[]>(
     existing?.allowedPickupTimes ?? DEFAULT_PICKUP_TIMES,
   );
+  const [allergens, setAllergens] = useState<string[]>(existing?.allergens ?? []);
+  const [dietaryTags, setDietaryTags] = useState<string[]>(existing?.dietaryTags ?? []);
   const [dirty, setDirty] = useState(false);
   const toast = useToast();
 
@@ -114,12 +123,14 @@ export function ProductRulesForm({
       {/* The server still parses a comma-separated string; the chips above are
           purely how staff choose the values. */}
       <input type="hidden" name="pickupTimes" value={pickupTimes.join(", ")} />
+      <input type="hidden" name="allergens" value={allergens.join(", ")} />
+      <input type="hidden" name="dietaryTags" value={dietaryTags.join(", ")} />
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Field
           label="URL name"
           name="slug"
-          defaultValue={existing?.slug ?? suggestSlug(productName)}
+          defaultValue={existing?.slug ?? slugFromName(productName)}
           hint="Appears in the product link"
           errors={errors?.["slug"]}
         />
@@ -140,12 +151,20 @@ export function ProductRulesForm({
           errors={errors?.["orderCutoffTime"]}
         />
         <Field
-          label="Max trays per day"
+          label="Max per day"
           name="maxUnitsPerDay"
           type="number"
           defaultValue={existing?.maxUnitsPerDay?.toString() ?? ""}
           hint="Leave blank for no limit"
           errors={errors?.["maxUnitsPerDay"]}
+        />
+        <Field
+          label="Menu position"
+          name="sortOrder"
+          type="number"
+          defaultValue={String(existing?.sortOrder ?? 0)}
+          hint="Low numbers first; ties fall back to alphabetical"
+          errors={errors?.["sortOrder"]}
         />
       </div>
 
@@ -184,6 +203,75 @@ export function ProductRulesForm({
             ? "Choose at least one — with none, the product can't be ordered."
             : `${pickupTimes.length} time${pickupTimes.length === 1 ? "" : "s"} offered.`}
         </span>
+      </fieldset>
+
+      <fieldset className="flex flex-col gap-2">
+        <legend className="text-ink text-sm font-medium">Contains allergens</legend>
+        <div className="flex flex-wrap gap-2 pt-1">
+          {ALLERGENS.map((allergen) => {
+            const chosen = allergens.includes(allergen);
+            return (
+              <button
+                key={allergen}
+                type="button"
+                aria-pressed={chosen}
+                onClick={() => {
+                  setDirty(true);
+                  setAllergens((current) =>
+                    chosen
+                      ? current.filter((value) => value !== allergen)
+                      : [...current, allergen],
+                  );
+                }}
+                className="chip btn-sm text-sm"
+              >
+                {ALLERGEN_LABELS[allergen]}
+              </button>
+            );
+          })}
+        </div>
+        {errors?.["allergens"] ? (
+          <span role="alert" className="field-error">
+            {errors["allergens"][0]}
+          </span>
+        ) : (
+          <span className="field-hint">
+            Shown on the product page with a shared-kitchen note. Leaving one off is not a
+            &ldquo;free from&rdquo; claim.
+          </span>
+        )}
+      </fieldset>
+
+      <fieldset className="flex flex-col gap-2">
+        <legend className="text-ink text-sm font-medium">Dietary notes</legend>
+        <div className="flex flex-wrap gap-2 pt-1">
+          {DIETARY_TAGS.map((tag) => {
+            const chosen = dietaryTags.includes(tag);
+            return (
+              <button
+                key={tag}
+                type="button"
+                aria-pressed={chosen}
+                onClick={() => {
+                  setDirty(true);
+                  setDietaryTags((current) =>
+                    chosen ? current.filter((value) => value !== tag) : [...current, tag],
+                  );
+                }}
+                className="chip btn-sm text-sm"
+              >
+                {DIETARY_LABELS[tag]}
+              </button>
+            );
+          })}
+        </div>
+        {errors?.["dietaryTags"] ? (
+          <span role="alert" className="field-error">
+            {errors["dietaryTags"][0]}
+          </span>
+        ) : (
+          <span className="field-hint">Shown on menu cards and the product page.</span>
+        )}
       </fieldset>
 
       <Field
@@ -276,7 +364,6 @@ export function ProductRulesForm({
     </form>
   );
 }
-
 function Field({
   label,
   name,
@@ -325,12 +412,4 @@ function Field({
       ) : null}
     </div>
   );
-}
-
-function suggestSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60);
 }

@@ -4,7 +4,7 @@ import { recommendPickupLocation } from "./distance";
 import type { StoreLocation } from "./types";
 
 const location = (id: string, latitude: number, longitude: number): StoreLocation => ({
-  id, name: id, address: "Address", city: null, timezone: null, currency: null, phone: null, businessHours: [], coordinates: { latitude, longitude },
+  id, name: id, address: "Address", city: null, timezone: null, currency: null, country: null, phone: null, businessHours: [], coordinates: { latitude, longitude },
 });
 
 describe("recommendPickupLocation", () => {

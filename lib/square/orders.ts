@@ -6,6 +6,7 @@ import type { ResolvedCartLine } from "@/lib/catalog/cart";
 import { pickupInstant, type StoreDate, type StoreTime } from "@/lib/scheduling/time";
 import { serverEnv } from "@/lib/env";
 import { isDemoMode } from "@/lib/demo/config";
+import { reportError } from "@/lib/monitoring/report";
 import {
   classifyRefundStatus,
   type RefundDisposition,
@@ -31,6 +32,8 @@ export interface SquareOrderInput {
   customer: { name: string; email: string; phone: string };
   note?: string | null;
   timeZone?: string;
+  /** Optional account reward applied as an order-level fixed discount. */
+  rewardDiscountCents?: number;
 }
 
 export interface SquareDraftOrder {
@@ -64,7 +67,7 @@ export async function createSquareDraftOrder(
   // Demo mode prices the order from our own resolved lines. In production Square
   // is the pricing authority — see the total comparison in createPendingOrder.
   if (isDemoMode()) {
-    const subtotal = input.lines.reduce((sum, line) => sum + line.lineTotalCents, 0);
+    const subtotal = Math.max(0, input.lines.reduce((sum, line) => sum + line.lineTotalCents, 0) - (input.rewardDiscountCents ?? 0));
     return {
       squareOrderId: `DEMO_ORDER_${input.orderNumber}`,
       totalCents: subtotal,
@@ -100,6 +103,14 @@ export async function createSquareDraftOrder(
         catalogObjectId: line.variant.id,
         quantity: String(line.quantity),
       })),
+      ...(input.rewardDiscountCents ? {
+        discounts: [{
+          name: "Rewards reward",
+          type: "FIXED_AMOUNT" as const,
+          amountMoney: { amount: toSquareAmount(input.rewardDiscountCents), currency: input.lines[0]?.variant.currency as Square.Currency },
+          scope: "ORDER" as const,
+        }],
+      } : {}),
       fulfillments: [fulfillment],
     },
   });
@@ -139,6 +150,8 @@ export async function createSquarePayment(params: {
   orderId: string;
   squareOrderId: string;
   amountCents: number;
+  /** Charged in addition to amountMoney; the Square order total stays untipped. */
+  tipCents?: number;
   currency: string;
   sourceId: string;
   buyerEmail: string;
@@ -166,6 +179,14 @@ export async function createSquarePayment(params: {
           amount: toSquareAmount(params.amountCents),
           currency: params.currency as Square.Currency,
         },
+        ...(params.tipCents && params.tipCents > 0
+          ? {
+              tipMoney: {
+                amount: toSquareAmount(params.tipCents),
+                currency: params.currency as Square.Currency,
+              },
+            }
+          : {}),
       },
       {
         timeoutInSeconds: PAYMENT_REQUEST_TIMEOUT_SECONDS,
@@ -201,7 +222,7 @@ export async function createSquarePayment(params: {
     // a structured body. Surface the code so checkout can show something better
     // than "something went wrong".
     const detail = extractSquareError(cause);
-    console.error("[payments] create failed:", detail);
+    reportError("payments", "create failed", cause, { ...detail });
     return { ok: false, ...detail };
   }
 }
@@ -228,7 +249,7 @@ export async function cancelSquarePaymentAttempt(
     return { ok: true };
   } catch (cause) {
     const detail = extractSquareError(cause);
-    console.error("[payments] cancel-by-idempotency-key failed:", detail);
+    reportError("payments", "cancel-by-idempotency-key failed", cause, { ...detail });
     return { ok: false, ...detail, ambiguous: true };
   }
 }
@@ -294,7 +315,7 @@ export async function refundSquarePayment(params: {
     };
   } catch (cause) {
     const detail = extractSquareError(cause);
-    console.error("[refunds] refund failed:", detail);
+    reportError("refunds", "refund failed", cause, { ...detail });
     return {
       ok: false,
       ...detail,

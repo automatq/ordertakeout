@@ -43,6 +43,38 @@ export async function getFreshRawInventoryQuantities(
   return fetchRawInventoryQuantities(locationId, [...new Set(variationIds)].sort());
 }
 
+/**
+ * Which variations Square holds an inventory record for at this location.
+ *
+ * Staff diagnostic only — deliberately NOT on the money path and deliberately
+ * not cached. `fetchRawInventoryQuantities` drops zero-quantity records via
+ * `isInStockCount`, so "tracked but currently zero" and "never tracked" come
+ * back identically there. That is correct for selling (both mean unbuyable) and
+ * useless for onboarding: the first is normal trading, the second means the
+ * product will never appear at this branch and nobody will be told why.
+ *
+ * Returns every id Square returned a record for, regardless of quantity.
+ */
+export async function fetchTrackedVariationIds(
+  locationId: string,
+  variationIds: readonly string[],
+): Promise<Set<string>> {
+  const ids = [...new Set(variationIds)];
+  if (ids.length === 0) return new Set();
+  if (isDemoMode()) return new Set(ids);
+
+  const tracked = new Set<string>();
+  const page = await squareClient().inventory.batchGetCounts({
+    catalogObjectIds: ids,
+    locationIds: [locationId],
+    states: ["IN_STOCK"],
+  });
+  for await (const count of page) {
+    if (count.catalogObjectId) tracked.add(count.catalogObjectId);
+  }
+  return tracked;
+}
+
 async function fetchRawInventoryQuantities(
   locationId: string,
   variationIds: readonly string[],

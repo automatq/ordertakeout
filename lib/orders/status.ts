@@ -15,7 +15,9 @@ export const STAFF_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   pending_payment: ["canceled"],
   paid: ["preparing", "ready", "canceled"],
   preparing: ["ready", "canceled"],
-  ready: ["completed", "canceled"],
+  // Completion is intentionally absent: it requires counter verification,
+  // rather than a generic lifecycle action.
+  ready: ["canceled"],
   completed: [],
   canceled: [],
 };

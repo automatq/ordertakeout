@@ -13,17 +13,40 @@ export interface OrderNotification {
   pickupLocationId?: string | null;
   pickupLocationAddress?: string | null;
   totalCents: number;
+  /** Gratuity charged on top of totalCents. */
+  tipCents?: number;
   currency: string;
   items: { quantity: number; name: string }[];
   note: string | null;
   trackingUrl?: string | null;
+  /** SMS-sized form of trackingUrl — a full one costs most of a 160-char segment. */
+  trackingShortUrl?: string | null;
+  /** Per-order consent to transactional texts. */
+  customerSmsOptIn?: boolean;
 }
 
-export type NotificationEventKind = "order_paid" | "order_ready" | "order_canceled";
+export type NotificationEventKind =
+  | "order_paid"
+  | "order_ready"
+  | "order_canceled"
+  | "order_refunded"
+  /** Morning-of pickup reminder; customer channels only, keyed per pickup date. */
+  | "order_reminder";
 
 export interface NotificationEvent {
   kind: NotificationEventKind;
   order: OrderNotification;
+  /**
+   * Claim/record key in notification_log; defaults to `kind`. Events that can
+   * legitimately recur per order (a second partial refund, a future reminder)
+   * pass a suffixed key like `order_refunded:<refundId>` so each occurrence is
+   * its own idempotent delivery unit.
+   */
+  dedupeKey?: string;
+  /** Restrict delivery to these channels; omitted = all configured channels. */
+  channels?: ChannelName[];
+  /** Present for order_refunded. */
+  refund?: { amountCents: number; partial: boolean };
 }
 
 export type ChannelName =
@@ -31,6 +54,7 @@ export type ChannelName =
   | "email_store"
   | "email_customer"
   | "sms"
+  | "sms_customer"
   | "discord"
   | "slack"
   | "trello"

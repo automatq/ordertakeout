@@ -8,6 +8,7 @@ import { ArrowLeftIcon } from "@/components/ui/icons";
 import { FormSkeleton } from "@/components/ui/skeleton";
 import { getOrderableProducts } from "@/lib/catalog/server";
 import { publicEnv } from "@/lib/env";
+import { getCurrentCustomerAccount } from "@/lib/accounts/loyalty";
 
 export const metadata = { title: "Checkout" };
 
@@ -62,10 +63,12 @@ async function CheckoutBody() {
 
   const env = publicEnv();
 
+  const account = await getCurrentCustomerAccount();
   return (
     <CheckoutFlow
       products={products}
       squareApplicationId={env.NEXT_PUBLIC_SQUARE_APPLICATION_ID}
+      account={account ? { name: account.name, email: account.email, phone: account.phone, points: account.points } : null}
     />
   );
 }

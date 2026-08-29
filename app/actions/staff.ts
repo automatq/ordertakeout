@@ -13,6 +13,13 @@ import {
 import { requireStaffSession } from "@/lib/auth/guard";
 import { getDashboardData, type DashboardData } from "@/lib/orders/dashboard";
 import { advanceOrder, type TransitionResult } from "@/lib/orders/transitions";
+import {
+  previewPickupVerification,
+  verifyPickup,
+  type PickupVerificationPreview,
+  type PickupVerificationResult,
+} from "@/lib/orders/pickup-verification";
+import { resendCustomerConfirmation } from "@/lib/notifications/dispatch";
 import { serverEnv } from "@/lib/env";
 import { consumeRateLimit, requestFingerprint } from "@/lib/security/rate-limit";
 
@@ -55,15 +62,17 @@ export async function signOut(): Promise<void> {
   redirect("/staff/login");
 }
 
-/** Polled by the order screen. */
-export async function refreshDashboard(): Promise<DashboardData> {
+/** Polled by the order screen. Filtering server-side keeps a busy two-location
+ * shop from shipping every branch's orders to every tablet on every poll. */
+export async function refreshDashboard(locationId?: unknown): Promise<DashboardData> {
   await requireStaffSession();
-  return getDashboardData();
+  const parsed = z.string().min(1).max(64).optional().safeParse(locationId ?? undefined);
+  return getDashboardData(7, parsed.success ? parsed.data : undefined);
 }
 
 const transitionSchema = z.object({
   orderId: z.uuid(),
-  status: z.enum(["preparing", "ready", "completed", "canceled"]),
+  status: z.enum(["preparing", "ready", "canceled"]),
 });
 
 export async function changeOrderStatus(input: unknown): Promise<TransitionResult> {
@@ -75,4 +84,47 @@ export async function changeOrderStatus(input: unknown): Promise<TransitionResul
   }
 
   return advanceOrder(parsed.data.orderId, parsed.data.status);
+}
+
+const pickupVerificationSchema = z.object({
+  method: z.enum(["qr", "manual"]),
+  value: z.string().trim().min(1).max(500),
+});
+
+const confirmPickupSchema = pickupVerificationSchema.extend({
+  staffInitials: z.string().trim().min(1).max(12),
+});
+
+/** Look up a ready order for a staff member before the final collection check. */
+export async function previewPickup(input: unknown): Promise<PickupVerificationPreview | { ok: false; reason: string }> {
+  await requireStaffSession();
+  const parsed = pickupVerificationSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, reason: "Scan a pickup pass or enter an order number." };
+  return previewPickupVerification(parsed.data);
+}
+
+/** Confirm collection after the staff member has checked the customer's name. */
+export async function confirmPickup(input: unknown): Promise<PickupVerificationResult> {
+  await requireStaffSession();
+  const parsed = confirmPickupSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, reason: "Enter the pickup details and staff initials." };
+  return verifyPickup(parsed.data);
+}
+
+const resendSchema = z.object({ orderId: z.uuid() });
+
+/** Re-send the customer's confirmation email from the closed-orders screen. */
+export async function resendOrderConfirmation(
+  input: unknown,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  await requireStaffSession();
+  const limit = await consumeRateLimit("staff-resend-email", await requestFingerprint(), {
+    attempts: 5,
+    windowMs: 10 * 60_000,
+  });
+  if (!limit.allowed) return { ok: false, reason: "Too many re-sends. Wait a few minutes and try again." };
+
+  const parsed = resendSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, reason: "Order not found." };
+  return resendCustomerConfirmation(parsed.data.orderId);
 }

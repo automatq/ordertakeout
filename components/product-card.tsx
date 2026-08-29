@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 
+import { DietaryTagChips } from "@/components/catalog/dietary-info";
 import { ArrowRightIcon, LoafIcon } from "@/components/ui/icons";
 import { primaryImage, PRODUCT_BLUR_DATA_URL, sizedImage } from "@/lib/catalog/images";
 import { lowestPriceCents } from "@/lib/catalog/map";
@@ -94,6 +95,10 @@ export function ProductCard({ product, soldOut = false }: { product: StoreProduc
           </p>
         ) : null}
 
+        {/* Dietary only — allergens need the shared-kitchen disclaimer beside
+            them, so they stay on the detail page where it fits. */}
+        <DietaryTagChips dietaryTags={product.dietaryTags} />
+
         {pickupTimes.length > 0 ? (
           <p className="text-ink-subtle text-xs">
             Pickup {formatPickupTime(pickupTimes[0]!)}
@@ -108,7 +113,7 @@ export function ProductCard({ product, soldOut = false }: { product: StoreProduc
           <span>
             {soldOut ? "View other locations" : product.variants.length > 1
               ? `${product.variants.length} sizes`
-              : "View tray"}
+              : "View item"}
           </span>
           <ArrowRightIcon className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
         </span>

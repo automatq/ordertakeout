@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { validateAllergens, validateDietaryTags } from "@/lib/catalog/dietary";
 import { isAllowedProductImageSource } from "@/lib/catalog/image-policy";
 import { compareTimes, normalizeTime, type StoreTime } from "@/lib/scheduling/time";
 
@@ -74,6 +75,16 @@ export const productRulesSchema = z.object({
     .union([z.literal(""), z.coerce.number().int().min(1).max(MAX_UNITS_PER_DAY)])
     .transform((value) => (value === "" ? null : value)),
   isOrderable: z.enum(["true", "false"]).transform((value) => value === "true"),
+  /**
+   * Menu position, low first. The column has existed since the first migration
+   * and nothing ever wrote to it, so every row kept the default 0 and the
+   * storefront fell back to its alphabetical tiebreak — fine for three trays,
+   * useless for a full menu where staff want bread before cake.
+   */
+  sortOrder: z
+    .union([z.literal(""), z.coerce.number().int().min(0).max(9999)])
+    .optional()
+    .transform((value) => (value === "" || value === undefined ? 0 : value)),
   descriptionMd: z.string().trim().max(2000).optional(),
   /**
    * Staff override for the product photo.
@@ -95,9 +106,105 @@ export const productRulesSchema = z.object({
     )
     .optional()
     .transform((value) => (value ? value : null)),
+  /**
+   * Comma-separated tokens from the chip pickers — same transport as
+   * pickupTimes. The fixed vocabulary lives in lib/catalog/dietary.ts; unknown
+   * tokens are a hard validation error because a chip UI can only produce them
+   * via a forged request, and this is a health-claim surface.
+   */
+  allergens: dietaryTokenField(validateAllergens, (result) => result.ok ? result.allergens : null),
+  dietaryTags: dietaryTokenField(validateDietaryTags, (result) => result.ok ? result.tags : null),
 });
 
+function dietaryTokenField<Result extends { ok: boolean }, Value>(
+  validate: (values: readonly string[]) => Result,
+  extract: (result: Result) => Value | null,
+) {
+  return z
+    .string()
+    .optional()
+    .transform((raw, ctx) => {
+      const tokens = (raw ?? "").split(",").map((token) => token.trim()).filter(Boolean);
+      const value = extract(validate(tokens));
+      if (value === null) {
+        ctx.addIssue({ code: "custom", message: "Pick from the listed options only" });
+        return z.NEVER;
+      }
+      return value;
+    });
+}
+
 export type ProductRulesInput = z.input<typeof productRulesSchema>;
+
+/* -------------------------------------------------------------------------- */
+/* Bulk configuration                                                         */
+/* -------------------------------------------------------------------------- */
+
+/** Longest slug the column and the single-product form both accept. */
+const MAX_SLUG_LENGTH = 60;
+
+/**
+ * A URL name derived from a product name.
+ *
+ * Shared with the single-product form so a slug minted in bulk and one typed by
+ * hand are produced the same way.
+ */
+export function slugFromName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, MAX_SLUG_LENGTH);
+}
+
+/**
+ * A slug that is not already taken.
+ *
+ * Configuring one product at a time made collisions rare enough to ignore, and
+ * they surfaced as a raw unique-violation. Deriving slugs for forty products at
+ * once makes them routine — "Ube Cake" and "Ube Cake " both reduce to
+ * `ube-cake` — so the batch has to resolve them itself or it fails partway
+ * through with no useful message.
+ */
+export function uniqueSlug(name: string, taken: ReadonlySet<string>): string {
+  const base = slugFromName(name) || "product";
+  if (!taken.has(base)) return base;
+
+  for (let suffix = 2; suffix < 1000; suffix += 1) {
+    const tail = `-${suffix}`;
+    const candidate = `${base.slice(0, MAX_SLUG_LENGTH - tail.length)}${tail}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  /* A thousand products sharing one name is not a real catalog; failing loudly
+     beats returning a duplicate the database will reject anyway. */
+  throw new Error(`Could not derive a unique URL name from "${name}".`);
+}
+
+/**
+ * Rules applied to many products at once.
+ *
+ * Deliberately excludes slug, description and photo: those are per-product, and
+ * overwriting a description staff wrote because they also wanted to change a
+ * cutoff would be a nasty surprise.
+ */
+export const bulkProductRulesSchema = z.object({
+  productIds: z.array(z.string().min(1)).min(1, "Choose at least one product").max(200),
+  leadTimeDays: z.coerce
+    .number()
+    .int("Whole days only")
+    .min(0, "Lead time can't be negative")
+    .max(MAX_LEAD_TIME_DAYS),
+  orderCutoffTime: timeField,
+  pickupTimes: z.string().min(1, "Add at least one pickup time"),
+  maxUnitsPerDay: z
+    .union([z.literal(""), z.coerce.number().int().min(1).max(MAX_UNITS_PER_DAY)])
+    .transform((value) => (value === "" ? null : value)),
+  isOrderable: z.enum(["true", "false"]).transform((value) => value === "true"),
+  allergens: dietaryTokenField(validateAllergens, (result) => result.ok ? result.allergens : null),
+  dietaryTags: dietaryTokenField(validateDietaryTags, (result) => result.ok ? result.tags : null),
+});
+
+export type BulkProductRulesInput = z.input<typeof bulkProductRulesSchema>;
 
 export const blackoutSchema = z.object({
   locationId: z.string().min(1, "Choose a location"),

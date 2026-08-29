@@ -3,6 +3,7 @@ import { Suspense } from "react";
 
 import { OrderQueue } from "@/components/staff/order-queue";
 import { LoadingRegion, Skeleton } from "@/components/ui/skeleton";
+import { getOrderableProducts } from "@/lib/catalog/server";
 import { serverEnv } from "@/lib/env";
 import { getDashboardData } from "@/lib/orders/dashboard";
 
@@ -23,8 +24,14 @@ async function Queue() {
   await connection();
 
   // Not cached: the kitchen screen must never show a stale order.
-  const data = await getDashboardData();
-  return <OrderQueue initialData={data} timeZone={serverEnv().STORE_TIMEZONE} />;
+  const [data, catalog] = await Promise.all([getDashboardData(), getOrderableProducts()]);
+  return (
+    <OrderQueue
+      initialData={data}
+      timeZone={serverEnv().STORE_TIMEZONE}
+      products={catalog.products.map((product) => ({ id: product.id, name: product.name }))}
+    />
+  );
 }
 
 /** Shaped like the real queue, so the page doesn't jump when orders land. */

@@ -32,6 +32,8 @@ const REASON_LABEL: Record<SlotUnavailableReason, string> = {
   blackout: "Closed",
   slot_full: "Fully booked",
   product_daily_capacity: "Sold out",
+  product_sold_out: "Sold out for this day",
+  time_passed: "Too late today",
 };
 
 export interface PickupSelection {

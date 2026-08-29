@@ -2,10 +2,12 @@ import "server-only";
 
 import { and, asc, desc, eq, gte, isNotNull, lt, or, sql } from "drizzle-orm";
 
+import { parseAllergens, parseDietaryTags, type Allergen, type DietaryTag } from "@/lib/catalog/dietary";
 import { db } from "@/lib/db";
-import { blackoutDates, notificationLog, orders, productsConfig, slotCapacity, webhookEvents } from "@/lib/db/schema";
+import { blackoutDates, notificationLog, orders, productAvailabilityOverrides, productsConfig, slotCapacity, webhookEvents } from "@/lib/db/schema";
 import { serverEnv } from "@/lib/env";
 import { normalizeTime, storeToday, type StoreDate, type StoreTime } from "@/lib/scheduling/time";
+import { uniqueSlug } from "./validate";
 
 /** Reads and writes behind the admin screens. */
 
@@ -58,6 +60,8 @@ export interface ProductRuleRow {
   sortOrder: number;
   descriptionMd: string | null;
   heroImageUrl: string | null;
+  allergens: Allergen[];
+  dietaryTags: DietaryTag[];
 }
 
 export async function listProductRules(): Promise<ProductRuleRow[]> {
@@ -77,7 +81,95 @@ export async function listProductRules(): Promise<ProductRuleRow[]> {
     sortOrder: row.sortOrder,
     descriptionMd: row.descriptionMd,
     heroImageUrl: row.heroImageUrl,
+    allergens: parseAllergens(row.allergens),
+    dietaryTags: parseDietaryTags(row.dietaryTags),
   }));
+}
+
+export interface BulkRuleTemplate {
+  leadTimeDays: number;
+  orderCutoffTime: StoreTime;
+  allowedPickupTimes: StoreTime[];
+  maxUnitsPerDay: number | null;
+  isOrderable: boolean;
+  allergens: Allergen[];
+  dietaryTags: DietaryTag[];
+}
+
+export interface BulkRuleResult {
+  configured: number;
+  updated: number;
+  /** Slugs minted for products that had no row, for the confirmation message. */
+  newSlugs: { name: string; slug: string }[];
+}
+
+/**
+ * Apply one set of ordering rules to many products at once.
+ *
+ * Onboarding a full bakery menu one form at a time is roughly forty clicks per
+ * product, and the defaults are shaped for party trays — so the fast path also
+ * produced the wrong answer for everyday bread. Nearly every item shares a
+ * single rule; the exceptions are few enough to edit afterwards.
+ *
+ * Two invariants:
+ *  - A product that already has a row keeps its slug, description and photo.
+ *    Changing a cutoff must never silently rewrite a URL customers have, or
+ *    discard copy somebody wrote.
+ *  - Slugs are resolved against the whole table plus the rest of the batch, so
+ *    two products whose names reduce to the same slug both succeed.
+ */
+export async function applyProductRulesBulk(
+  products: readonly { productId: string; name: string }[],
+  template: BulkRuleTemplate,
+): Promise<BulkRuleResult> {
+  if (products.length === 0) return { configured: 0, updated: 0, newSlugs: [] };
+
+  return db().transaction(async (tx) => {
+    const existing = await tx
+      .select({ productId: productsConfig.squareCatalogObjectId, slug: productsConfig.slug })
+      .from(productsConfig);
+
+    const slugByProduct = new Map(existing.map((row) => [row.productId, row.slug]));
+    const taken = new Set(existing.map((row) => row.slug));
+
+    const newSlugs: { name: string; slug: string }[] = [];
+    let configured = 0;
+    let updated = 0;
+
+    for (const product of products) {
+      const current = slugByProduct.get(product.productId);
+      let slug: string;
+      if (current) {
+        slug = current;
+        updated += 1;
+      } else {
+        slug = uniqueSlug(product.name, taken);
+        taken.add(slug);
+        newSlugs.push({ name: product.name, slug });
+        configured += 1;
+      }
+
+      const shared = {
+        leadTimeDays: template.leadTimeDays,
+        orderCutoffTime: template.orderCutoffTime,
+        allowedPickupTimes: template.allowedPickupTimes,
+        maxUnitsPerDay: template.maxUnitsPerDay,
+        isOrderable: template.isOrderable,
+        allergens: template.allergens,
+        dietaryTags: template.dietaryTags,
+        updatedAt: new Date(),
+      };
+
+      await tx
+        .insert(productsConfig)
+        .values({ squareCatalogObjectId: product.productId, slug, ...shared })
+        /* Only the shared fields on conflict: slug, descriptionMd and
+           heroImageUrl are intentionally absent so an existing row keeps them. */
+        .onConflictDoUpdate({ target: productsConfig.squareCatalogObjectId, set: shared });
+    }
+
+    return { configured, updated, newSlugs };
+  });
 }
 
 /**
@@ -86,9 +178,35 @@ export async function listProductRules(): Promise<ProductRuleRow[]> {
  * An upsert because the same form serves both cases: configuring a product that
  * Square has but we've never seen, and editing one that already exists.
  */
+/** The unique index behind `products_config.slug`. */
+const PRODUCT_SLUG_UNIQUE_CONSTRAINT = "products_config_slug_key";
+
+/**
+ * Whether a failed save was two products claiming one URL name.
+ *
+ * The pre-check in the action catches the ordinary case and can name the
+ * offender; this covers the gap between that read and the write, where the
+ * database is the only real arbiter.
+ */
+export function isSlugConflict(cause: unknown): boolean {
+  const error = cause as { code?: unknown; constraint?: unknown };
+  return error?.code === "23505" && error?.constraint === PRODUCT_SLUG_UNIQUE_CONSTRAINT;
+}
+
+/** Which product currently owns a URL name, if any. */
+export async function productIdForSlug(slug: string): Promise<string | null> {
+  const [row] = await db()
+    .select({ productId: productsConfig.squareCatalogObjectId })
+    .from(productsConfig)
+    .where(eq(productsConfig.slug, slug))
+    .limit(1);
+  return row?.productId ?? null;
+}
+
 export async function saveProductRules(input: {
   productId: string;
   slug: string;
+  sortOrder: number;
   leadTimeDays: number;
   orderCutoffTime: StoreTime;
   allowedPickupTimes: StoreTime[];
@@ -96,10 +214,13 @@ export async function saveProductRules(input: {
   isOrderable: boolean;
   descriptionMd: string | null;
   heroImageUrl: string | null;
+  allergens: Allergen[];
+  dietaryTags: DietaryTag[];
 }): Promise<void> {
   const values = {
     squareCatalogObjectId: input.productId,
     slug: input.slug,
+    sortOrder: input.sortOrder,
     leadTimeDays: input.leadTimeDays,
     orderCutoffTime: input.orderCutoffTime,
     allowedPickupTimes: input.allowedPickupTimes,
@@ -107,6 +228,8 @@ export async function saveProductRules(input: {
     isOrderable: input.isOrderable,
     descriptionMd: input.descriptionMd,
     heroImageUrl: input.heroImageUrl,
+    allergens: input.allergens,
+    dietaryTags: input.dietaryTags,
     updatedAt: new Date(),
   };
 
@@ -191,4 +314,59 @@ export async function clearSlotCapacity(
     .where(
       sql`${slotCapacity.squareLocationId} = ${locationId} AND ${slotCapacity.pickupDate} = ${pickupDate} AND ${slotCapacity.pickupTime} = ${normalizeTime(pickupTime)}`,
     );
+}
+
+/** Upcoming "sold out today" 86 entries, oldest date first. */
+export async function listAvailabilityOverrides(): Promise<{
+  id: string;
+  productId: string;
+  locationId: string | null;
+  date: StoreDate;
+  reason: string | null;
+  createdBy: string | null;
+}[]> {
+  const today = storeToday(new Date(), serverEnv().STORE_TIMEZONE);
+  const rows = await db()
+    .select()
+    .from(productAvailabilityOverrides)
+    .where(gte(productAvailabilityOverrides.date, today))
+    .orderBy(asc(productAvailabilityOverrides.date));
+  return rows.map((row) => ({
+    id: row.id,
+    productId: row.squareProductId,
+    locationId: row.squareLocationId,
+    date: row.date,
+    reason: row.reason,
+    createdBy: row.createdBy,
+  }));
+}
+
+export async function addAvailabilityOverride(input: {
+  productId: string;
+  locationId: string;
+  date: StoreDate;
+  reason: string | null;
+  createdBy: string | null;
+}): Promise<void> {
+  await db()
+    .insert(productAvailabilityOverrides)
+    .values({
+      squareProductId: input.productId,
+      squareLocationId: input.locationId,
+      date: input.date,
+      reason: input.reason,
+      createdBy: input.createdBy,
+    })
+    .onConflictDoUpdate({
+      target: [
+        productAvailabilityOverrides.squareProductId,
+        productAvailabilityOverrides.squareLocationId,
+        productAvailabilityOverrides.date,
+      ],
+      set: { reason: input.reason, createdBy: input.createdBy },
+    });
+}
+
+export async function removeAvailabilityOverride(id: string): Promise<void> {
+  await db().delete(productAvailabilityOverrides).where(eq(productAvailabilityOverrides.id, id));
 }
